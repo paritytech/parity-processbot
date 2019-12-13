@@ -1,0 +1,6 @@
+**/target/
+*.swp
+.DS_Store
+.env
+engineers.csv
+db/

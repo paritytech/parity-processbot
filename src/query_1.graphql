@@ -1,0 +1,65 @@
+query Organization($login: String!) {
+		organization(login: $login) {
+				repositories(last: 100) {
+						nodes {
+								name
+								pullRequests(last: 50) {
+										nodes {
+												title
+												id
+												participants(last: 3) {
+														totalCount
+														nodes {
+																name
+																login
+																id
+														}
+												}
+												reviewRequests(last: 2) {
+														totalCount
+														nodes {
+																id
+																requestedReviewer {
+																		__typename
+																		... on User {
+																				name
+																				login
+																				id
+																		}
+																}
+														}
+												}
+												author {
+														__typename
+														... on User {
+																name
+																login
+																id
+														}
+												}
+										}
+								}
+						}
+				}
+		}
+}
+
+mutation AddComment($input: AddCommentInput!) {
+		addComment(input: $input) {
+				clientMutationId
+		}
+}
+
+mutation AssignAuthor($input: AddAssigneesToAssignableInput!) {
+		addAssigneesToAssignable(input: $input) {
+				clientMutationId
+				assignable {
+						__typename
+						... on PullRequest {
+								assignees {
+										totalCount
+								}
+						}
+				}
+		}
+}
