@@ -7,7 +7,7 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-glitch-in-the-matrix = { git = "https://github.com/paritytech/glitch-in-the-matrix" }
+gm = { git = "https://github.com/paritytech/glitch-in-the-matrix", package="glitch-in-the-matrix" }
 futures = "0.1"
 tokio-core = "0.1"
 failure = "*"
