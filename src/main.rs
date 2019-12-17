@@ -6,11 +6,18 @@ use std::fs::File;
 use std::time::Duration;
 use tokio_core::reactor::Core;
 
-mod bot;
+use parity_pingbot::bot;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    env_logger::init();
+    match run().await {
+        Err(error) => panic!("{}", error),
+        _ => Ok(())
+    }
+}
+
+async fn run() -> Result<(), Box<dyn std::error::Error>> {
+    env_logger::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     dotenv::dotenv().ok();
     let db_path = dotenv::var("DB_PATH").expect("DB_PATH");
@@ -36,22 +43,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    let db = DB::open_default(db_path).unwrap();
-    let mut core = Core::new().unwrap();
+    let db = DB::open_default(db_path)?;
+    let mut core = Core::new()?;
     let mx: MatrixClient = core
         .run(MatrixClient::login_password(
             &matrix_user,
             &matrix_password,
             &matrix_homeserver,
             &core.handle(),
-        ))
-        .unwrap();
+        )).unwrap();
+
+    let bot = bot::Bot::new(&github_organization, &github_token)?;
 
     let room = Room::from_id(matrix_channel_id);
     let mut matrix_sender = bot::MatrixSender {
-        core: core,
-        mx: mx.clone(),
-        room: room,
+        core,
+        mx,
+        room,
     };
 
     println!("[+] Connected to {} as {}", matrix_homeserver, matrix_user);
@@ -59,7 +67,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut interval = tokio::time::interval(Duration::from_secs(tick_secs));
     loop {
         interval.tick().await;
-        bot::update(&db, &github_token, &github_organization).unwrap();
-        bot::act(&db, &github_token, &engineers, &mut matrix_sender).unwrap();
+        bot::update(&db, &bot)?;
+        bot::act(&db, &bot, &engineers, &mut matrix_sender)?;
     }
 }
