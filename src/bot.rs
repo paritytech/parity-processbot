@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use std::time::SystemTime;
 
 use byteorder::{BigEndian, ByteOrder};
-use futures::future::Future;
 use gm::room::{NewRoom, RoomExt};
 use gm::types::replies::RoomCreationOptions;
 use gm::types::room::Room;
@@ -30,19 +29,19 @@ fn map_response_status(mut val: reqwest::Response) -> Result<reqwest::Response> 
 #[derive(Serialize, Deserialize, Debug)]
 enum DbEntry {
     PullRequest {
-        created_at: SystemTime,
-        n_participants: u32,
-        repo_name: String,
         author_id: i64,
         author_login: String,
-        matrix_public_ping_count: u32,
+        created_at: SystemTime,
+        last_ping: Option<SystemTime>,
+        n_participants: u32,
+        repo_name: String,
     },
     ReviewRequest {
         created_at: SystemTime,
+        last_ping: Option<SystemTime>,
         repo_name: String,
         reviewer_id: i64,
         reviewer_login: String,
-        matrix_public_ping_count: u32,
     },
 }
 
@@ -61,6 +60,42 @@ pub struct MatrixSender<'r> {
     pub core: tokio_core::reactor::Core,
     pub mx: MatrixClient,
     pub room: Room<'r>,
+}
+
+impl<'r> MatrixSender<'r> {
+    fn direct_message<A: AsRef<str>>(&mut self, invitees: &[&str], message: A) -> Result<()> {
+        let message = message.as_ref();
+        let options = RoomCreationOptions {
+            visibility: None, // default private
+            room_alias_name: None,
+            name: None,
+            topic: None,
+            invite: invitees.iter().map(|s| format!("@{}", s)).collect(),
+            creation_content: HashMap::new(),
+            preset: None,
+            is_direct: true,
+        };
+
+        let room = self
+            .core
+            .run(NewRoom::create(&mut self.mx, options))
+            .unwrap();
+
+        let mut room = room.cli(&mut self.mx);
+
+        self.core.run(room.send_simple(message)).unwrap();
+
+        Ok(())
+    }
+
+    fn room_message<A: AsRef<str>>(&mut self, room: &str, message: A) -> Result<()> {
+        let message = message.as_ref();
+        let room = self.core.run(NewRoom::join(&mut self.mx, room)).unwrap();
+        let mut room = room.cli(&mut self.mx);
+        self.core.run(room.send_simple(message)).unwrap();
+
+        Ok(())
+    }
 }
 
 pub struct Bot {
@@ -141,10 +176,10 @@ impl Bot {
     {
         let repo = repo.as_ref();
         let author = author.as_ref();
-        let base = &self.organisation.repos_url;
         let url = format!(
-            "{base}/{repo}/issues/{pr}/assignees",
-            base = base,
+            "{base}/repos/{org}/{repo}/issues/{pr}/assignees",
+            base = Self::BASE_URL,
+            org = self.organisation.login,
             repo = repo,
             pr = pr
         );
@@ -155,6 +190,7 @@ impl Bot {
             .json(&serde_json::json!({ "assignees": [author] }))
             .send()
             .context(error::Http)
+            .and_then(map_response_status)
             .map(|_| ())
     }
 
@@ -213,38 +249,32 @@ pub fn update(db: &DB, bot: &Bot) -> Result<()> {
 
             if let Some(bytes) = db.get_pinned(&id_bytes).context(error::Db)? {
                 let entry = serde_json::from_slice(&bytes).context(error::Json)?;
-                let (
-                    author_id,
-                    author_login,
-                    created_at,
-                    matrix_public_ping_count,
-                    n_participants,
-                    repo_name,
-                ) = match entry {
-                    DbEntry::PullRequest {
-                        author_id,
-                        author_login,
-                        created_at,
-                        matrix_public_ping_count,
-                        n_participants,
-                        repo_name,
-                    } => (
-                        author_id,
-                        author_login,
-                        created_at,
-                        matrix_public_ping_count,
-                        n_participants,
-                        repo_name,
-                    ),
-                    _ => unreachable!(),
-                };
+                let (author_id, author_login, created_at, last_ping, n_participants, repo_name) =
+                    match entry {
+                        DbEntry::PullRequest {
+                            author_id,
+                            author_login,
+                            created_at,
+                            last_ping,
+                            n_participants,
+                            repo_name,
+                        } => (
+                            author_id,
+                            author_login,
+                            created_at,
+                            last_ping,
+                            n_participants,
+                            repo_name,
+                        ),
+                        _ => unreachable!(),
+                    };
 
                 if np != n_participants {
                     let entry = DbEntry::PullRequest {
                         author_id,
                         author_login,
                         created_at,
-                        matrix_public_ping_count,
+                        last_ping,
                         n_participants: np,
                         repo_name,
                     };
@@ -259,11 +289,11 @@ pub fn update(db: &DB, bot: &Bot) -> Result<()> {
             } else {
                 let entry = DbEntry::PullRequest {
                     created_at: SystemTime::now(),
+                    last_ping: None,
                     n_participants: np,
                     repo_name: repo.name.clone(),
                     author_id: pr.user.id,
                     author_login: pr.user.login.clone(),
-                    matrix_public_ping_count: 0,
                 };
                 db.put(
                     id_bytes,
@@ -280,10 +310,10 @@ pub fn update(db: &DB, bot: &Bot) -> Result<()> {
                 if db.get_pinned(&reviewer_id_bytes).is_ok() {
                     let entry = DbEntry::ReviewRequest {
                         created_at: SystemTime::now(),
+                        last_ping: None,
                         reviewer_id: reviewer.id,
                         repo_name: repo.name.clone(),
                         reviewer_login: reviewer.login.clone(),
-                        matrix_public_ping_count: 0,
                     };
                     db.put(
                         reviewer_id_bytes,
@@ -318,188 +348,172 @@ pub fn act(
         let entry: DbEntry =
             serde_json::from_str(&String::from_utf8_lossy(&value)).context(error::Json)?;
         log::info!("Checking Entry: {:?}", entry);
+
         match entry {
             DbEntry::PullRequest {
                 author_id,
-                ref author_login,
                 created_at,
-                matrix_public_ping_count,
+                last_ping,
                 n_participants,
+                ref author_login,
                 ref repo_name,
             } => {
-                if let Some(engineer) = engineers.get(author_login) {
-                    if n_participants < 3 {
-                        log::info!("Notifying PR author.");
-                        let since = SystemTime::now()
-                            .duration_since(created_at)
-                            .expect("should have been ceated in the past")
-                            .as_secs()
-                            / 3600;
-                        if since < 24 {
-                            bot.add_comment(
-                                repo_name,
-                                pr_id,
-                                format!(
-                                    "@{}, please assign at least two reviewers.",
-                                    &author_login
-                                ),
-                            )?;
+                let engineer = match engineers.get(author_login) {
+                    Some(eng) => eng,
+                    _ => continue,
+                };
 
-                            bot.assign_author(repo_name, pr_id, author_login)?;
-                        } else if since < 48 {
-                            // dm author in matrix
-                            if let Some(riot_id) = &engineer.riot_id {
-                                let roomopts = RoomCreationOptions {
-                                    visibility: None, // default private
-                                    room_alias_name: None,
-                                    name: None,
-                                    topic: None,
-                                    invite: vec![format!("@{}", riot_id)],
-                                    creation_content: HashMap::new(),
-                                    preset: None,
-                                    is_direct: true,
-                                };
-                                let room = matrix_sender
-                                    .core
-                                    .run(NewRoom::create(&mut matrix_sender.mx, roomopts))
-                                    .expect("room for direct chat");
-                                let mut rc = room.cli(&mut matrix_sender.mx);
-                                matrix_sender
-                                    .core
-                                    .run(
-                                        rc.send_simple(format!(
-                                            "@{}, please assign at least two reviewers.",
-                                            &riot_id,
-                                        ))
-                                        .map(|_| ())
-                                        .map_err(|_| ()),
-                                    )
-                                    .unwrap();
-                            }
-                        } else if (since - 48) / 24 > matrix_public_ping_count.into() {
-                            // ping author in matrix substrate channel
-                            if let Some(riot_id) = &engineer.riot_id {
-                                let mut rc = matrix_sender.room.cli(&mut matrix_sender.mx);
-                                matrix_sender
-                                    .core
-                                    .run(
-                                        rc.send_simple(format!(
-                                            "@{}, please assign at least two reviewers.",
-                                            &riot_id
-                                        ))
-                                        .map(|_| ())
-                                        .map_err(|_| ()),
-                                    )
-                                    .unwrap();
-                            }
-
-                            // update ping count
-                            db.delete(&key).unwrap();
-                            let entry = DbEntry::PullRequest {
-                                author_id,
-                                author_login: author_login.clone(),
-                                created_at,
-                                matrix_public_ping_count: ((since - 48) / 24) as u32,
-                                n_participants,
-                                repo_name: repo_name.clone(),
-                            };
-                            db.put(
-                                key,
-                                serde_json::to_string(&entry)
-                                    .expect("serialize PullRequestEntry")
-                                    .as_bytes(),
-                            )
-                            .unwrap();
-                        }
-                    }
+                if n_participants >= 2 {
+                    continue;
                 }
+
+                let since = SystemTime::now()
+                    .duration_since(last_ping.unwrap_or(created_at))
+                    .expect("should have been ceated in the past")
+                    .as_secs()
+                    / 3600;
+
+                log::info!("{} hours since last check", since);
+
+                let last_ping = match since {
+                    0..=24 if last_ping.is_none() => {
+                        bot.add_comment(
+                            repo_name,
+                            pr_id,
+                            format!(
+                                "Hello @{}, please ensure to assign at \
+                                 least two reviewers, Otherwise this PR will \
+                                 be closed in the near future.",
+                                &author_login
+                            ),
+                        )?;
+
+                        bot.assign_author(repo_name, pr_id, author_login)?;
+
+                        Some(SystemTime::now())
+                    }
+
+                    25..=48 if engineer.riot_id.is_some() => {
+                        let riot_id = engineer.riot_id.as_ref().unwrap();
+                        // dm author in matrix
+                        let message = format!(
+                            "@{author}, please assign at least two reviewers \
+                             to {link}. This PR will close after 72 hours if \
+                             reviewers haven't been assigned.",
+                            author = riot_id,
+                            link = "hello"
+                        );
+
+                        matrix_sender.direct_message(&[&riot_id], &message)?;
+
+                        Some(SystemTime::now())
+                    }
+
+                    49..=72 if engineer.riot_id.is_some() => {
+                        let riot_id = engineer.riot_id.as_ref().unwrap();
+                        // dm author in matrix
+                        let message = format!(
+                            "@{author}, please assign at least two \
+                             reviewers to {link}. This PR will close after \
+                             48 hours if reviewers haven't been assigned.",
+                            author = riot_id,
+                            link = "hello"
+                        );
+
+                        matrix_sender.room_message("substrate", &message)?;
+
+                        Some(SystemTime::now())
+                    }
+
+                    _ => last_ping,
+                };
+
+                // update ping count
+                db.delete(&key).unwrap();
+                let entry = DbEntry::PullRequest {
+                    author_id,
+                    author_login: author_login.clone(),
+                    created_at,
+                    last_ping,
+                    n_participants,
+                    repo_name: repo_name.clone(),
+                };
+                db.put(
+                    key,
+                    serde_json::to_string(&entry)
+                        .expect("serialize PullRequestEntry")
+                        .as_bytes(),
+                )
+                .unwrap();
             }
 
             DbEntry::ReviewRequest {
                 created_at,
-                matrix_public_ping_count,
+                last_ping,
                 repo_name,
                 reviewer_id,
                 reviewer_login,
             } => {
-                if let Some(engineer) = engineers.get(&reviewer_login) {
-                    let since = SystemTime::now()
-                        .duration_since(created_at)
-                        .expect("should have been ceated in the past")
-                        .as_secs()
-                        / 3600;
-                    if since < 24 {
-                    } else if since < 48 {
+                let engineer = match engineers.get(&reviewer_login) {
+                    Some(eng) => eng,
+                    _ => continue,
+                };
+
+                let riot_id = match engineer.riot_id {
+                    Some(ref id) => id,
+                    _ => continue,
+                };
+
+                let since = SystemTime::now()
+                    .duration_since(last_ping.unwrap_or(created_at))
+                    .expect("should have been ceated in the past")
+                    .as_secs()
+                    / 3600;
+
+                let last_ping = match since {
+                    24..=48 if last_ping.is_none() => {
                         bot.add_comment(
-                            repo_name,
+                            &repo_name,
                             pr_id,
                             format!("@{}, please review.", &reviewer_login),
                         )?;
-                    } else if since < 72 {
-                        if let Some(riot_id) = &engineer.riot_id {
-                            // dm reviewer in matrix
-                            let roomopts = RoomCreationOptions {
-                                visibility: None, // default private,
-                                room_alias_name: None,
-                                name: None,
-                                topic: None,
-                                invite: vec![format!("@{}", riot_id)],
-                                creation_content: HashMap::new(),
-                                preset: None,
-                                is_direct: true,
-                            };
-                            let room = matrix_sender
-                                .core
-                                .run(NewRoom::create(&mut matrix_sender.mx, roomopts))
-                                .expect("room for direct chat");
-                            let mut rc = room.cli(&mut matrix_sender.mx);
-                            matrix_sender
-                                .core
-                                .run(
-                                    rc.send_simple(format!(
-                                        "@{}, please assign at least two reviewers.",
-                                        &riot_id,
-                                    ))
-                                    .map(|_| ())
-                                    .map_err(|_| ()),
-                                )
-                                .unwrap();
-                        }
-                    } else if (since - 72) / 24 > matrix_public_ping_count.into() {
-                        // ping reviewer in matrix substrate channel
-                        if let Some(riot_id) = &engineer.riot_id {
-                            let mut rc = matrix_sender.room.cli(&mut matrix_sender.mx);
-                            matrix_sender
-                                .core
-                                .run(
-                                    rc.send_simple(format!(
-                                        "@{}, please assign at least two reviewers.",
-                                        &riot_id,
-                                    ))
-                                    .map(|_| ())
-                                    .map_err(|_| ()),
-                                )
-                                .unwrap();
-                        }
-
-                        // update ping count
-                        db.delete(&key).unwrap();
-                        let entry = DbEntry::ReviewRequest {
-                            created_at,
-                            reviewer_id,
-                            repo_name,
-                            reviewer_login,
-                            matrix_public_ping_count: ((since - 72) / 24) as u32,
-                        };
-                        db.put(
-                            key,
-                            serde_json::to_string(&entry)
-                                .expect("serialize PullRequestEntry")
-                                .as_bytes(),
-                        )
-                        .unwrap();
+                        Some(SystemTime::now())
                     }
-                }
+                    24..=72 => {
+                        // dm reviewer in matrix
+                        matrix_sender.direct_message(
+                            &[&riot_id],
+                            format!("@{}, please review.", &riot_id),
+                        )?;
+                        last_ping
+                    }
+                    73..=128 => {
+                        matrix_sender.room_message(
+                            "parity-bots",
+                            format!("@{}, please review.", &riot_id),
+                        )?;
+
+                        Some(SystemTime::now())
+                    }
+                    _ => last_ping,
+                };
+
+                // update entry
+                db.delete(&key).unwrap();
+                let entry = DbEntry::ReviewRequest {
+                    created_at,
+                    reviewer_id,
+                    last_ping,
+                    repo_name,
+                    reviewer_login,
+                };
+                db.put(
+                    key,
+                    serde_json::to_string(&entry)
+                        .expect("serialize PullRequestEntry")
+                        .as_bytes(),
+                )
+                .unwrap();
             }
         }
     }
