@@ -9,6 +9,16 @@ use std::time::Duration;
 use tokio_core::reactor::Core;
 
 mod bot;
+mod issue;
+mod pull_request;
+mod review_request;
+//mod team;
+//mod project;
+mod db;
+mod developer;
+mod matrix;
+mod repository;
+mod review;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -39,6 +49,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 	}
 
 	let db = DB::open_default(db_path).unwrap();
+
+	let matrix::LoginResponse { access_token } = dbg!(matrix::login(
+		&matrix_homeserver,
+		&matrix_user,
+		&matrix_password
+	));
+	let matrix::CreateRoomResponse { room_id } =
+		dbg!(matrix::create_room(&matrix_homeserver, &access_token));
+	matrix::invite(
+		&matrix_homeserver,
+		&access_token,
+		&room_id,
+		"@joseph:matrix.parity.io",
+	);
+	matrix::send_message(
+		&matrix_homeserver,
+		&access_token,
+		&room_id,
+		"hello @joseph:matrix.parity.io",
+	);
+	return Ok(());
+
 	let mut core = Core::new().unwrap();
 	let mx: MatrixClient = core
 		.run(MatrixClient::login_password(

@@ -177,7 +177,7 @@ pub fn update(db: &DB, github_token: &str, org: &str) -> Result<(), failure::Err
 								.unwrap();
 							}
 						} else {
-                                                        panic!("pr id is somehow the key for a review request");
+							panic!("pr id is somehow the key for a review request");
 						}
 					} else if let AuthorUser(author) = pr
 						.author
@@ -310,27 +310,33 @@ pub fn act(
 									.run(NewRoom::create(&mut matrix_sender.mx, roomopts))
 									.expect("room for direct chat");
 								let mut rc = room.cli(&mut matrix_sender.mx);
-								matrix_sender.core.run(
-									rc.send_simple(format!(
-										"@{}, please assign at least two reviewers.",
-										&riot_id,
-									))
-									.map(|_| ())
-									.map_err(|_| ()),
-								).unwrap();
+								matrix_sender
+									.core
+									.run(
+										rc.send_simple(format!(
+											"@{}, please assign at least two reviewers.",
+											&riot_id,
+										))
+										.map(|_| ())
+										.map_err(|_| ()),
+									)
+									.unwrap();
 							}
 						} else if (since - 48) / 24 > matrix_public_ping_count.into() {
 							// ping author in matrix substrate channel
 							if let Some(riot_id) = &engineer.riot_id {
 								let mut rc = matrix_sender.room.cli(&mut matrix_sender.mx);
-								matrix_sender.core.run(
-									rc.send_simple(format!(
-										"@{}, please assign at least two reviewers.",
-										&riot_id
-									))
-									.map(|_| ())
-									.map_err(|_| ()),
-								).unwrap();
+								matrix_sender
+									.core
+									.run(
+										rc.send_simple(format!(
+											"@{}, please assign at least two reviewers.",
+											&riot_id
+										))
+										.map(|_| ())
+										.map_err(|_| ()),
+									)
+									.unwrap();
 							}
 
 							// update ping count
@@ -381,7 +387,7 @@ pub fn act(
 								room_alias_name: None,
 								name: None,
 								topic: None,
-                                                                invite: vec![format!("@{}", riot_id)],
+								invite: vec![format!("@{}", riot_id)],
 								creation_content: HashMap::new(),
 								preset: None,
 								is_direct: true,
@@ -391,27 +397,33 @@ pub fn act(
 								.run(NewRoom::create(&mut matrix_sender.mx, roomopts))
 								.expect("room for direct chat");
 							let mut rc = room.cli(&mut matrix_sender.mx);
-							matrix_sender.core.run(
-								rc.send_simple(format!(
-									"@{}, please assign at least two reviewers.",
-									&riot_id,
-								))
-								.map(|_| ())
-								.map_err(|_| ()),
-							).unwrap();
+							matrix_sender
+								.core
+								.run(
+									rc.send_simple(format!(
+										"@{}, please assign at least two reviewers.",
+										&riot_id,
+									))
+									.map(|_| ())
+									.map_err(|_| ()),
+								)
+								.unwrap();
 						}
 					} else if (since - 72) / 24 > matrix_public_ping_count.into() {
 						// ping reviewer in matrix substrate channel
 						if let Some(riot_id) = &engineer.riot_id {
 							let mut rc = matrix_sender.room.cli(&mut matrix_sender.mx);
-							matrix_sender.core.run(
-								rc.send_simple(format!(
-									"@{}, please assign at least two reviewers.",
-									&riot_id,
-								))
-								.map(|_| ())
-								.map_err(|_| ()),
-							).unwrap();
+							matrix_sender
+								.core
+								.run(
+									rc.send_simple(format!(
+										"@{}, please assign at least two reviewers.",
+										&riot_id,
+									))
+									.map(|_| ())
+									.map_err(|_| ()),
+								)
+								.unwrap();
 						}
 
 						// update ping count
