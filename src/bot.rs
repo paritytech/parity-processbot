@@ -41,6 +41,7 @@ enum DbEntry {
         last_ping: Option<SystemTime>,
         repo_name: String,
         reviewer_id: i64,
+        pr_number: i64,
         reviewer_login: String,
     },
 }
@@ -64,13 +65,14 @@ pub struct MatrixSender<'r> {
 
 impl<'r> MatrixSender<'r> {
     fn direct_message<A: AsRef<str>>(&mut self, invitees: &[&str], message: A) -> Result<()> {
+        log::info!("Sending DM.");
         let message = message.as_ref();
         let options = RoomCreationOptions {
             visibility: None, // default private
             room_alias_name: None,
             name: None,
             topic: None,
-            invite: invitees.iter().map(|s| format!("@{}", s)).collect(),
+            invite: invitees.iter().map(|s| String::from(*s)).collect(),
             creation_content: HashMap::new(),
             preset: None,
             is_direct: true,
@@ -310,6 +312,7 @@ pub fn update(db: &DB, bot: &Bot) -> Result<()> {
                 if db.get_pinned(&reviewer_id_bytes).is_ok() {
                     let entry = DbEntry::ReviewRequest {
                         created_at: SystemTime::now(),
+                        pr_number: pr.number,
                         last_ping: None,
                         reviewer_id: reviewer.id,
                         repo_name: repo.name.clone(),
@@ -452,6 +455,7 @@ pub fn act(
                 last_ping,
                 repo_name,
                 reviewer_id,
+                pr_number,
                 reviewer_login,
             } => {
                 let engineer = match engineers.get(&reviewer_login) {
@@ -474,24 +478,20 @@ pub fn act(
                     24..=48 if last_ping.is_none() => {
                         bot.add_comment(
                             &repo_name,
-                            pr_id,
-                            format!("@{}, please review.", &reviewer_login),
+                            pr_number,
+                            format!("{}, please review.", &reviewer_login),
                         )?;
                         Some(SystemTime::now())
                     }
-                    24..=72 => {
+                    49..=72 => {
                         // dm reviewer in matrix
-                        matrix_sender.direct_message(
-                            &[&riot_id],
-                            format!("@{}, please review.", &riot_id),
-                        )?;
+                        matrix_sender
+                            .direct_message(&[&riot_id], format!("{}, please review.", &riot_id))?;
                         last_ping
                     }
                     73..=128 => {
-                        matrix_sender.room_message(
-                            "parity-bots",
-                            format!("@{}, please review.", &riot_id),
-                        )?;
+                        matrix_sender
+                            .room_message("parity-bots", format!("{}, please review.", &riot_id))?;
 
                         Some(SystemTime::now())
                     }
@@ -504,6 +504,7 @@ pub fn act(
                     created_at,
                     reviewer_id,
                     last_ping,
+                    pr_number,
                     repo_name,
                     reviewer_login,
                 };
