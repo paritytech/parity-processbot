@@ -1,438 +1,507 @@
-use crate::gm::room::{NewRoom, RoomExt};
-use futures::future::Future;
-use gm::types::replies::RoomCreationOptions;
-use gm::types::room::Room;
-use gm::MatrixClient;
-use graphql_client::*;
-use log::*;
-use rocksdb::{IteratorMode, DB};
-use serde::de::DeserializeOwned;
-use serde::*;
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::time::SystemTime;
 
-use organization::OrganizationOrganizationRepositoriesNodesPullRequestsNodesAuthorOn::User as AuthorUser;
-use organization::OrganizationOrganizationRepositoriesNodesPullRequestsNodesReviewRequestsNodesRequestedReviewer::User as ReviewerUser;
+use byteorder::{BigEndian, ByteOrder};
+use futures::future::Future;
+use gm::room::{NewRoom, RoomExt};
+use gm::types::replies::RoomCreationOptions;
+use gm::types::room::Room;
+use gm::MatrixClient;
+use hyperx::header::TypedHeaders;
+use rocksdb::{IteratorMode, DB};
+use serde::*;
+use snafu::ResultExt;
 
-#[derive(GraphQLQuery)]
-#[graphql(
-	schema_path = "src/schema.public.graphql",
-	query_path = "src/query_1.graphql",
-	response_derives = "Debug,Serialize"
-)]
-struct Organization;
+use crate::{error, github, Result};
 
-#[derive(GraphQLQuery)]
-#[graphql(
-	schema_path = "src/schema.public.graphql",
-	query_path = "src/query_1.graphql",
-	response_derives = "Debug"
-)]
-struct AddComment;
-
-#[derive(GraphQLQuery)]
-#[graphql(
-	schema_path = "src/schema.public.graphql",
-	query_path = "src/query_1.graphql",
-	response_derives = "Debug"
-)]
-struct AssignAuthor;
-
-fn send_query<Q: Serialize + Sized, R: DeserializeOwned>(
-	client: &reqwest::Client,
-	github_token: &str,
-	query: Q,
-) -> Result<R, failure::Error> {
-	let mut res = client
-		.post("https://api.github.com/graphql")
-		.bearer_auth(github_token.clone())
-		.json(&query)
-		.send()?;
-
-	let response_body: Response<R> = res.json()?;
-
-	if let Some(errors) = response_body.errors {
-		for error in &errors {
-			debug!("{:?}", error);
-		}
-	}
-
-	Ok(response_body.data.expect("response data"))
-}
-
-fn mutate_add_comment(
-	client: &reqwest::Client,
-	github_token: &str,
-	pr_id: String,
-	body: String,
-) -> Result<add_comment::ResponseData, failure::Error> {
-	let q = AddComment::build_query(add_comment::Variables {
-		input: add_comment::AddCommentInput {
-			body: body,
-			subject_id: pr_id,
-			client_mutation_id: None,
-		},
-	});
-
-	send_query(client, github_token, q)
-}
-
-fn mutate_assign_author(
-	client: &reqwest::Client,
-	github_token: &str,
-	pr_id: String,
-	author_id: String,
-) -> Result<assign_author::ResponseData, failure::Error> {
-	let q = AssignAuthor::build_query(assign_author::Variables {
-		input: assign_author::AddAssigneesToAssignableInput {
-			assignable_id: pr_id,
-			assignee_ids: vec![author_id],
-			client_mutation_id: None,
-		},
-	});
-
-	send_query(client, github_token, q)
+/// Maps the response into an error if it's not a success.
+fn map_response_status(mut val: reqwest::Response) -> Result<reqwest::Response> {
+    if val.status().is_success() {
+        Ok(val)
+    } else {
+        Err(error::Error::Response {
+            status: val.status(),
+            body: val.json().context(error::Http)?,
+        })
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 enum DbEntry {
-	PullRequest {
-		created_at: SystemTime,
-		n_participants: u32,
-		author_id: String,
-		author_login: String,
-		matrix_public_ping_count: u32,
-	},
-	ReviewRequest {
-		created_at: SystemTime,
-		reviewer_id: String,
-		reviewer_login: String,
-		matrix_public_ping_count: u32,
-	},
+    PullRequest {
+        created_at: SystemTime,
+        n_participants: u32,
+        repo_name: String,
+        author_id: i64,
+        author_login: String,
+        matrix_public_ping_count: u32,
+    },
+    ReviewRequest {
+        created_at: SystemTime,
+        repo_name: String,
+        reviewer_id: i64,
+        reviewer_login: String,
+        matrix_public_ping_count: u32,
+    },
 }
 
 #[derive(Debug, Deserialize)]
 pub struct Engineer {
-	first_name: Option<String>,
-	last_name: Option<String>,
-	pub github: Option<String>,
-	riot_id: Option<String>,
+    #[serde(rename = "First Name")]
+    first_name: String,
+    #[serde(rename = "Last Name")]
+    last_name: String,
+    pub github: Option<String>,
+    #[serde(rename = "Riot ID")]
+    riot_id: Option<String>,
 }
 
 pub struct MatrixSender<'r> {
-	pub core: tokio_core::reactor::Core,
-	pub mx: MatrixClient,
-	pub room: Room<'r>,
+    pub core: tokio_core::reactor::Core,
+    pub mx: MatrixClient,
+    pub room: Room<'r>,
 }
 
-pub fn update(db: &DB, github_token: &str, org: &str) -> Result<(), failure::Error> {
-	let q = Organization::build_query(organization::Variables {
-		login: org.to_string(),
-	});
+pub struct Bot {
+    client: reqwest::Client,
+    auth_key: String,
+    organisation: github::Organisation,
+}
 
-	let client = reqwest::Client::new();
-	let org_response: organization::ResponseData =
-		send_query(&client, github_token, q).expect("organization response");
+impl Bot {
+    const BASE_URL: &'static str = "https://api.github.com";
 
-	let repos = org_response
-		.organization
-		.expect("repository")
-		.repositories
-		.nodes
-		.expect("nodes");
+    /// Creates a new instance of `Bot` from a GitHub organisation defined by
+    /// `org`, and a GitHub authenication key defined by `auth_key`.
+    /// # Errors
+    /// If the organisation does not exist or `auth_key` does not have sufficent
+    /// permissions.
+    pub fn new<A: AsRef<str>, I: Into<String>>(org: A, auth_key: I) -> Result<Self> {
+        let auth_key = auth_key.into();
+        let client = reqwest::Client::new();
 
-	let mut live_ids = vec![];
-	for repo in repos {
-		if let Some(prs) = repo.and_then(|r| r.pull_requests.nodes) {
-			for pr in prs {
-				if let Some(pr) = pr {
-					live_ids.push(pr.id.clone().into_bytes());
-					let np = pr.participants.total_count as u32;
-					if let Ok(Some(value)) = db.get_pinned(pr.id.as_bytes()) {
-						if let DbEntry::PullRequest {
-							created_at,
-							n_participants,
-							author_id,
-							author_login,
-							matrix_public_ping_count,
-						} = serde_json::from_str(
-							String::from_utf8(value.to_vec()).unwrap().as_str(),
-						)
-						.expect("deserialize entry")
-						{
-							if np != n_participants {
-								let entry = DbEntry::PullRequest {
-									created_at: created_at,
-									n_participants: np,
-									author_id: author_id.clone(),
-									author_login: author_login.clone(),
-									matrix_public_ping_count: matrix_public_ping_count,
-								};
-								db.put(
-									pr.id.as_bytes(),
-									serde_json::to_string(&entry)
-										.expect("serialize PullRequestEntry")
-										.as_bytes(),
-								)
-								.unwrap();
-							}
-						} else {
-                                                        panic!("pr id is somehow the key for a review request");
-						}
-					} else if let AuthorUser(author) = pr
-						.author
-						.as_ref()
-						.map(|auth| &auth.on)
-						.expect("pull request should have an author")
-					{
-						let entry = DbEntry::PullRequest {
-							created_at: SystemTime::now(),
-							n_participants: np,
-							author_id: author.id.clone(),
-							author_login: author.login.clone(),
-							matrix_public_ping_count: 0,
-						};
-						db.put(
-							pr.id.as_bytes(),
-							serde_json::to_string(&entry)
-								.expect("serialize PullRequestEntry")
-								.as_bytes(),
-						)
-						.unwrap();
-					} else {
-						// PR author was not a user
-					}
+        let organisation = client
+            .get(&format!("https://api.github.com/orgs/{}", org.as_ref()))
+            .bearer_auth(&auth_key)
+            .send()
+            .context(error::Http)?
+            .json()
+            .context(error::Http)?;
 
-					if let Some(review_requests) =
-						pr.review_requests.as_ref().and_then(|r| r.nodes.as_ref())
-					{
-						for rev in review_requests {
-							if let Some(rev) = rev {
-								live_ids.push(rev.id.clone().into_bytes());
-								if db.get_pinned(rev.id.as_bytes()).is_ok() {
-								} else if let ReviewerUser(reviewer) = rev
-									.requested_reviewer
-									.as_ref()
-									.map(|auth| auth)
-									.expect("review request should have a reviewer")
-								{
-									let entry = DbEntry::ReviewRequest {
-										created_at: SystemTime::now(),
-										reviewer_id: reviewer.id.clone(),
-										reviewer_login: reviewer.login.clone(),
-										matrix_public_ping_count: 0,
-									};
-									db.put(
-										rev.id.as_bytes(),
-										serde_json::to_string(&entry)
-											.expect("serialize ReviewRequestEntry")
-											.as_bytes(),
-									)
-									.unwrap();
-								} else {
-									// reviewer was not a user
-								}
-							}
-						}
-					}
-				}
-			}
-		}
-	}
-	// delete dead entries
-	for (key, _) in db.iterator(IteratorMode::Start) {
-		if !live_ids.contains(&key.to_vec().as_ref()) {
-			db.delete(&key).unwrap();
-		}
-	}
+        Ok(Self {
+            client,
+            organisation,
+            auth_key,
+        })
+    }
 
-	Ok(())
+    /// Returns all of the repositories managed by the organisation.
+    pub fn repositories(&self) -> Result<Vec<github::Repository>> {
+        self.get_all(&self.organisation.repos_url)
+    }
+
+    /// Returns all of the pull requests in a single repository.
+    pub fn pull_requests(&self, repo: &github::Repository) -> Result<Vec<github::PullRequest>> {
+        self.get_all(repo.pulls_url.replace("{/number}", ""))
+    }
+
+    /// Creates a comment in the r
+    pub fn add_comment<A, B>(&self, repo: A, pr: i64, comment: B) -> Result<()>
+    where
+        A: AsRef<str>,
+        B: AsRef<str>,
+    {
+        log::info!("Adding comment");
+        let repo = repo.as_ref();
+        let comment = comment.as_ref();
+        let url = format!(
+            "{base}/repos/{org}/{repo}/issues/{pr}/comments",
+            base = Self::BASE_URL,
+            org = self.organisation.login,
+            repo = repo,
+            pr = pr
+        );
+        log::info!("POST {}", url);
+
+        self.client
+            .post(&url)
+            .bearer_auth(&self.auth_key)
+            .json(&serde_json::json!({ "body": comment }))
+            .send()
+            .context(error::Http)
+            .and_then(map_response_status)
+            .map(|_| ())
+    }
+
+    pub fn assign_author<A, B>(&self, repo: A, pr: i64, author: B) -> Result<()>
+    where
+        A: AsRef<str>,
+        B: AsRef<str>,
+    {
+        let repo = repo.as_ref();
+        let author = author.as_ref();
+        let base = &self.organisation.repos_url;
+        let url = format!(
+            "{base}/{repo}/issues/{pr}/assignees",
+            base = base,
+            repo = repo,
+            pr = pr
+        );
+
+        self.client
+            .post(&url)
+            .bearer_auth(&self.auth_key)
+            .json(&serde_json::json!({ "assignees": [author] }))
+            .send()
+            .context(error::Http)
+            .map(|_| ())
+    }
+
+    // Originally adapted from:
+    // https://github.com/XAMPPRocky/gh-auditor/blob/ca67641c0a29d64fc5c6b4244b45ae601604f3c1/src/lib.rs#L232-L267
+    /// Gets a all entries across all pages from a resource in GitHub.
+    fn get_all<'b, I, T>(&self, url: I) -> Result<Vec<T>>
+    where
+        I: Into<Cow<'b, str>>,
+        T: serde::de::DeserializeOwned,
+    {
+        let mut entities = Vec::new();
+        let mut next = Some(url.into());
+
+        while let Some(url) = next {
+            let mut response = self
+                .client
+                .get(&*url)
+                .bearer_auth(&self.auth_key)
+                .send()
+                .context(error::Http)?;
+
+            next = response
+                .headers()
+                .decode::<hyperx::header::Link>()
+                .ok()
+                .and_then(|v| {
+                    v.values()
+                        .iter()
+                        .find(|link| {
+                            link.rel()
+                                .map(|rel| rel.contains(&hyperx::header::RelationType::Next))
+                                .unwrap_or(false)
+                        })
+                        .map(|l| l.link())
+                        .map(str::to_owned)
+                        .map(Cow::Owned)
+                });
+
+            let mut body = response.json::<Vec<T>>().context(error::Http)?;
+            entities.append(&mut body);
+        }
+
+        Ok(entities)
+    }
+}
+
+pub fn update(db: &DB, bot: &Bot) -> Result<()> {
+    let mut live_ids = vec![];
+    for repo in bot.repositories()? {
+        let prs = bot.pull_requests(&repo)?;
+        for pr in prs {
+            let id_bytes = pr.number.to_be_bytes();
+            live_ids.push(id_bytes.clone());
+            let np = pr.requested_reviewers.len() as u32;
+
+            if let Some(bytes) = db.get_pinned(&id_bytes).context(error::Db)? {
+                let entry = serde_json::from_slice(&bytes).context(error::Json)?;
+                let (
+                    author_id,
+                    author_login,
+                    created_at,
+                    matrix_public_ping_count,
+                    n_participants,
+                    repo_name,
+                ) = match entry {
+                    DbEntry::PullRequest {
+                        author_id,
+                        author_login,
+                        created_at,
+                        matrix_public_ping_count,
+                        n_participants,
+                        repo_name,
+                    } => (
+                        author_id,
+                        author_login,
+                        created_at,
+                        matrix_public_ping_count,
+                        n_participants,
+                        repo_name,
+                    ),
+                    _ => unreachable!(),
+                };
+
+                if np != n_participants {
+                    let entry = DbEntry::PullRequest {
+                        author_id,
+                        author_login,
+                        created_at,
+                        matrix_public_ping_count,
+                        n_participants: np,
+                        repo_name,
+                    };
+                    db.put(
+                        id_bytes,
+                        serde_json::to_string(&entry)
+                            .expect("serialize PullRequestEntry")
+                            .as_bytes(),
+                    )
+                    .unwrap();
+                }
+            } else {
+                let entry = DbEntry::PullRequest {
+                    created_at: SystemTime::now(),
+                    n_participants: np,
+                    repo_name: repo.name.clone(),
+                    author_id: pr.user.id,
+                    author_login: pr.user.login.clone(),
+                    matrix_public_ping_count: 0,
+                };
+                db.put(
+                    id_bytes,
+                    serde_json::to_string(&entry)
+                        .expect("serialize PullRequestEntry")
+                        .as_bytes(),
+                )
+                .unwrap();
+            }
+
+            for reviewer in pr.requested_reviewers {
+                let reviewer_id_bytes = reviewer.id.to_be_bytes();
+                live_ids.push(reviewer_id_bytes.clone());
+                if db.get_pinned(&reviewer_id_bytes).is_ok() {
+                    let entry = DbEntry::ReviewRequest {
+                        created_at: SystemTime::now(),
+                        reviewer_id: reviewer.id,
+                        repo_name: repo.name.clone(),
+                        reviewer_login: reviewer.login.clone(),
+                        matrix_public_ping_count: 0,
+                    };
+                    db.put(
+                        reviewer_id_bytes,
+                        serde_json::to_string(&entry)
+                            .expect("serialize ReviewRequestEntry")
+                            .as_bytes(),
+                    )
+                    .unwrap();
+                }
+            }
+        }
+    }
+
+    // delete dead entries
+    for (key, _) in db.iterator(IteratorMode::Start) {
+        if !live_ids.iter().any(|id| id == &*key) {
+            db.delete(&key).unwrap();
+        }
+    }
+
+    Ok(())
 }
 
 pub fn act(
-	db: &DB,
-	github_token: &str,
-	engineers: &HashMap<String, Engineer>,
-	matrix_sender: &mut MatrixSender,
-) -> Result<(), failure::Error> {
-	let client = reqwest::Client::new();
-	for (key, value) in db.iterator(IteratorMode::Start) {
-		let pr_id = String::from_utf8(key.to_vec()).unwrap();
-		let entry: DbEntry =
-			serde_json::from_str(String::from_utf8(value.to_vec()).unwrap().as_str())
-				.expect("deserialize entry");
-		match entry {
-			DbEntry::PullRequest {
-				created_at,
-				n_participants,
-				author_id,
-				author_login,
-				matrix_public_ping_count,
-			} => {
-				if let Some(engineer) = engineers.get(&author_login) {
-					if n_participants < 3 {
-						let since = SystemTime::now()
-							.duration_since(created_at)
-							.expect("should have been ceated in the past")
-							.as_secs() / 3600;
-						if since < 24 {
-							// ping author in github
-							let _ = mutate_add_comment(
-								&client,
-								github_token,
-								pr_id.clone(),
-								format!(
-									"@{}, please assign at least two reviewers.",
-									&author_login
-								),
-							);
-							let _ = mutate_assign_author(
-								&client,
-								github_token,
-								pr_id.clone(),
-								author_id.clone(),
-							);
-						} else if since < 48 {
-							// dm author in matrix
-							if let Some(riot_id) = &engineer.riot_id {
-								let roomopts = RoomCreationOptions {
-									visibility: None, // default private
-									room_alias_name: None,
-									name: None,
-									topic: None,
-									invite: vec![format!("@{}", riot_id)],
-									creation_content: HashMap::new(),
-									preset: None,
-									is_direct: true,
-								};
-								let room = matrix_sender
-									.core
-									.run(NewRoom::create(&mut matrix_sender.mx, roomopts))
-									.expect("room for direct chat");
-								let mut rc = room.cli(&mut matrix_sender.mx);
-								matrix_sender.core.run(
-									rc.send_simple(format!(
-										"@{}, please assign at least two reviewers.",
-										&riot_id,
-									))
-									.map(|_| ())
-									.map_err(|_| ()),
-								).unwrap();
-							}
-						} else if (since - 48) / 24 > matrix_public_ping_count.into() {
-							// ping author in matrix substrate channel
-							if let Some(riot_id) = &engineer.riot_id {
-								let mut rc = matrix_sender.room.cli(&mut matrix_sender.mx);
-								matrix_sender.core.run(
-									rc.send_simple(format!(
-										"@{}, please assign at least two reviewers.",
-										&riot_id
-									))
-									.map(|_| ())
-									.map_err(|_| ()),
-								).unwrap();
-							}
+    db: &DB,
+    bot: &Bot,
+    engineers: &HashMap<String, Engineer>,
+    matrix_sender: &mut MatrixSender,
+) -> Result<()> {
+    for (key, value) in db.iterator(IteratorMode::Start) {
+        let pr_id = BigEndian::read_i64(&*key);
+        let entry: DbEntry =
+            serde_json::from_str(&String::from_utf8_lossy(&value)).context(error::Json)?;
+        log::info!("Checking Entry: {:?}", entry);
+        match entry {
+            DbEntry::PullRequest {
+                author_id,
+                ref author_login,
+                created_at,
+                matrix_public_ping_count,
+                n_participants,
+                ref repo_name,
+            } => {
+                if let Some(engineer) = engineers.get(author_login) {
+                    if n_participants < 3 {
+                        log::info!("Notifying PR author.");
+                        let since = SystemTime::now()
+                            .duration_since(created_at)
+                            .expect("should have been ceated in the past")
+                            .as_secs()
+                            / 3600;
+                        if since < 24 {
+                            bot.add_comment(
+                                repo_name,
+                                pr_id,
+                                format!(
+                                    "@{}, please assign at least two reviewers.",
+                                    &author_login
+                                ),
+                            )?;
 
-							// update ping count
-							db.delete(&key).unwrap();
-							let entry = DbEntry::PullRequest {
-								created_at: created_at,
-								n_participants: n_participants,
-								author_id: author_id,
-								author_login: author_login,
-								matrix_public_ping_count: ((since - 48) / 24) as u32,
-							};
-							db.put(
-								key,
-								serde_json::to_string(&entry)
-									.expect("serialize PullRequestEntry")
-									.as_bytes(),
-							)
-							.unwrap();
-						}
-					}
-				}
-			}
-			DbEntry::ReviewRequest {
-				created_at,
-				reviewer_id,
-				reviewer_login,
-				matrix_public_ping_count,
-			} => {
-				if let Some(engineer) = engineers.get(&reviewer_login) {
-					let since = SystemTime::now()
-						.duration_since(created_at)
-						.expect("should have been ceated in the past")
-						.as_secs() / 3600;
-					if since < 24 {
-					} else if since < 48 {
-						// ping reviewer in github
-						let _ = mutate_add_comment(
-							&client,
-							github_token,
-							pr_id.clone(),
-							format!("@{}, please review.", &reviewer_login),
-						);
-					} else if since < 72 {
-						if let Some(riot_id) = &engineer.riot_id {
-							// dm reviewer in matrix
-							let roomopts = RoomCreationOptions {
-								visibility: None, // default private,
-								room_alias_name: None,
-								name: None,
-								topic: None,
-                                                                invite: vec![format!("@{}", riot_id)],
-								creation_content: HashMap::new(),
-								preset: None,
-								is_direct: true,
-							};
-							let room = matrix_sender
-								.core
-								.run(NewRoom::create(&mut matrix_sender.mx, roomopts))
-								.expect("room for direct chat");
-							let mut rc = room.cli(&mut matrix_sender.mx);
-							matrix_sender.core.run(
-								rc.send_simple(format!(
-									"@{}, please assign at least two reviewers.",
-									&riot_id,
-								))
-								.map(|_| ())
-								.map_err(|_| ()),
-							).unwrap();
-						}
-					} else if (since - 72) / 24 > matrix_public_ping_count.into() {
-						// ping reviewer in matrix substrate channel
-						if let Some(riot_id) = &engineer.riot_id {
-							let mut rc = matrix_sender.room.cli(&mut matrix_sender.mx);
-							matrix_sender.core.run(
-								rc.send_simple(format!(
-									"@{}, please assign at least two reviewers.",
-									&riot_id,
-								))
-								.map(|_| ())
-								.map_err(|_| ()),
-							).unwrap();
-						}
+                            bot.assign_author(repo_name, pr_id, author_login)?;
+                        } else if since < 48 {
+                            // dm author in matrix
+                            if let Some(riot_id) = &engineer.riot_id {
+                                let roomopts = RoomCreationOptions {
+                                    visibility: None, // default private
+                                    room_alias_name: None,
+                                    name: None,
+                                    topic: None,
+                                    invite: vec![format!("@{}", riot_id)],
+                                    creation_content: HashMap::new(),
+                                    preset: None,
+                                    is_direct: true,
+                                };
+                                let room = matrix_sender
+                                    .core
+                                    .run(NewRoom::create(&mut matrix_sender.mx, roomopts))
+                                    .expect("room for direct chat");
+                                let mut rc = room.cli(&mut matrix_sender.mx);
+                                matrix_sender
+                                    .core
+                                    .run(
+                                        rc.send_simple(format!(
+                                            "@{}, please assign at least two reviewers.",
+                                            &riot_id,
+                                        ))
+                                        .map(|_| ())
+                                        .map_err(|_| ()),
+                                    )
+                                    .unwrap();
+                            }
+                        } else if (since - 48) / 24 > matrix_public_ping_count.into() {
+                            // ping author in matrix substrate channel
+                            if let Some(riot_id) = &engineer.riot_id {
+                                let mut rc = matrix_sender.room.cli(&mut matrix_sender.mx);
+                                matrix_sender
+                                    .core
+                                    .run(
+                                        rc.send_simple(format!(
+                                            "@{}, please assign at least two reviewers.",
+                                            &riot_id
+                                        ))
+                                        .map(|_| ())
+                                        .map_err(|_| ()),
+                                    )
+                                    .unwrap();
+                            }
 
-						// update ping count
-						db.delete(&key).unwrap();
-						let entry = DbEntry::ReviewRequest {
-							created_at: created_at,
-							reviewer_id: reviewer_id,
-							reviewer_login: reviewer_login,
-							matrix_public_ping_count: ((since - 72) / 24) as u32,
-						};
-						db.put(
-							key,
-							serde_json::to_string(&entry)
-								.expect("serialize PullRequestEntry")
-								.as_bytes(),
-						)
-						.unwrap();
-					}
-				}
-			}
-		}
-	}
-	Ok(())
+                            // update ping count
+                            db.delete(&key).unwrap();
+                            let entry = DbEntry::PullRequest {
+                                author_id,
+                                author_login: author_login.clone(),
+                                created_at,
+                                matrix_public_ping_count: ((since - 48) / 24) as u32,
+                                n_participants,
+                                repo_name: repo_name.clone(),
+                            };
+                            db.put(
+                                key,
+                                serde_json::to_string(&entry)
+                                    .expect("serialize PullRequestEntry")
+                                    .as_bytes(),
+                            )
+                            .unwrap();
+                        }
+                    }
+                }
+            }
+
+            DbEntry::ReviewRequest {
+                created_at,
+                matrix_public_ping_count,
+                repo_name,
+                reviewer_id,
+                reviewer_login,
+            } => {
+                if let Some(engineer) = engineers.get(&reviewer_login) {
+                    let since = SystemTime::now()
+                        .duration_since(created_at)
+                        .expect("should have been ceated in the past")
+                        .as_secs()
+                        / 3600;
+                    if since < 24 {
+                    } else if since < 48 {
+                        bot.add_comment(
+                            repo_name,
+                            pr_id,
+                            format!("@{}, please review.", &reviewer_login),
+                        )?;
+                    } else if since < 72 {
+                        if let Some(riot_id) = &engineer.riot_id {
+                            // dm reviewer in matrix
+                            let roomopts = RoomCreationOptions {
+                                visibility: None, // default private,
+                                room_alias_name: None,
+                                name: None,
+                                topic: None,
+                                invite: vec![format!("@{}", riot_id)],
+                                creation_content: HashMap::new(),
+                                preset: None,
+                                is_direct: true,
+                            };
+                            let room = matrix_sender
+                                .core
+                                .run(NewRoom::create(&mut matrix_sender.mx, roomopts))
+                                .expect("room for direct chat");
+                            let mut rc = room.cli(&mut matrix_sender.mx);
+                            matrix_sender
+                                .core
+                                .run(
+                                    rc.send_simple(format!(
+                                        "@{}, please assign at least two reviewers.",
+                                        &riot_id,
+                                    ))
+                                    .map(|_| ())
+                                    .map_err(|_| ()),
+                                )
+                                .unwrap();
+                        }
+                    } else if (since - 72) / 24 > matrix_public_ping_count.into() {
+                        // ping reviewer in matrix substrate channel
+                        if let Some(riot_id) = &engineer.riot_id {
+                            let mut rc = matrix_sender.room.cli(&mut matrix_sender.mx);
+                            matrix_sender
+                                .core
+                                .run(
+                                    rc.send_simple(format!(
+                                        "@{}, please assign at least two reviewers.",
+                                        &riot_id,
+                                    ))
+                                    .map(|_| ())
+                                    .map_err(|_| ()),
+                                )
+                                .unwrap();
+                        }
+
+                        // update ping count
+                        db.delete(&key).unwrap();
+                        let entry = DbEntry::ReviewRequest {
+                            created_at,
+                            reviewer_id,
+                            repo_name,
+                            reviewer_login,
+                            matrix_public_ping_count: ((since - 72) / 24) as u32,
+                        };
+                        db.put(
+                            key,
+                            serde_json::to_string(&entry)
+                                .expect("serialize PullRequestEntry")
+                                .as_bytes(),
+                        )
+                        .unwrap();
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
 }
