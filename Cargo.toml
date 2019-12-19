@@ -1,5 +1,5 @@
 [package]
-name = "parity-pingbot"
+name = "parity-processbot"
 version = "0.1.0"
 authors = ["Joseph Mark <sjeohp@gmail.com>"]
 edition = "2018"
@@ -7,19 +7,21 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-glitch-in-the-matrix = { git = "https://github.com/paritytech/glitch-in-the-matrix" }
-futures = "0.1"
-tokio-core = "0.1"
-failure = "*"
-graphql_client = "0.8"
-serde = "^1.0"
-serde_json = "1.0"
-reqwest = "^0.9"
-dotenv = "^0.15"
-log = "^0.4"
-env_logger = "^0.5"
-rocksdb = "0.13"
-tokio = { version = "0.2", features = ["full"] }
+byteorder = "1.3.2"
 csv = "1.1"
+dotenv = "^0.15"
+env_logger = "^0.7"
+failure = "*"
+futures = "0.1"
+gm = { git = "https://github.com/paritytech/glitch-in-the-matrix", package="glitch-in-the-matrix" }
+hyperx = "0.15.2"
+log = "^0.4"
+reqwest = "^0.9"
+rocksdb = "0.13"
+serde = "^1.0"
+serde_json = "1.0.44"
+snafu = { version = "0.6.0", features = ["backtraces"] }
+tokio = { version = "0.2", features = ["full"] }
 curl = "0.4"
-bitflags = "1.2"
+curl-sys = "0.4"
+tokio-core = "0.1"

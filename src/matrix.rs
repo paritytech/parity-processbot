@@ -1,7 +1,10 @@
-use crate::developer::Developer;
 use curl::easy::Easy;
+use serde::*;
 use serde::{Deserialize, Serialize};
+use snafu::ResultExt;
 use std::io::{stdout, Write};
+
+use crate::{error, Result};
 
 #[derive(Deserialize, Debug)]
 pub struct LoginResponse {
@@ -13,12 +16,20 @@ pub struct CreateRoomResponse {
 	pub room_id: String,
 }
 
-pub fn login(homeserver: &str, username: &str, password: &str) -> LoginResponse {
+/// Maps the response into an error if it's not a success.
+fn map_curl_error<T>(err: curl::Error) -> Result<T> {
+	Err(error::Error::Curl {
+		status: err.code(),
+		body: err.extra_description().map(|s| s.to_owned()),
+	})
+}
+
+pub fn login(homeserver: &str, username: &str, password: &str) -> Result<LoginResponse> {
 	let mut dst = Vec::new();
 	let mut handle = Easy::new();
 	handle
 		.url(format!("{}/_matrix/client/r0/login", homeserver).as_ref())
-		.unwrap();
+		.or_else(map_curl_error)?;
 	handle
                 .post_fields_copy(
                         format!(
@@ -27,7 +38,7 @@ pub fn login(homeserver: &str, username: &str, password: &str) -> LoginResponse 
                         )
                         .as_bytes(),
                 )
-                .unwrap();
+                .or_else(map_curl_error)?;
 	{
 		let mut transfer = handle.transfer();
 		transfer
@@ -35,13 +46,13 @@ pub fn login(homeserver: &str, username: &str, password: &str) -> LoginResponse 
 				dst.extend_from_slice(data);
 				Ok(data.len())
 			})
-			.unwrap();
-		transfer.perform().unwrap();
+			.or_else(map_curl_error)?;
+		transfer.perform().or_else(map_curl_error)?;
 	}
-	serde_json::from_str(dbg!(String::from_utf8(dst).as_ref()).unwrap()).unwrap()
+	serde_json::from_str(dbg!(String::from_utf8(dst).as_ref()).unwrap()).context(error::Json)
 }
 
-pub fn create_room(homeserver: &str, access_token: &str) -> CreateRoomResponse {
+pub fn create_room(homeserver: &str, access_token: &str) -> Result<CreateRoomResponse> {
 	let mut dst = Vec::new();
 	let mut handle = Easy::new();
 	handle
@@ -52,10 +63,10 @@ pub fn create_room(homeserver: &str, access_token: &str) -> CreateRoomResponse {
 			)
 			.as_ref(),
 		)
-		.unwrap();
+		.or_else(map_curl_error)?;
 	handle
 		.post_fields_copy(format!("{{\"room_alias\":\"\"}}").as_bytes())
-		.unwrap();
+		.or_else(map_curl_error)?;
 	{
 		let mut transfer = handle.transfer();
 		transfer
@@ -63,13 +74,13 @@ pub fn create_room(homeserver: &str, access_token: &str) -> CreateRoomResponse {
 				dst.extend_from_slice(data);
 				Ok(data.len())
 			})
-			.unwrap();
-		transfer.perform().unwrap();
+			.or_else(map_curl_error)?;
+		transfer.perform().or_else(map_curl_error)?;
 	}
-	serde_json::from_str(String::from_utf8(dst).as_ref().unwrap()).unwrap()
+	serde_json::from_str(String::from_utf8(dst).as_ref().unwrap()).context(error::Json)
 }
 
-pub fn invite(homeserver: &str, access_token: &str, room_id: &str, user_id: &str) {
+pub fn invite(homeserver: &str, access_token: &str, room_id: &str, user_id: &str) -> Result<()> {
 	let mut handle = Easy::new();
 	handle
 		.url(
@@ -79,14 +90,14 @@ pub fn invite(homeserver: &str, access_token: &str, room_id: &str, user_id: &str
 			)
 			.as_ref(),
 		)
-		.unwrap();
+		.or_else(map_curl_error)?;
 	handle
 		.post_fields_copy(format!("{{\"user_id\":\"{}\"}}", user_id).as_bytes())
-		.unwrap();
-	handle.perform().unwrap();
+		.or_else(map_curl_error)?;
+	handle.perform().or_else(map_curl_error)
 }
 
-pub fn send_message(homeserver: &str, access_token: &str, room_id: &str, body: &str) {
+pub fn send_message(homeserver: &str, access_token: &str, room_id: &str, body: &str) -> Result<()> {
 	let mut handle = Easy::new();
 	handle
 		.url(
@@ -96,9 +107,9 @@ pub fn send_message(homeserver: &str, access_token: &str, room_id: &str, body: &
 			)
 			.as_ref(),
 		)
-		.unwrap();
+		.or_else(map_curl_error)?;
 	handle
 		.post_fields_copy(format!("{{\"msgtype\":\"m.text\",\"body\":\"{}\"}}", body).as_bytes())
-		.unwrap();
-	handle.perform().unwrap();
+		.or_else(map_curl_error)?;
+	handle.perform().or_else(map_curl_error)
 }
