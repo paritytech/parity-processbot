@@ -324,6 +324,11 @@ pub struct Status {
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProjectInfo {
+        pub room_id: Option<String>,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Links {
 	#[serde(rename = "self")]
 	pub self_link: SelfLink,

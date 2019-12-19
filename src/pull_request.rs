@@ -1,13 +1,27 @@
 use crate::db::*;
-use crate::{error, github, github_bot::GithubBot, Result};
+use crate::{error, github, github_bot::GithubBot, matrix_bot::MatrixBot, Result};
 use rocksdb::DB;
 use snafu::ResultExt;
+use std::time::{Duration, SystemTime};
 
-fn require_reviewer(author: &github::User, repo: &github::Repository) {
+const REPEAT_PING_SECS: i64 = 60 * 60 * 24;
+const FALLBACK_ROOM_ID: &'static str = "!aenJixaHcSKbJOWxYk:matrix.parity.io";
+const ISSUE_MUST_EXIST_MESSAGE: &'static str = "Every pull request must address an issue.";
+const ISSUE_ASSIGNEE_NOTIFICATION: &'static str = "{1} addressing {2} has been opened by {3}. Please reassign the issue or close the pull request.";
+const REQUESTING_REVIEWS_MESSAGE: &'static str = "{1} is in need of reviewers.";
+const STATUS_FAILURE_NOTIFICATION: &'static str = "{1} has failed status checks.";
+
+fn require_reviewer(
+	pull_request: &github::PullRequest,
+	repo: &github::Repository,
+	project_info: &github::ProjectInfo,
+	matrix_bot: &MatrixBot,
+) {
 	let author_is_owner = repo
 		.project_owner()
-		.map_or(false, |owner| owner.id == author.id);
-	let author_is_delegated = repo.delegated_reviewer().as_ref().unwrap_or(&repo.owner).id == author.id;
+		.map_or(false, |owner| owner.id == pull_request.user.id);
+	let author_is_delegated =
+		repo.delegated_reviewer().as_ref().unwrap_or(&repo.owner).id == pull_request.user.id;
 
 	if !author_is_delegated {
 		// require review from delegated reviewer
@@ -15,6 +29,17 @@ fn require_reviewer(author: &github::User, repo: &github::Repository) {
 		// require review from project owner
 	} else {
 		// post a message in the project's Riot channel, requesting a review; repeat this message every 24 hours until a reviewer is assigned.
+		if let Some(room_id) = &project_info.room_id {
+			matrix_bot.send_public_message(
+				&room_id,
+				&REQUESTING_REVIEWS_MESSAGE.replace("{1}", &format!("{}", pull_request.html_url)),
+			);
+		} else {
+			matrix_bot.send_public_message(
+				&FALLBACK_ROOM_ID,
+				&REQUESTING_REVIEWS_MESSAGE.replace("{1}", &format!("{}", pull_request.html_url)),
+			);
+		}
 	}
 
 	/*
@@ -26,14 +51,15 @@ fn require_reviewer(author: &github::User, repo: &github::Repository) {
 
 pub fn handle_pull_request(
 	db: &DB,
-	bot: &GithubBot,
+	github_bot: &GithubBot,
+	matrix_bot: &MatrixBot,
 	pull_request: &github::PullRequest,
 ) -> Result<()> {
 	let pr_id = pull_request.id;
-        let db_key = &format!("{}", pr_id).into_bytes();
+	let db_key = &format!("{}", pr_id).into_bytes();
 	let mut db_entry = DbEntry {
 		actions_taken: NoAction,
-		status_failure_ping_count: 0,
+		status_failure_ping_time: None,
 	};
 	if let Ok(Some(entry)) = db.get_pinned(db_key).map(|v| {
 		v.map(|value| {
@@ -46,9 +72,10 @@ pub fn handle_pull_request(
 
 	let author = &pull_request.user;
 	let repo = &pull_request.repository;
-	let reviews = bot.reviews(pull_request)?;
-	let issue = bot.issue(pull_request)?;
-	let statuses = bot.statuses(pull_request)?;
+	let reviews = github_bot.reviews(pull_request)?;
+	let issue = github_bot.issue(pull_request)?;
+	let statuses = github_bot.statuses(pull_request)?;
+	let project_info = github_bot.project_info(&pull_request.repository)?;
 
 	let author_is_owner = repo.owner.id == author.id;
 	let author_is_whitelisted = repo
@@ -62,26 +89,61 @@ pub fn handle_pull_request(
 			Some(issue) => {
 				if issue
 					.assignee
+					.as_ref()
 					.map_or(false, |issue_assignee| issue_assignee.id == author.id)
 				{
-					require_reviewer(&author, &repo);
+					require_reviewer(&pull_request, &repo, &project_info, matrix_bot);
 				} else {
 					if author_is_owner || author_is_whitelisted {
 						// never true ... ?
 						// assign the issue to the author
-						require_reviewer(&author, &repo);
+						github_bot.assign_author(&repo.name, issue.id, &author.login)?;
+						require_reviewer(&pull_request, &repo, &project_info, matrix_bot);
 					} else if author.is_core_developer() {
 						if db_entry.actions_taken & PullRequestCoreDevAuthorIssueNotAssigned
 							== NoAction
 						{
 							// notify the the issue assignee and project owner through a PM
 							db_entry.actions_taken |= PullRequestCoreDevAuthorIssueNotAssigned;
+							if let Some(assignee) = issue.assignee {
+								matrix_bot.send_private_message(
+									&assignee.riot_id(),
+									&ISSUE_ASSIGNEE_NOTIFICATION
+										.replace("{1}", &format!("{}", pull_request.html_url))
+										.replace("{2}", &format!("{}", issue.html_url))
+										.replace("{3}", &format!("{}", author.login)),
+								);
+							}
+							matrix_bot.send_private_message(
+								&repo.owner.riot_id(),
+								&ISSUE_ASSIGNEE_NOTIFICATION
+									.replace("{1}", &format!("{}", pull_request.html_url))
+									.replace("{2}", &format!("{}", issue.html_url))
+									.replace("{3}", &format!("{}", author.login)),
+							);
 						} else if db_entry.actions_taken
 							& PullRequestCoreDevAuthorIssueNotAssigned24h
 							== NoAction
 						{
 							// if after 24 hours there is no change, then send a message into the project's Riot channel
 							db_entry.actions_taken |= PullRequestCoreDevAuthorIssueNotAssigned24h;
+							if let Some(room_id) = project_info.room_id {
+								matrix_bot.send_public_message(
+									&room_id,
+									&ISSUE_ASSIGNEE_NOTIFICATION
+										.replace("{1}", &format!("{}", pull_request.html_url))
+										.replace("{2}", &format!("{}", issue.html_url))
+										.replace("{3}", &format!("{}", author.login)),
+								);
+							} else {
+								matrix_bot.send_public_message(
+									&FALLBACK_ROOM_ID,
+									&ISSUE_ASSIGNEE_NOTIFICATION
+										.replace("{1}", &format!("{}", pull_request.html_url))
+										.replace("{2}", &format!("{}", issue.html_url))
+										.replace("{3}", &format!("{}", author.login)),
+								);
+							}
 						} else if db_entry.actions_taken
 							& PullRequestCoreDevAuthorIssueNotAssigned72h
 							== NoAction
@@ -97,6 +159,7 @@ pub fn handle_pull_request(
 			None => {
 				// leave a message that a corresponding issue must exist for each PR
 				// close the PR
+				github_bot.add_comment(&repo.name, pull_request.id, &ISSUE_MUST_EXIST_MESSAGE);
 			}
 		}
 	}
@@ -109,22 +172,33 @@ pub fn handle_pull_request(
 	});
 	if let Some(status) = statuses.first() {
 		if status.state == "failure" {
-			if db_entry.actions_taken & PullRequestStatusFailure == NoAction {
-				// notify PR author by PM
-				db_entry.actions_taken |= PullRequestStatusFailure;
-			} else {
-				// as long as it continues, repeat every 24 hours.
+			// notify PR author by PM every 24 hours
+			if db_entry.status_failure_ping_time.map_or(true, |ping_time| {
+				ping_time..elapsed().as_secs() > REPEAT_PING_SECS
+			}) {
+				db_entry.status_failure_ping_time = Some(SystemTime::now());
+				matrix_bot.send_private_message(
+					&pull_request.user.riot_id(),
+					&STATUS_FAILURE_NOTIFICATION
+						.replace("{1}", &format!("{}", pull_request.html_url)),
+				);
 			}
-		} else if status.state == "success" && owner_approved {
-			// merge & delete branch
+		} else if status.state == "success" {
+			if owner_approved {
+				// merge & delete branch
+				db.delete(db_key).context(error::Db)?;
+				return Ok(());
+			} else {
+				db_entry.status_failure_ping_time = None;
+			}
 		}
 	} else {
 		// pull request has no status
 	}
 
-	db.delete(db_key)
-		.context(error::Db)?;
-	db.put(db_key,
+	db.delete(db_key).context(error::Db)?;
+	db.put(
+		db_key,
 		serde_json::to_string(&db_entry)
 			.expect("serialize db entry")
 			.as_bytes(),

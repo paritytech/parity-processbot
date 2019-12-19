@@ -121,21 +121,26 @@ impl GithubBot {
 		self.get(&pull_request.links.statuses_link.href)
 	}
 
+        /// Returns the project info associated with a repository.
+        pub fn project_info(&self, repository: &github::Repository) -> Result<github::ProjectInfo> {
+                unimplemented!();
+        }
+
 	/// Creates a comment in the r
-	pub fn add_comment<A, B>(&self, repo: A, pr: i64, comment: B) -> Result<()>
+	pub fn add_comment<A, B>(&self, repo_name: A, issue_id: i64, comment: B) -> Result<()>
 	where
 		A: AsRef<str>,
 		B: AsRef<str>,
 	{
 		log::info!("Adding comment");
-		let repo = repo.as_ref();
+		let repo = repo_name.as_ref();
 		let comment = comment.as_ref();
 		let url = format!(
-			"{base}/repos/{org}/{repo}/issues/{pr}/comments",
+			"{base}/repos/{org}/{repo}/issues/{issue_id}/comments",
 			base = Self::BASE_URL,
 			org = self.organisation.login,
 			repo = repo,
-			pr = pr
+			issue_id = issue_id 
 		);
 		log::info!("POST {}", url);
 
@@ -149,19 +154,19 @@ impl GithubBot {
 			.map(|_| ())
 	}
 
-	pub fn assign_author<A, B>(&self, repo: A, pr: i64, author: B) -> Result<()>
+	pub fn assign_author<A, B>(&self, repo_name: A, issue_id: i64, author_login: B) -> Result<()>
 	where
 		A: AsRef<str>,
 		B: AsRef<str>,
 	{
-		let repo = repo.as_ref();
-		let author = author.as_ref();
+		let repo = repo_name.as_ref();
+		let author = author_login.as_ref();
 		let base = &self.organisation.repos_url;
 		let url = format!(
-			"{base}/{repo}/issues/{pr}/assignees",
+			"{base}/{repo}/issues/{issue_id}/assignees",
 			base = base,
 			repo = repo,
-			pr = pr
+			issue_id = issue_id
 		);
 
 		self.client
