@@ -1,11 +1,9 @@
-use gm::types::room::Room;
-use gm::MatrixClient;
 use rocksdb::DB;
 use std::collections::HashMap;
 use std::fs::File;
 use std::time::Duration;
-use tokio_core::reactor::Core;
 
+use parity_processbot::bots;
 use parity_processbot::github_bot;
 use parity_processbot::matrix_bot;
 
@@ -34,6 +32,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 		.parse::<u64>()
 		.expect("parse tick_secs");
 
+	/*
 	let mut engineers: HashMap<String, github_bot::Engineer> = HashMap::new();
 	let mut rdr =
 		csv::Reader::from_reader(File::open(engineers_path).expect("open engineers file"));
@@ -43,33 +42,20 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 			engineers.insert(github.clone(), record);
 		}
 	}
+	*/
 
 	let db = DB::open_default(db_path)?;
-	let mut core = Core::new()?;
-	let mx: MatrixClient = core
-		.run(MatrixClient::login_password(
-			&matrix_user,
-			&matrix_password,
-			&matrix_homeserver,
-			&core.handle(),
-		))
-		.unwrap();
 
 	let matrix_bot =
 		matrix_bot::MatrixBot::new(&matrix_homeserver, &matrix_user, &matrix_password)?;
 
-	let github_bot =
-		github_bot::GithubBot::new(&github_organization, &github_token)?;
-
-	let room = Room::from_id(matrix_channel_id);
-	let mut matrix_sender = github_bot::MatrixSender { core, mx, room };
+	let github_bot = github_bot::GithubBot::new(&github_organization, &github_token)?;
 
 	println!("[+] Connected to {} as {}", matrix_homeserver, matrix_user);
 
 	let mut interval = tokio::time::interval(Duration::from_secs(tick_secs));
 	loop {
 		interval.tick().await;
-		github_bot::update(&db, &github_bot)?;
-		github_bot::act(&db, &github_bot, &engineers, &mut matrix_sender)?;
+		bots::update(&db, &github_bot, &matrix_bot)?;
 	}
 }

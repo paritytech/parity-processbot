@@ -2,12 +2,12 @@ use crate::{error, github, github_bot::GithubBot, Result};
 
 impl github::Repository {
 	pub fn project_owner(&self) -> Option<github::User> {
-                unimplemented!();
-        }
+		unimplemented!();
+	}
 	pub fn delegated_reviewer(&self) -> Option<github::User> {
-                unimplemented!();
-        }
+		unimplemented!();
+	}
 	pub fn whitelist(&self) -> Vec<github::User> {
-                unimplemented!();
-        }
+		unimplemented!();
+	}
 }

@@ -4,7 +4,7 @@ use rocksdb::DB;
 use snafu::ResultExt;
 use std::time::{Duration, SystemTime};
 
-const REPEAT_PING_SECS: i64 = 60 * 60 * 24;
+const REPEAT_PING_SECS: u64 = 60 * 60 * 24;
 const FALLBACK_ROOM_ID: &'static str = "!aenJixaHcSKbJOWxYk:matrix.parity.io";
 const ISSUE_MUST_EXIST_MESSAGE: &'static str = "Every pull request must address an issue.";
 const ISSUE_ASSIGNEE_NOTIFICATION: &'static str = "{1} addressing {2} has been opened by {3}. Please reassign the issue or close the pull request.";
@@ -174,7 +174,9 @@ pub fn handle_pull_request(
 		if status.state == "failure" {
 			// notify PR author by PM every 24 hours
 			if db_entry.status_failure_ping_time.map_or(true, |ping_time| {
-				ping_time..elapsed().as_secs() > REPEAT_PING_SECS
+				ping_time
+					.elapsed()
+					.map_or(true, |elapsed| elapsed.as_secs() > REPEAT_PING_SECS)
 			}) {
 				db_entry.status_failure_ping_time = Some(SystemTime::now());
 				matrix_bot.send_private_message(

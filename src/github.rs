@@ -92,7 +92,7 @@ pub struct PullRequest {
 	pub author_association: Option<String>,
 	pub draft: Option<bool>,
 	#[serde(rename = "repo")]
-        pub repository: Repository,
+	pub repository: Repository,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -102,11 +102,11 @@ pub struct Review {
 	pub html_url: String,
 	pub user: User,
 	pub body: Option<String>,
-        pub commit_id: String,
+	pub commit_id: String,
 	pub state: String,
-        pub pull_request_url: String,
+	pub pull_request_url: String,
 	#[serde(rename = "_links")]
-        pub links: Links,
+	pub links: Links,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -124,11 +124,11 @@ pub struct Issue {
 	pub milestone: Option<Milestone>,
 	pub locked: bool,
 	pub active_lock_reason: Option<String>,
-        pub pull_request: Option<PullRequest>,
+	pub pull_request: Option<PullRequest>,
 	pub created_at: String,
 	pub updated_at: String,
 	pub closed_at: Option<String>,
-        pub repository: Repository,
+	pub repository: Repository,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -325,7 +325,7 @@ pub struct Status {
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ProjectInfo {
-        pub room_id: Option<String>,
+	pub room_id: Option<String>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]

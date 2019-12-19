@@ -13,7 +13,6 @@ dotenv = "^0.15"
 env_logger = "^0.7"
 failure = "*"
 futures = "0.1"
-gm = { git = "https://github.com/paritytech/glitch-in-the-matrix", package="glitch-in-the-matrix" }
 hyperx = "0.15.2"
 log = "^0.4"
 reqwest = "^0.9"
@@ -24,4 +23,3 @@ snafu = { version = "0.6.0", features = ["backtraces"] }
 tokio = { version = "0.2", features = ["full"] }
 curl = "0.4"
 curl-sys = "0.4"
-tokio-core = "0.1"
