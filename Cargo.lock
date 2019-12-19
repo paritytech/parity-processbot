@@ -1059,7 +1059,6 @@ dependencies = [
 name = "parity-pingbot"
 version = "0.1.0"
 dependencies = [
- "byteorder",
  "csv",
  "dotenv",
  "env_logger 0.7.1",

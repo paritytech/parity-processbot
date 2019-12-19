@@ -53,8 +53,6 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             &core.handle(),
         )).unwrap();
 
-    let bot = bot::Bot::new(&github_organization, &github_token)?;
-
     let room = Room::from_id(matrix_channel_id);
     let mut matrix_sender = bot::MatrixSender {
         core,
@@ -62,12 +60,19 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         room,
     };
 
+    let mut bot = bot::BotBuilder::new(github_organization)
+        .matrix(matrix_sender)
+        .db(db)
+        .auth_key(github_token)
+        .engineers(engineers)
+        .finish()?;
+
     println!("[+] Connected to {} as {}", matrix_homeserver, matrix_user);
 
     let mut interval = tokio::time::interval(Duration::from_secs(tick_secs));
     loop {
         interval.tick().await;
-        bot::update(&db, &bot)?;
-        bot::act(&db, &bot, &engineers, &mut matrix_sender)?;
+        bot.update()?;
+        bot.act()?;
     }
 }

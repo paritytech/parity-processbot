@@ -33,4 +33,8 @@ pub enum Error {
         status: reqwest::StatusCode,
         body: serde_json::Value,
     },
+
+    /// An error occurred when initialising `Bot`.
+    #[snafu(display("Error creating bot: {}", msg))]
+    BotCreation { msg: String },
 }

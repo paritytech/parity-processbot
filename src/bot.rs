@@ -2,7 +2,6 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::time::SystemTime;
 
-use byteorder::{BigEndian, ByteOrder};
 use gm::room::{NewRoom, RoomExt};
 use gm::types::replies::RoomCreationOptions;
 use gm::types::room::Room;
@@ -10,7 +9,7 @@ use gm::MatrixClient;
 use hyperx::header::TypedHeaders;
 use rocksdb::{IteratorMode, DB};
 use serde::*;
-use snafu::ResultExt;
+use snafu::{OptionExt, ResultExt};
 
 use crate::{error, github, Result};
 
@@ -26,27 +25,35 @@ fn map_response_status(mut val: reqwest::Response) -> Result<reqwest::Response> 
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-enum DbEntry {
-    PullRequest {
-        author_id: i64,
-        author_login: String,
-        created_at: SystemTime,
-        last_ping: Option<SystemTime>,
-        n_participants: u32,
-        repo_name: String,
-    },
+#[derive(Debug, Deserialize, Serialize)]
+pub struct PullRequestData {
+    created_at: SystemTime,
+    engineer: Engineer,
+    gh_metadata: GitHubMetadata,
+    last_ping: Option<SystemTime>,
+    n_participants: u32,
+    project_room: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub enum DbEntry {
+    PullRequest(PullRequestData),
     ReviewRequest {
         created_at: SystemTime,
+        gh_metadata: GitHubMetadata,
         last_ping: Option<SystemTime>,
-        repo_name: String,
-        reviewer_id: i64,
-        pr_number: i64,
-        reviewer_login: String,
+        project_room: String,
+        reviewer: Engineer,
     },
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
+pub struct GitHubMetadata {
+    repo_name: String,
+    pr_number: i64,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Engineer {
     #[serde(rename = "First Name")]
     first_name: String,
@@ -100,38 +107,99 @@ impl<'r> MatrixSender<'r> {
     }
 }
 
-pub struct Bot {
-    client: reqwest::Client,
-    auth_key: String,
-    organisation: github::Organisation,
+#[derive(Default)]
+pub struct BotBuilder<'a> {
+    org: String,
+    client: Option<reqwest::Client>,
+    matrix: Option<MatrixSender<'a>>,
+    db: Option<DB>,
+    auth_key: Option<String>,
+    engineers: Option<HashMap<String, Engineer>>,
 }
 
-impl Bot {
-    const BASE_URL: &'static str = "https://api.github.com";
+impl<'a> BotBuilder<'a> {
+    pub fn new(org: String) -> Self {
+        Self {
+            org,
+            ..Self::default()
+        }
+    }
+
+    pub fn client(mut self, client: reqwest::Client) -> Self {
+        self.client = Some(client);
+        self
+    }
+
+    pub fn matrix(mut self, matrix: MatrixSender<'a>) -> Self {
+        self.matrix = Some(matrix);
+        self
+    }
+
+    pub fn db(mut self, db: DB) -> Self {
+        self.db = Some(db);
+        self
+    }
+
+    pub fn auth_key(mut self, auth_key: String) -> Self {
+        self.auth_key = Some(auth_key);
+        self
+    }
+
+    pub fn engineers(mut self, engineers: HashMap<String, Engineer>) -> Self {
+        self.engineers = Some(engineers);
+        self
+    }
 
     /// Creates a new instance of `Bot` from a GitHub organisation defined by
     /// `org`, and a GitHub authenication key defined by `auth_key`.
     /// # Errors
     /// If the organisation does not exist or `auth_key` does not have sufficent
     /// permissions.
-    pub fn new<A: AsRef<str>, I: Into<String>>(org: A, auth_key: I) -> Result<Self> {
-        let auth_key = auth_key.into();
-        let client = reqwest::Client::new();
+    pub fn finish(self) -> Result<Bot<'a>> {
+        let client = self.client.unwrap_or_else(reqwest::Client::new);
+        let matrix = self.matrix.context(error::BotCreation {
+            msg: "Matrix client missing.",
+        })?;
+        let db = self.db.context(error::BotCreation {
+            msg: "Rocksdb client missing.",
+        })?;
+        let auth_key = self.auth_key.context(error::BotCreation {
+            msg: "GitHub auth key missing.",
+        })?;
+        let engineers = self.engineers.context(error::BotCreation {
+            msg: "Engineers missing.",
+        })?;
 
         let organisation = client
-            .get(&format!("https://api.github.com/orgs/{}", org.as_ref()))
+            .get(&format!("https://api.github.com/orgs/{}", self.org))
             .bearer_auth(&auth_key)
             .send()
             .context(error::Http)?
             .json()
             .context(error::Http)?;
 
-        Ok(Self {
+        Ok(Bot {
             client,
-            organisation,
+            matrix,
+            db,
             auth_key,
+            engineers,
+            organisation,
         })
     }
+}
+
+pub struct Bot<'a> {
+    client: reqwest::Client,
+    matrix: MatrixSender<'a>,
+    db: DB,
+    auth_key: String,
+    engineers: HashMap<String, Engineer>,
+    organisation: github::Organisation,
+}
+
+impl<'a> Bot<'a> {
+    const BASE_URL: &'static str = "https://api.github.com";
 
     /// Returns all of the repositories managed by the organisation.
     pub fn repositories(&self) -> Result<Vec<github::Repository>> {
@@ -238,285 +306,234 @@ impl Bot {
 
         Ok(entities)
     }
-}
 
-pub fn update(db: &DB, bot: &Bot) -> Result<()> {
-    let mut live_ids = vec![];
-    for repo in bot.repositories()? {
-        let prs = bot.pull_requests(&repo)?;
-        for pr in prs {
-            let id_bytes = pr.number.to_be_bytes();
-            live_ids.push(id_bytes.clone());
-            let np = pr.requested_reviewers.len() as u32;
+    /// Attempts to ping someon on GitHub, matrix (private), and matrix (public)
+    /// depending on how long since the last ping. Returns the time it last
+    /// pinged if it did.
+    pub fn ping_person<A>(
+        &mut self,
+        engineer: &Engineer,
+        gh_meta: &GitHubMetadata,
+        project_room: &str,
+        created_at: SystemTime,
+        last_ping: Option<SystemTime>,
+        message: A,
+    ) -> Result<Option<SystemTime>>
+    where
+        A: AsRef<str>,
+    {
+        let message = message.as_ref();
+        // TODO: Make Github login a requirement.
+        let github_login = match engineer.github {
+            Some(ref gh) => gh,
+            _ => return Ok(last_ping),
+        };
+        let since = SystemTime::now()
+            .duration_since(last_ping.unwrap_or(created_at))
+            .expect("should have been ceated in the past")
+            .as_secs()
+            / 3600;
 
-            if let Some(bytes) = db.get_pinned(&id_bytes).context(error::Db)? {
-                let entry = serde_json::from_slice(&bytes).context(error::Json)?;
-                let (author_id, author_login, created_at, last_ping, n_participants, repo_name) =
-                    match entry {
-                        DbEntry::PullRequest {
-                            author_id,
-                            author_login,
+        log::info!("{} hours since last check", since);
+
+        let last_ping = match since {
+            0..=24 if last_ping.is_none() => {
+                self.add_comment(
+                    &gh_meta.repo_name,
+                    gh_meta.pr_number,
+                    format!(
+                        "Hello @{author}, {message}",
+                        author = github_login,
+                        message = message,
+                    ),
+                )?;
+
+                self.assign_author(&gh_meta.repo_name, gh_meta.pr_number, github_login)?;
+
+                Some(SystemTime::now())
+            }
+
+            25..=48 if engineer.riot_id.is_some() => {
+                let riot_id = engineer.riot_id.as_ref().unwrap();
+                // dm author in matrix
+                let message = format!("{author}, {message}", author = riot_id, message = message);
+
+                self.matrix.direct_message(&[&riot_id], &message)?;
+
+                Some(SystemTime::now())
+            }
+
+            49..=72 if engineer.riot_id.is_some() => {
+                let riot_id = engineer.riot_id.as_ref().unwrap();
+                // dm author in matrix
+                let message = format!("{author}, {message}", author = riot_id, message = message);
+                self.matrix.room_message(project_room, &message)?;
+
+                Some(SystemTime::now())
+            }
+
+            _ => last_ping,
+        };
+
+        Ok(last_ping)
+    }
+
+    pub fn update_entry(&self, key: &[u8], entry: DbEntry) -> Result<()> {
+        self.db.delete(&key).context(error::Db)?;
+
+        self.db
+            .put(
+                key,
+                serde_json::to_string(&entry)
+                    .context(error::Json)?
+                    .as_bytes(),
+            )
+            .context(error::Db)
+    }
+
+    pub fn act(&mut self) -> Result<()> {
+        for (key, value) in self.db.iterator(IteratorMode::Start) {
+            let entry: DbEntry =
+                serde_json::from_str(&String::from_utf8_lossy(&value)).context(error::Json)?;
+            log::info!("Checking Entry: {:?}", entry);
+
+            match entry {
+                DbEntry::PullRequest(mut data) => {
+                    if data.n_participants >= 2 {
+                        continue;
+                    } else {
+                        data.last_ping = self.ping_person(
+                            &data.engineer,
+                            &data.gh_metadata,
+                            &data.project_room,
+                            data.created_at,
+                            data.last_ping,
+                            "Please assign at least 2 reviewers.",
+                        )?;
+
+                        self.update_entry(&key, DbEntry::PullRequest(data))?;
+                    }
+                }
+
+                DbEntry::ReviewRequest {
+                    created_at,
+                    last_ping,
+                    project_room,
+                    reviewer,
+                    gh_metadata,
+                } => {
+                    let last_ping = self.ping_person(
+                        &reviewer,
+                        &gh_metadata,
+                        &project_room,
+                        created_at,
+                        last_ping,
+                        "Please review",
+                    )?;
+
+                    self.update_entry(
+                        &key,
+                        DbEntry::ReviewRequest {
                             created_at,
                             last_ping,
-                            n_participants,
-                            repo_name,
-                        } => (
-                            author_id,
-                            author_login,
-                            created_at,
-                            last_ping,
-                            n_participants,
-                            repo_name,
-                        ),
+                            project_room,
+                            reviewer,
+                            gh_metadata,
+                        },
+                    )?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub fn update(&self) -> Result<()> {
+        let mut live_ids = vec![];
+        for repo in self.repositories()? {
+            let prs = self.pull_requests(&repo)?;
+            for pr in prs {
+                let engineer = match self.engineers.get(&pr.user.login) {
+                    Some(eng) => eng,
+                    _ => continue,
+                };
+
+                let id_bytes = pr.id.to_be_bytes();
+                live_ids.push(id_bytes.clone());
+                let np = pr.requested_reviewers.len() as u32;
+
+                if let Some(bytes) = self.db.get_pinned(&id_bytes).context(error::Db)? {
+                    let entry = serde_json::from_slice(&bytes).context(error::Json)?;
+                    let mut data = match entry {
+                        DbEntry::PullRequest(data) => data,
                         _ => unreachable!(),
                     };
 
-                if np != n_participants {
-                    let entry = DbEntry::PullRequest {
-                        author_id,
-                        author_login,
-                        created_at,
-                        last_ping,
-                        n_participants: np,
-                        repo_name,
-                    };
-                    db.put(
-                        id_bytes,
-                        serde_json::to_string(&entry)
-                            .expect("serialize PullRequestEntry")
-                            .as_bytes(),
-                    )
-                    .unwrap();
-                }
-            } else {
-                let entry = DbEntry::PullRequest {
-                    created_at: SystemTime::now(),
-                    last_ping: None,
-                    n_participants: np,
-                    repo_name: repo.name.clone(),
-                    author_id: pr.user.id,
-                    author_login: pr.user.login.clone(),
-                };
-                db.put(
-                    id_bytes,
-                    serde_json::to_string(&entry)
-                        .expect("serialize PullRequestEntry")
-                        .as_bytes(),
-                )
-                .unwrap();
-            }
-
-            for reviewer in pr.requested_reviewers {
-                let reviewer_id_bytes = reviewer.id.to_be_bytes();
-                live_ids.push(reviewer_id_bytes.clone());
-                if db.get_pinned(&reviewer_id_bytes).is_ok() {
-                    let entry = DbEntry::ReviewRequest {
+                    if np != data.n_participants {
+                        data.n_participants = np;
+                        self.db
+                            .put(
+                                id_bytes,
+                                serde_json::to_string(&DbEntry::PullRequest(data))
+                                    .context(error::Json)?
+                                    .as_bytes(),
+                            )
+                            .context(error::Db)?;
+                    }
+                } else {
+                    let data = PullRequestData {
                         created_at: SystemTime::now(),
-                        pr_number: pr.number,
                         last_ping: None,
-                        reviewer_id: reviewer.id,
-                        repo_name: repo.name.clone(),
-                        reviewer_login: reviewer.login.clone(),
+                        n_participants: np,
+                        // TODO: Replace clone with reference.
+                        engineer: engineer.clone(),
+                        // TODO: Fetch project room info.
+                        project_room: "parity-bots".to_string(),
+                        gh_metadata: GitHubMetadata {
+                            repo_name: repo.name.clone(),
+                            pr_number: pr.number,
+                        },
                     };
-                    db.put(
-                        reviewer_id_bytes,
-                        serde_json::to_string(&entry)
-                            .expect("serialize ReviewRequestEntry")
-                            .as_bytes(),
-                    )
-                    .unwrap();
+
+                    self.db
+                        .put(
+                            id_bytes,
+                            serde_json::to_string(&DbEntry::PullRequest(data))
+                                .context(error::Json)?
+                                .as_bytes(),
+                        )
+                        .context(error::Db)?;
+                }
+
+                for reviewer in pr.requested_reviewers {
+                    let reviewer_id_bytes = reviewer.id.to_be_bytes();
+                    live_ids.push(reviewer_id_bytes.clone());
+                    if self.db.get_pinned(&reviewer_id_bytes).is_ok() {
+                        let entry = DbEntry::ReviewRequest {
+                            created_at: SystemTime::now(),
+                            last_ping: None,
+                            // TODO: Replace clone with reference.
+                            reviewer: (*engineer).clone(),
+                            // TODO: Get project room info
+                            project_room: "parity-bots".to_string(),
+                            gh_metadata: GitHubMetadata {
+                                pr_number: pr.number,
+                                repo_name: repo.name.clone(),
+                            },
+                        };
+
+                        self.update_entry(&reviewer_id_bytes, entry)?;
+                    }
                 }
             }
         }
-    }
 
-    // delete dead entries
-    for (key, _) in db.iterator(IteratorMode::Start) {
-        if !live_ids.iter().any(|id| id == &*key) {
-            db.delete(&key).unwrap();
-        }
-    }
-
-    Ok(())
-}
-
-pub fn act(
-    db: &DB,
-    bot: &Bot,
-    engineers: &HashMap<String, Engineer>,
-    matrix_sender: &mut MatrixSender,
-) -> Result<()> {
-    for (key, value) in db.iterator(IteratorMode::Start) {
-        let pr_id = BigEndian::read_i64(&*key);
-        let entry: DbEntry =
-            serde_json::from_str(&String::from_utf8_lossy(&value)).context(error::Json)?;
-        log::info!("Checking Entry: {:?}", entry);
-
-        match entry {
-            DbEntry::PullRequest {
-                author_id,
-                created_at,
-                last_ping,
-                n_participants,
-                ref author_login,
-                ref repo_name,
-            } => {
-                let engineer = match engineers.get(author_login) {
-                    Some(eng) => eng,
-                    _ => continue,
-                };
-
-                if n_participants >= 2 {
-                    continue;
-                }
-
-                let since = SystemTime::now()
-                    .duration_since(last_ping.unwrap_or(created_at))
-                    .expect("should have been ceated in the past")
-                    .as_secs()
-                    / 3600;
-
-                log::info!("{} hours since last check", since);
-
-                let last_ping = match since {
-                    0..=24 if last_ping.is_none() => {
-                        bot.add_comment(
-                            repo_name,
-                            pr_id,
-                            format!(
-                                "Hello @{}, please ensure to assign at \
-                                 least two reviewers, Otherwise this PR will \
-                                 be closed in the near future.",
-                                &author_login
-                            ),
-                        )?;
-
-                        bot.assign_author(repo_name, pr_id, author_login)?;
-
-                        Some(SystemTime::now())
-                    }
-
-                    25..=48 if engineer.riot_id.is_some() => {
-                        let riot_id = engineer.riot_id.as_ref().unwrap();
-                        // dm author in matrix
-                        let message = format!(
-                            "@{author}, please assign at least two reviewers \
-                             to {link}. This PR will close after 72 hours if \
-                             reviewers haven't been assigned.",
-                            author = riot_id,
-                            link = "hello"
-                        );
-
-                        matrix_sender.direct_message(&[&riot_id], &message)?;
-
-                        Some(SystemTime::now())
-                    }
-
-                    49..=72 if engineer.riot_id.is_some() => {
-                        let riot_id = engineer.riot_id.as_ref().unwrap();
-                        // dm author in matrix
-                        let message = format!(
-                            "@{author}, please assign at least two \
-                             reviewers to {link}. This PR will close after \
-                             48 hours if reviewers haven't been assigned.",
-                            author = riot_id,
-                            link = "hello"
-                        );
-
-                        matrix_sender.room_message("substrate", &message)?;
-
-                        Some(SystemTime::now())
-                    }
-
-                    _ => last_ping,
-                };
-
-                // update ping count
-                db.delete(&key).unwrap();
-                let entry = DbEntry::PullRequest {
-                    author_id,
-                    author_login: author_login.clone(),
-                    created_at,
-                    last_ping,
-                    n_participants,
-                    repo_name: repo_name.clone(),
-                };
-                db.put(
-                    key,
-                    serde_json::to_string(&entry)
-                        .expect("serialize PullRequestEntry")
-                        .as_bytes(),
-                )
-                .unwrap();
-            }
-
-            DbEntry::ReviewRequest {
-                created_at,
-                last_ping,
-                repo_name,
-                reviewer_id,
-                pr_number,
-                reviewer_login,
-            } => {
-                let engineer = match engineers.get(&reviewer_login) {
-                    Some(eng) => eng,
-                    _ => continue,
-                };
-
-                let riot_id = match engineer.riot_id {
-                    Some(ref id) => id,
-                    _ => continue,
-                };
-
-                let since = SystemTime::now()
-                    .duration_since(last_ping.unwrap_or(created_at))
-                    .expect("should have been ceated in the past")
-                    .as_secs()
-                    / 3600;
-
-                let last_ping = match since {
-                    24..=48 if last_ping.is_none() => {
-                        bot.add_comment(
-                            &repo_name,
-                            pr_number,
-                            format!("{}, please review.", &reviewer_login),
-                        )?;
-                        Some(SystemTime::now())
-                    }
-                    49..=72 => {
-                        // dm reviewer in matrix
-                        matrix_sender
-                            .direct_message(&[&riot_id], format!("{}, please review.", &riot_id))?;
-                        last_ping
-                    }
-                    73..=128 => {
-                        matrix_sender
-                            .room_message("parity-bots", format!("{}, please review.", &riot_id))?;
-
-                        Some(SystemTime::now())
-                    }
-                    _ => last_ping,
-                };
-
-                // update entry
-                db.delete(&key).unwrap();
-                let entry = DbEntry::ReviewRequest {
-                    created_at,
-                    reviewer_id,
-                    last_ping,
-                    pr_number,
-                    repo_name,
-                    reviewer_login,
-                };
-                db.put(
-                    key,
-                    serde_json::to_string(&entry)
-                        .expect("serialize PullRequestEntry")
-                        .as_bytes(),
-                )
-                .unwrap();
+        // delete dead entries
+        for (key, _) in self.db.iterator(IteratorMode::Start) {
+            if !live_ids.iter().any(|id| id == &*key) {
+                self.db.delete(&key).unwrap();
             }
         }
+
+        Ok(())
     }
-    Ok(())
 }
