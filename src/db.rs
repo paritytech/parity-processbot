@@ -9,6 +9,6 @@ pub const PullRequestCoreDevAuthorIssueNotAssigned72h: u32 = 0b00000100;
 #[derive(Serialize, Deserialize, Debug)]
 pub struct DbEntry {
 	pub actions_taken: u32,
-        pub issue_not_assigned_ping: Option<SystemTime>,
+	pub issue_not_assigned_ping: Option<SystemTime>,
 	pub status_failure_ping: Option<SystemTime>,
 }

@@ -60,7 +60,7 @@ pub fn handle_pull_request(
 	let db_key = &format!("{}", pr_id).into_bytes();
 	let mut db_entry = DbEntry {
 		actions_taken: NoAction,
-                issue_not_assigned_ping: None,
+		issue_not_assigned_ping: None,
 		status_failure_ping: None,
 	};
 	if let Ok(Some(entry)) = db.get_pinned(db_key).map(|v| {
@@ -162,7 +162,7 @@ pub fn handle_pull_request(
 								}
 							}
 							_ => {
-                                                                // if after a further 48 hours there is still no change, then close the PR.
+								// if after a further 48 hours there is still no change, then close the PR.
 								if db_entry.actions_taken
 									& PullRequestCoreDevAuthorIssueNotAssigned72h
 									== NoAction

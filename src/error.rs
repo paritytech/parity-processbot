@@ -1,4 +1,5 @@
 use snafu::{Backtrace, Snafu};
+use crate::Result;
 
 #[derive(Debug, Snafu)]
 #[snafu(visibility = "pub")]
@@ -41,4 +42,11 @@ pub enum Error {
 		status: curl_sys::CURLcode,
 		body: Option<String>,
 	},
+}
+
+pub fn map_curl_error<T>(err: curl::Error) -> Result<T> {
+	Err(Error::Curl {
+		status: err.code(),
+		body: err.extra_description().map(|s| s.to_owned()),
+	})
 }

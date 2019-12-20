@@ -20,6 +20,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
 	dotenv::dotenv().ok();
 	let db_path = dotenv::var("DB_PATH").expect("DB_PATH");
+	let bamboo_token = dotenv::var("BAMBOO_TOKEN").expect("BAMBOO_TOKEN");
 	let github_organization = dotenv::var("GITHUB_ORGANIZATION").expect("GITHUB_ORGANIZATION");
 	let github_token = dotenv::var("GITHUB_TOKEN").expect("GITHUB_TOKEN");
 	let matrix_homeserver = dotenv::var("MATRIX_HOMESERVER").expect("MATRIX_HOMESERVER");
