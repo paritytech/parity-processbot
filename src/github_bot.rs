@@ -2,26 +2,25 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::time::SystemTime;
 
-use byteorder::{BigEndian, ByteOrder};
+use byteorder::{
+	BigEndian,
+	ByteOrder,
+};
 use futures::future::Future;
 use hyperx::header::TypedHeaders;
-use rocksdb::{IteratorMode, DB};
+use rocksdb::{
+	IteratorMode,
+	DB,
+};
 use serde::*;
 use snafu::ResultExt;
 
-use crate::{error, github, pull_request::handle_pull_request, Result};
-
-/// Maps the response into an error if it's not a success.
-fn map_response_status(mut val: reqwest::Response) -> Result<reqwest::Response> {
-	if val.status().is_success() {
-		Ok(val)
-	} else {
-		Err(error::Error::Response {
-			status: val.status(),
-			body: val.json().context(error::Http)?,
-		})
-	}
-}
+use crate::{
+	error,
+	github,
+	pull_request::handle_pull_request,
+	Result,
+};
 
 pub struct GithubBot {
 	client: reqwest::Client,
@@ -110,7 +109,7 @@ impl GithubBot {
 			.json(&serde_json::json!({ "body": comment }))
 			.send()
 			.context(error::Http)
-			.and_then(map_response_status)
+			.and_then(error::map_response_status)
 			.map(|_| ())
 	}
 

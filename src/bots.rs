@@ -1,23 +1,37 @@
+use byteorder::{
+	BigEndian,
+	ByteOrder,
+};
+use futures::future::Future;
+use hyperx::header::TypedHeaders;
+use rocksdb::{
+	IteratorMode,
+	DB,
+};
+use serde::*;
+use snafu::ResultExt;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::time::SystemTime;
 
-use byteorder::{BigEndian, ByteOrder};
-use futures::future::Future;
-use hyperx::header::TypedHeaders;
-use rocksdb::{IteratorMode, DB};
-use serde::*;
-use snafu::ResultExt;
-
 use crate::{
-	error, github_bot::GithubBot, matrix_bot::MatrixBot, pull_request::handle_pull_request, Result,
+	error,
+	github_bot::GithubBot,
+	matrix_bot::MatrixBot,
+	pull_request::handle_pull_request,
+	Result,
 };
 
-pub fn update(db: &DB, github_bot: &GithubBot, matrix_bot: &MatrixBot) -> Result<()> {
+pub fn update(
+	db: &DB,
+	github_bot: &GithubBot,
+	matrix_bot: &MatrixBot,
+	github_to_matrix: &HashMap<String, String>,
+) -> Result<()> {
 	for repo in github_bot.repositories()? {
 		let prs = github_bot.pull_requests(&repo)?;
 		for pr in prs {
-			handle_pull_request(db, github_bot, matrix_bot, &pr)?;
+			handle_pull_request(db, github_bot, matrix_bot, github_to_matrix, &pr)?;
 		}
 	}
 	Ok(())

@@ -1,4 +1,9 @@
-use crate::{error, github, github_bot::GithubBot, Result};
+use crate::{
+	error,
+	github,
+	github_bot::GithubBot,
+	Result,
+};
 
 impl github::User {
 	pub fn riot_id(&self) -> String {

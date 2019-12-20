@@ -1,10 +1,21 @@
+use crate::{
+	error,
+	Result,
+};
 use curl::easy::Easy;
+use futures::stream::FuturesUnordered;
+use rayon::prelude::*;
 use serde::*;
-use serde::{Deserialize, Serialize};
+use serde::{
+	Deserialize,
+	Serialize,
+};
 use snafu::ResultExt;
-use std::io::{stdout, Write};
-
-use crate::{error, Result};
+use std::collections::HashMap;
+use std::io::{
+	stdout,
+	Write,
+};
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -26,9 +37,11 @@ pub struct EmployeeResponse {
 	id: String,
 	#[serde(rename = "customRiotID")]
 	riot_id: Option<String>,
+	#[serde(rename = "customGithub")]
+	github: Option<String>,
 }
 
-pub fn get_employees_directory(access_token: &str) -> Result<EmployeesDirectoryResponse> {
+fn get_employees_directory(access_token: &str) -> Result<EmployeesDirectoryResponse> {
 	let mut dst = Vec::new();
 	let mut handle = Easy::new();
 	handle
@@ -61,11 +74,11 @@ pub fn get_employees_directory(access_token: &str) -> Result<EmployeesDirectoryR
 	serde_json::from_str(String::from_utf8(dst).as_ref().unwrap()).context(error::Json)
 }
 
-pub fn get_employee(access_token: &str, employee_id: &str) -> Result<EmployeeResponse> {
+fn get_employee(access_token: &str, employee_id: &str) -> Result<EmployeeResponse> {
 	let mut dst = Vec::new();
 	let mut handle = Easy::new();
 	handle
-                .url(format!("https://api.bamboohr.com/api/gateway.php/parity/v1/employees/{}/?fields=customRiotID", employee_id).as_ref())
+                .url(format!("https://api.bamboohr.com/api/gateway.php/parity/v1/employees/{}/?fields=customGithub%2CcustomRiotID", employee_id).as_ref())
 		.or_else(error::map_curl_error)?;
 	handle
 		.username(access_token)
@@ -91,7 +104,29 @@ pub fn get_employee(access_token: &str, employee_id: &str) -> Result<EmployeeRes
 			.or_else(error::map_curl_error)?;
 		transfer.perform().or_else(error::map_curl_error)?;
 	}
-	serde_json::from_str(dbg!(String::from_utf8(dst).as_ref().unwrap())).context(error::Json)
+	serde_json::from_str(String::from_utf8(dst).as_ref().unwrap()).context(error::Json)
+}
+
+pub fn github_to_matrix(access_token: &str) -> Result<HashMap<String, String>> {
+	get_employees_directory(&access_token).map(|response| {
+		response
+			.employees
+			.into_iter()
+			.filter_map(|EmployeesDirectoryInnerResponse { id, .. }| {
+										get_employee(&access_token, &id).ok().and_then(
+						|EmployeeResponse {
+						     github, riot_id, ..
+						 }| {
+							if github.is_some() && riot_id.is_some() {
+								Some((github.unwrap(), riot_id.unwrap()))
+							} else {
+								None
+							}
+						},
+					)
+			})
+			.collect::<HashMap<String, String>>()
+	})
 }
 
 #[cfg(test)]

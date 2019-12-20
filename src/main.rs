@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::time::Duration;
 
+use parity_processbot::bamboo;
 use parity_processbot::bots;
 use parity_processbot::github_bot;
 use parity_processbot::matrix_bot;
@@ -33,19 +34,11 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 		.parse::<u64>()
 		.expect("parse tick_secs");
 
-	/*
-	let mut engineers: HashMap<String, github_bot::Engineer> = HashMap::new();
-	let mut rdr =
-		csv::Reader::from_reader(File::open(engineers_path).expect("open engineers file"));
-	for result in rdr.deserialize() {
-		let record: github_bot::Engineer = result?;
-		if let Some(ref github) = record.github {
-			engineers.insert(github.clone(), record);
-		}
-	}
-	*/
-
 	let db = DB::open_default(db_path)?;
+
+//        rayon::ThreadPoolBuilder::new().num_threads(22).build_global().unwrap();
+	let github_to_matrix = dbg!(bamboo::github_to_matrix(&bamboo_token))?;
+	return Ok(());
 
 	let matrix_bot =
 		matrix_bot::MatrixBot::new(&matrix_homeserver, &matrix_user, &matrix_password)?;
@@ -57,6 +50,6 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 	let mut interval = tokio::time::interval(Duration::from_secs(tick_secs));
 	loop {
 		interval.tick().await;
-		bots::update(&db, &github_bot, &matrix_bot)?;
+		bots::update(&db, &github_bot, &matrix_bot, &github_to_matrix)?;
 	}
 }

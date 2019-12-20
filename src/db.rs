@@ -1,6 +1,15 @@
-use rocksdb::{IteratorMode, DB};
-use serde::{Deserialize, Serialize};
-use std::time::{Duration, SystemTime};
+use rocksdb::{
+	IteratorMode,
+	DB,
+};
+use serde::{
+	Deserialize,
+	Serialize,
+};
+use std::time::{
+	Duration,
+	SystemTime,
+};
 
 /// Bitflag indicating no action has been taken
 pub const NoAction: u32 = 0b00000000;

@@ -1,8 +1,18 @@
 use crate::db::*;
-use crate::{error, github, github_bot::GithubBot, matrix_bot::MatrixBot, Result};
+use crate::{
+	error,
+	github,
+	github_bot::GithubBot,
+	matrix_bot::MatrixBot,
+	Result,
+};
 use rocksdb::DB;
 use snafu::ResultExt;
-use std::time::{Duration, SystemTime};
+use std::collections::HashMap;
+use std::time::{
+	Duration,
+	SystemTime,
+};
 
 /*
  * Ping periods measured in seconds
@@ -21,6 +31,7 @@ fn require_reviewer(
 	repo: &github::Repository,
 	project_info: &github::ProjectInfo,
 	matrix_bot: &MatrixBot,
+	github_to_matrix: &HashMap<String, String>,
 ) {
 	let author_is_owner = repo
 		.project_owner()
@@ -58,6 +69,7 @@ pub fn handle_pull_request(
 	db: &DB,
 	github_bot: &GithubBot,
 	matrix_bot: &MatrixBot,
+	github_to_matrix: &HashMap<String, String>,
 	pull_request: &github::PullRequest,
 ) -> Result<()> {
 	let pr_id = pull_request.id;
@@ -98,13 +110,25 @@ pub fn handle_pull_request(
 					.as_ref()
 					.map_or(false, |issue_assignee| issue_assignee.id == author.id)
 				{
-					require_reviewer(&pull_request, &repo, &project_info, matrix_bot);
+					require_reviewer(
+						&pull_request,
+						&repo,
+						&project_info,
+						matrix_bot,
+						github_to_matrix,
+					);
 				} else {
 					if author_is_owner || author_is_whitelisted {
 						// never true ... ?
 						// assign the issue to the author
 						github_bot.assign_author(&repo.name, issue.id, &author.login)?;
-						require_reviewer(&pull_request, &repo, &project_info, matrix_bot);
+						require_reviewer(
+							&pull_request,
+							&repo,
+							&project_info,
+							matrix_bot,
+							github_to_matrix,
+						);
 					} else if author.is_core_developer() {
 						let days = db_entry
 							.issue_not_assigned_ping

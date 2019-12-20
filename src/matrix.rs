@@ -1,10 +1,19 @@
 use curl::easy::Easy;
 use serde::*;
-use serde::{Deserialize, Serialize};
+use serde::{
+	Deserialize,
+	Serialize,
+};
 use snafu::ResultExt;
-use std::io::{stdout, Write};
+use std::io::{
+	stdout,
+	Write,
+};
 
-use crate::{error, Result};
+use crate::{
+	error,
+	Result,
+};
 
 #[derive(Deserialize, Debug)]
 pub struct LoginResponse {
