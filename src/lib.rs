@@ -1,5 +1,3 @@
-#![feature(result_map_or)]
-
 pub mod github_bot;
 pub mod matrix_bot;
 pub mod pull_request;
