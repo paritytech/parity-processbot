@@ -4,7 +4,8 @@ use rocksdb::DB;
 use snafu::ResultExt;
 use std::time::{Duration, SystemTime};
 
-const REPEAT_PING_SECS: u64 = 60 * 60 * 24;
+const STATUS_FAILURE_PING_PERIOD: u64 = 3600 * 24;
+const ISSUE_NOT_ASSIGNED_PING_PERIOD: u64 = 3600 * 24;
 const FALLBACK_ROOM_ID: &'static str = "!aenJixaHcSKbJOWxYk:matrix.parity.io";
 const ISSUE_MUST_EXIST_MESSAGE: &'static str = "Every pull request must address an issue.";
 const ISSUE_ASSIGNEE_NOTIFICATION: &'static str = "{1} addressing {2} has been opened by {3}. Please reassign the issue or close the pull request.";
@@ -59,7 +60,8 @@ pub fn handle_pull_request(
 	let db_key = &format!("{}", pr_id).into_bytes();
 	let mut db_entry = DbEntry {
 		actions_taken: NoAction,
-		status_failure_ping_time: None,
+                issue_not_assigned_ping: None,
+		status_failure_ping: None,
 	};
 	if let Ok(Some(entry)) = db.get_pinned(db_key).map(|v| {
 		v.map(|value| {
@@ -100,59 +102,76 @@ pub fn handle_pull_request(
 						github_bot.assign_author(&repo.name, issue.id, &author.login)?;
 						require_reviewer(&pull_request, &repo, &project_info, matrix_bot);
 					} else if author.is_core_developer() {
-						if db_entry.actions_taken & PullRequestCoreDevAuthorIssueNotAssigned
-							== NoAction
-						{
-							// notify the the issue assignee and project owner through a PM
-							db_entry.actions_taken |= PullRequestCoreDevAuthorIssueNotAssigned;
-							if let Some(assignee) = issue.assignee {
+						let days = db_entry
+							.issue_not_assigned_ping
+							.and_then(|ping| ping.elapsed().ok())
+							.map(|elapsed| elapsed.as_secs() / ISSUE_NOT_ASSIGNED_PING_PERIOD);
+						match days {
+							None => {
+								// notify the the issue assignee and project owner through a PM
+								db_entry.issue_not_assigned_ping = Some(SystemTime::now());
+								if let Some(assignee) = issue.assignee {
+									matrix_bot.send_private_message(
+										&assignee.riot_id(),
+										&ISSUE_ASSIGNEE_NOTIFICATION
+											.replace("{1}", &format!("{}", pull_request.html_url))
+											.replace("{2}", &format!("{}", issue.html_url))
+											.replace("{3}", &format!("{}", author.login)),
+									);
+								}
 								matrix_bot.send_private_message(
-									&assignee.riot_id(),
+									&repo.owner.riot_id(),
 									&ISSUE_ASSIGNEE_NOTIFICATION
 										.replace("{1}", &format!("{}", pull_request.html_url))
 										.replace("{2}", &format!("{}", issue.html_url))
 										.replace("{3}", &format!("{}", author.login)),
 								);
 							}
-							matrix_bot.send_private_message(
-								&repo.owner.riot_id(),
-								&ISSUE_ASSIGNEE_NOTIFICATION
-									.replace("{1}", &format!("{}", pull_request.html_url))
-									.replace("{2}", &format!("{}", issue.html_url))
-									.replace("{3}", &format!("{}", author.login)),
-							);
-						} else if db_entry.actions_taken
-							& PullRequestCoreDevAuthorIssueNotAssigned24h
-							== NoAction
-						{
-							// if after 24 hours there is no change, then send a message into the project's Riot channel
-							db_entry.actions_taken |= PullRequestCoreDevAuthorIssueNotAssigned24h;
-							if let Some(room_id) = project_info.room_id {
-								matrix_bot.send_public_message(
-									&room_id,
-									&ISSUE_ASSIGNEE_NOTIFICATION
-										.replace("{1}", &format!("{}", pull_request.html_url))
-										.replace("{2}", &format!("{}", issue.html_url))
-										.replace("{3}", &format!("{}", author.login)),
-								);
-							} else {
-								matrix_bot.send_public_message(
-									&FALLBACK_ROOM_ID,
-									&ISSUE_ASSIGNEE_NOTIFICATION
-										.replace("{1}", &format!("{}", pull_request.html_url))
-										.replace("{2}", &format!("{}", issue.html_url))
-										.replace("{3}", &format!("{}", author.login)),
-								);
+							Some(0) => { /* do nothing */ }
+							Some(1) | Some(2) => {
+								// if after 24 hours there is no change, then send a message into the project's Riot channel
+								if db_entry.actions_taken
+									& PullRequestCoreDevAuthorIssueNotAssigned24h
+									== NoAction
+								{
+									db_entry.actions_taken |=
+										PullRequestCoreDevAuthorIssueNotAssigned24h;
+									if let Some(room_id) = project_info.room_id {
+										matrix_bot.send_public_message(
+											&room_id,
+											&ISSUE_ASSIGNEE_NOTIFICATION
+												.replace(
+													"{1}",
+													&format!("{}", pull_request.html_url),
+												)
+												.replace("{2}", &format!("{}", issue.html_url))
+												.replace("{3}", &format!("{}", author.login)),
+										);
+									} else {
+										matrix_bot.send_public_message(
+											&FALLBACK_ROOM_ID,
+											&ISSUE_ASSIGNEE_NOTIFICATION
+												.replace(
+													"{1}",
+													&format!("{}", pull_request.html_url),
+												)
+												.replace("{2}", &format!("{}", issue.html_url))
+												.replace("{3}", &format!("{}", author.login)),
+										);
+									}
+								}
 							}
-						} else if db_entry.actions_taken
-							& PullRequestCoreDevAuthorIssueNotAssigned72h
-							== NoAction
-						{
-							// if after a further 48 hours there is still no change, then close the PR.
-							db_entry.actions_taken |= PullRequestCoreDevAuthorIssueNotAssigned72h;
+							_ => {
+                                                                // if after a further 48 hours there is still no change, then close the PR.
+								if db_entry.actions_taken
+									& PullRequestCoreDevAuthorIssueNotAssigned72h
+									== NoAction
+								{
+									db_entry.actions_taken |=
+										PullRequestCoreDevAuthorIssueNotAssigned72h;
+								}
+							}
 						}
-					} else {
-						// do nothing
 					}
 				}
 			}
@@ -173,12 +192,12 @@ pub fn handle_pull_request(
 	if let Some(status) = statuses.first() {
 		if status.state == "failure" {
 			// notify PR author by PM every 24 hours
-			if db_entry.status_failure_ping_time.map_or(true, |ping_time| {
-				ping_time
-					.elapsed()
-					.map_or(true, |elapsed| elapsed.as_secs() > REPEAT_PING_SECS)
+			if db_entry.status_failure_ping.map_or(true, |ping_time| {
+				ping_time.elapsed().map_or(true, |elapsed| {
+					elapsed.as_secs() > STATUS_FAILURE_PING_PERIOD
+				})
 			}) {
-				db_entry.status_failure_ping_time = Some(SystemTime::now());
+				db_entry.status_failure_ping = Some(SystemTime::now());
 				matrix_bot.send_private_message(
 					&pull_request.user.riot_id(),
 					&STATUS_FAILURE_NOTIFICATION
@@ -191,7 +210,7 @@ pub fn handle_pull_request(
 				db.delete(db_key).context(error::Db)?;
 				return Ok(());
 			} else {
-				db_entry.status_failure_ping_time = None;
+				db_entry.status_failure_ping = None;
 			}
 		}
 	} else {
