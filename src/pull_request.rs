@@ -4,8 +4,12 @@ use rocksdb::DB;
 use snafu::ResultExt;
 use std::time::{Duration, SystemTime};
 
+/*
+ * Ping periods measured in seconds
+ */
 const STATUS_FAILURE_PING_PERIOD: u64 = 3600 * 24;
 const ISSUE_NOT_ASSIGNED_PING_PERIOD: u64 = 3600 * 24;
+
 const FALLBACK_ROOM_ID: &'static str = "!aenJixaHcSKbJOWxYk:matrix.parity.io";
 const ISSUE_MUST_EXIST_MESSAGE: &'static str = "Every pull request must address an issue.";
 const ISSUE_ASSIGNEE_NOTIFICATION: &'static str = "{1} addressing {2} has been opened by {3}. Please reassign the issue or close the pull request.";
@@ -193,7 +197,7 @@ pub fn handle_pull_request(
 		if status.state == "failure" {
 			// notify PR author by PM every 24 hours
 			if db_entry.status_failure_ping.map_or(true, |ping_time| {
-				ping_time.elapsed().map_or(true, |elapsed| {
+				ping_time.elapsed().ok().map_or(true, |elapsed| {
 					elapsed.as_secs() > STATUS_FAILURE_PING_PERIOD
 				})
 			}) {
