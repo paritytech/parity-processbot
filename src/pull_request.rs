@@ -217,6 +217,8 @@ pub fn handle_pull_request(
 								{
 									db_entry.actions_taken |=
 										PullRequestCoreDevAuthorIssueNotAssigned72h;
+									github_bot
+										.close_pull_request(&repo.name, pull_request.number)?;
 								}
 							}
 						}
@@ -226,7 +228,8 @@ pub fn handle_pull_request(
 			None => {
 				// leave a message that a corresponding issue must exist for each PR
 				// close the PR
-				github_bot.add_comment(&repo.name, pull_request.id, &ISSUE_MUST_EXIST_MESSAGE);
+				github_bot.add_comment(&repo.name, pull_request.id, &ISSUE_MUST_EXIST_MESSAGE)?;
+				github_bot.close_pull_request(&repo.name, pull_request.number)?;
 			}
 		}
 	}
@@ -262,6 +265,7 @@ pub fn handle_pull_request(
 		} else if status.state == "success" {
 			if owner_approved {
 				// merge & delete branch
+				github_bot.merge_pull_request(&repo.name, pull_request.number)?;
 				db.delete(db_key).context(error::Db)?;
 				return Ok(());
 			} else {

@@ -147,10 +147,9 @@ impl GithubBot {
 			.map(|_| ())
 	}
 
-	pub fn merge_pull_request<A, B>(&self, repo_name: A, pull_number: i64) -> Result<()>
+	pub fn merge_pull_request<A>(&self, repo_name: A, pull_number: i64) -> Result<()>
 	where
 		A: AsRef<str>,
-		B: AsRef<str>,
 	{
 		let repo = repo_name.as_ref();
 		let base = &self.organization.repos_url;
@@ -170,10 +169,9 @@ impl GithubBot {
 			.map(|_| ())
 	}
 
-	pub fn close_pull_request<A, B>(&self, repo_name: A, pull_number: i64) -> Result<()>
+	pub fn close_pull_request<A>(&self, repo_name: A, pull_number: i64) -> Result<()>
 	where
 		A: AsRef<str>,
-		B: AsRef<str>,
 	{
 		let repo = repo_name.as_ref();
 		let base = &self.organization.repos_url;
@@ -193,10 +191,9 @@ impl GithubBot {
 			.map(|_| ())
 	}
 
-	pub fn close_issue<A, B>(&self, repo_name: A, issue_id: i64) -> Result<()>
+	pub fn close_issue<A>(&self, repo_name: A, issue_id: i64) -> Result<()>
 	where
 		A: AsRef<str>,
-		B: AsRef<str>,
 	{
 		let repo = repo_name.as_ref();
 		let base = &self.organization.repos_url;
