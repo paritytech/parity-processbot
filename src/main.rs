@@ -36,20 +36,28 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
 	let db = DB::open_default(db_path)?;
 
-//        rayon::ThreadPoolBuilder::new().num_threads(22).build_global().unwrap();
-	let github_to_matrix = dbg!(bamboo::github_to_matrix(&bamboo_token))?;
-	return Ok(());
-
 	let matrix_bot =
 		matrix_bot::MatrixBot::new(&matrix_homeserver, &matrix_user, &matrix_password)?;
+	log::info!(
+		"[+] Connected to matrix homeserver {} as {}",
+		matrix_homeserver,
+		matrix_user
+	);
 
 	let github_bot = github_bot::GithubBot::new(&github_organization, &github_token)?;
+	log::info!(
+		"[+] Connected to github organisation {}",
+		github_organization
+	);
 
-	println!("[+] Connected to {} as {}", matrix_homeserver, matrix_user);
+	let core_devs = dbg!(github_bot.team_members(github_bot.team("core-devs")?.id)?);
+
+	//        rayon::ThreadPoolBuilder::new().num_threads(22).build_global().unwrap();
+	let github_to_matrix = dbg!(bamboo::github_to_matrix(&bamboo_token))?;
 
 	let mut interval = tokio::time::interval(Duration::from_secs(tick_secs));
 	loop {
 		interval.tick().await;
-		bots::update(&db, &github_bot, &matrix_bot, &github_to_matrix)?;
+		bots::update(&db, &github_bot, &matrix_bot, &core_devs, &github_to_matrix)?;
 	}
 }

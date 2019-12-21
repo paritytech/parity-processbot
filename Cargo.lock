@@ -1136,6 +1136,7 @@ dependencies = [
  "hyperx",
  "log",
  "rayon",
+ "regex",
  "reqwest",
  "rocksdb",
  "serde",

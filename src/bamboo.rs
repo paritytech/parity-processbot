@@ -113,17 +113,17 @@ pub fn github_to_matrix(access_token: &str) -> Result<HashMap<String, String>> {
 			.employees
 			.into_iter()
 			.filter_map(|EmployeesDirectoryInnerResponse { id, .. }| {
-										get_employee(&access_token, &id).ok().and_then(
-						|EmployeeResponse {
-						     github, riot_id, ..
-						 }| {
-							if github.is_some() && riot_id.is_some() {
-								Some((github.unwrap(), riot_id.unwrap()))
-							} else {
-								None
-							}
-						},
-					)
+				get_employee(&access_token, &id).ok().and_then(
+					|EmployeeResponse {
+					     github, riot_id, ..
+					 }| {
+						if github.is_some() && riot_id.is_some() {
+							Some((github.unwrap(), riot_id.unwrap()))
+						} else {
+							None
+						}
+					},
+				)
 			})
 			.collect::<HashMap<String, String>>()
 	})

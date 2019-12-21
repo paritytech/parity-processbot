@@ -16,6 +16,7 @@ use std::time::SystemTime;
 
 use crate::{
 	error,
+	github,
 	github_bot::GithubBot,
 	matrix_bot::MatrixBot,
 	pull_request::handle_pull_request,
@@ -26,12 +27,13 @@ pub fn update(
 	db: &DB,
 	github_bot: &GithubBot,
 	matrix_bot: &MatrixBot,
+	core_devs: &[github::User],
 	github_to_matrix: &HashMap<String, String>,
 ) -> Result<()> {
 	for repo in github_bot.repositories()? {
 		let prs = github_bot.pull_requests(&repo)?;
 		for pr in prs {
-			handle_pull_request(db, github_bot, matrix_bot, github_to_matrix, &pr)?;
+			handle_pull_request(db, github_bot, matrix_bot, core_devs, github_to_matrix, &pr)?;
 		}
 	}
 	Ok(())

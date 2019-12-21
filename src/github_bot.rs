@@ -25,22 +25,22 @@ use crate::{
 pub struct GithubBot {
 	client: reqwest::Client,
 	auth_key: String,
-	organisation: github::Organisation,
+	organization: github::Organization,
 }
 
 impl GithubBot {
 	const BASE_URL: &'static str = "https://api.github.com";
 
-	/// Creates a new instance of `GithubBot` from a GitHub organisation defined by
+	/// Creates a new instance of `GithubBot` from a GitHub organization defined by
 	/// `org`, and a GitHub authenication key defined by `auth_key`.
 	/// # Errors
-	/// If the organisation does not exist or `auth_key` does not have sufficent
+	/// If the organization does not exist or `auth_key` does not have sufficent
 	/// permissions.
 	pub fn new<A: AsRef<str>, I: Into<String>>(org: A, auth_key: I) -> Result<Self> {
 		let auth_key = auth_key.into();
 		let client = reqwest::Client::new();
 
-		let organisation = client
+		let organization = client
 			.get(&format!("https://api.github.com/orgs/{}", org.as_ref()))
 			.bearer_auth(&auth_key)
 			.send()
@@ -50,14 +50,14 @@ impl GithubBot {
 
 		Ok(Self {
 			client,
-			organisation,
+			organization,
 			auth_key,
 		})
 	}
 
-	/// Returns all of the repositories managed by the organisation.
+	/// Returns all of the repositories managed by the organization.
 	pub fn repositories(&self) -> Result<Vec<github::Repository>> {
-		self.get_all(&self.organisation.repos_url)
+		self.get_all(&self.organization.repos_url)
 	}
 
 	/// Returns all of the pull requests in a single repository.
@@ -85,7 +85,17 @@ impl GithubBot {
 		unimplemented!();
 	}
 
-	/// Creates a comment in the r
+	/// Returns the team with a given team slug (eg. 'core-devs').
+	pub fn team(&self, slug: &str) -> Result<github::Team> {
+		self.get(&format!("{}/teams/{}", self.organization.url, slug))
+	}
+
+	/// Returns members of the team with a id.
+	pub fn team_members(&self, team_id: i64) -> Result<Vec<github::User>> {
+		self.get(&format!("https://api.github.com/teams/{}/members", team_id))
+	}
+
+	/// Creates a comment in the repo
 	pub fn add_comment<A, B>(&self, repo_name: A, issue_id: i64, comment: B) -> Result<()>
 	where
 		A: AsRef<str>,
@@ -97,7 +107,7 @@ impl GithubBot {
 		let url = format!(
 			"{base}/repos/{org}/{repo}/issues/{issue_id}/comments",
 			base = Self::BASE_URL,
-			org = self.organisation.login,
+			org = self.organization.login,
 			repo = repo,
 			issue_id = issue_id
 		);
@@ -120,7 +130,7 @@ impl GithubBot {
 	{
 		let repo = repo_name.as_ref();
 		let author = author_login.as_ref();
-		let base = &self.organisation.repos_url;
+		let base = &self.organization.repos_url;
 		let url = format!(
 			"{base}/{repo}/issues/{issue_id}/assignees",
 			base = base,

@@ -1,8 +1,8 @@
 use crate::Result;
 use snafu::{
 	Backtrace,
+	ResultExt,
 	Snafu,
-        ResultExt
 };
 
 #[derive(Debug, Snafu)]

@@ -1,4 +1,5 @@
 use curl::easy::Easy;
+use regex::Regex;
 use serde::*;
 use serde::{
 	Deserialize,
@@ -113,4 +114,39 @@ pub fn send_message(homeserver: &str, access_token: &str, room_id: &str, body: &
 		.post_fields_copy(format!("{{\"msgtype\":\"m.text\",\"body\":\"{}\"}}", body).as_bytes())
 		.or_else(error::map_curl_error)?;
 	handle.perform().or_else(error::map_curl_error)
+}
+
+/// If the pattern is recognised, return the full matrix id.
+/// Otherwise, return None.
+pub fn parse_id(matrix_id: &str) -> Option<String> {
+	let re1 = Regex::new(r"^@[\w]+:matrix.parity.io$").unwrap();
+	let re2 = Regex::new(r"^[\w]+:matrix.parity.io$").unwrap();
+	let re3 = Regex::new(r"^@[\w]+$").unwrap();
+	let re4 = Regex::new(r"^[\w]+$").unwrap();
+	if re1.is_match(matrix_id) {
+		Some(format!("{}", matrix_id))
+	} else if re2.is_match(matrix_id) {
+		Some(format!("@{}", matrix_id))
+	} else if re3.is_match(matrix_id) {
+		Some(format!("{}:matrix.parity.io", matrix_id))
+	} else if re4.is_match(matrix_id) {
+		Some(format!("@{}:matrix.parity.io", matrix_id))
+	} else {
+		None
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn test_parse_matrix_id() {
+		let correct = Some("@joseph:matrix.parity.io".to_owned());
+		assert_eq!(parse_id("@joseph:matrix.parity.io"), correct);
+		assert_eq!(parse_id("joseph:matrix.parity.io"), correct);
+		assert_eq!(parse_id("@joseph"), correct);
+		assert_eq!(parse_id("joseph"), correct);
+		assert_eq!(parse_id("@joseph:matrix.arsenal.io"), None);
+	}
 }
