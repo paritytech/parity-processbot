@@ -92,7 +92,7 @@ impl GithubBot {
 
 	/// Returns members of the team with a id.
 	pub fn team_members(&self, team_id: i64) -> Result<Vec<github::User>> {
-		self.get(&format!("https://api.github.com/teams/{}/members", team_id))
+		self.get(&format!("{}/teams/{}/members", Self::BASE_URL, team_id))
 	}
 
 	/// Creates a comment in the repo
@@ -142,6 +142,75 @@ impl GithubBot {
 			.post(&url)
 			.bearer_auth(&self.auth_key)
 			.json(&serde_json::json!({ "assignees": [author] }))
+			.send()
+			.context(error::Http)
+			.map(|_| ())
+	}
+
+	pub fn merge_pull_request<A, B>(&self, repo_name: A, pull_number: i64) -> Result<()>
+	where
+		A: AsRef<str>,
+		B: AsRef<str>,
+	{
+		let repo = repo_name.as_ref();
+		let base = &self.organization.repos_url;
+		let url = format!(
+			"{base}/repos/{owner}/{repo}/pulls/{pull_number}/merge",
+			base = base,
+			owner = self.organization.login,
+			repo = repo,
+			pull_number = pull_number
+		);
+		self.client
+			.put(&url)
+			.bearer_auth(&self.auth_key)
+			.json(&serde_json::json!({}))
+			.send()
+			.context(error::Http)
+			.map(|_| ())
+	}
+
+	pub fn close_pull_request<A, B>(&self, repo_name: A, pull_number: i64) -> Result<()>
+	where
+		A: AsRef<str>,
+		B: AsRef<str>,
+	{
+		let repo = repo_name.as_ref();
+		let base = &self.organization.repos_url;
+		let url = format!(
+			"{base}/repos/{owner}/{repo}/pulls/{pull_number}",
+			base = base,
+			owner = self.organization.login,
+			repo = repo,
+			pull_number = pull_number
+		);
+		self.client
+			.patch(&url)
+			.bearer_auth(&self.auth_key)
+			.json(&serde_json::json!({ "state": "closed" }))
+			.send()
+			.context(error::Http)
+			.map(|_| ())
+	}
+
+	pub fn close_issue<A, B>(&self, repo_name: A, issue_id: i64) -> Result<()>
+	where
+		A: AsRef<str>,
+		B: AsRef<str>,
+	{
+		let repo = repo_name.as_ref();
+		let base = &self.organization.repos_url;
+		let url = format!(
+			"{base}/repos/{owner}/{repo}/issues/{issue_id}",
+			base = base,
+			owner = self.organization.login,
+			repo = repo,
+			issue_id = issue_id
+		);
+		self.client
+			.patch(&url)
+			.bearer_auth(&self.auth_key)
+			.json(&serde_json::json!({ "state": "closed" }))
 			.send()
 			.context(error::Http)
 			.map(|_| ())
