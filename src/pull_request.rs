@@ -5,7 +5,7 @@ use crate::{
 	github_bot::GithubBot,
 	matrix,
 	matrix_bot::MatrixBot,
-        project,
+	project,
 	Result,
 };
 use rocksdb::DB;
@@ -185,7 +185,9 @@ pub fn handle_pull_request(
 								{
 									db_entry.actions_taken |=
 										PullRequestCoreDevAuthorIssueNotAssigned24h;
-									if let Some(ref room_id) = project_info.and_then(|p| p.matrix_room_id.as_ref()) {
+									if let Some(ref room_id) =
+										project_info.and_then(|p| p.matrix_room_id.as_ref())
+									{
 										matrix_bot.send_public_message(
 											&room_id,
 											&ISSUE_ASSIGNEE_NOTIFICATION

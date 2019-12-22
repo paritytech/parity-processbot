@@ -6,7 +6,7 @@ pub struct ProjectInfo {
 	pub owner: Option<String>,
 	pub delegated_reviewer: Option<String>,
 	pub whitelist: Option<Vec<String>>,
-        pub matrix_room_id: Option<String>,
+	pub matrix_room_id: Option<String>,
 }
 
 impl From<toml::value::Table> for Projects {

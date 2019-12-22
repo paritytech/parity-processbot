@@ -81,13 +81,13 @@ impl GithubBot {
 	}
 
 	/// Returns the project info associated with a repository.
-	pub fn contents(&self, repository: &github::Repository, path: &str) -> Result<github::Contents> {
+	pub fn contents(&self, repo_name: &str, path: &str) -> Result<github::Contents> {
 		self.get(&format!(
-			"{repos_url}/{owner}/{repo_name}/contents/{path}",
-			repos_url = self.organization.repos_url,
+			"{base_url}/repos/{owner}/{repo_name}/contents/{path}",
+			base_url = Self::BASE_URL,
 			owner = self.organization.login,
-			repo_name = repository.name,
-                        path = path
+			repo_name = repo_name,
+			path = path
 		))
 	}
 

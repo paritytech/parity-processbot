@@ -84,6 +84,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "base64"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b41b7ea54a0c9d92199de89e20e58d49f02f8e699814ef3fdf266f6f748d15c7"
+
+[[package]]
 name = "bindgen"
 version = "0.49.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -776,7 +782,7 @@ version = "0.15.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ad5125567a8328ced412a29a52a3ca0a2520c617d40a8bee62d12d877eec236c"
 dependencies = [
- "base64",
+ "base64 0.10.1",
  "bytes 0.4.12",
  "cfg-if",
  "http",
@@ -1132,6 +1138,7 @@ name = "parity-processbot"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64 0.11.0",
  "byteorder",
  "csv",
  "curl",
@@ -1521,7 +1528,7 @@ version = "0.9.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f88643aea3c1343c804950d7bf983bd2067f5ab59db6d613a08e05572f2714ab"
 dependencies = [
- "base64",
+ "base64 0.10.1",
  "bytes 0.4.12",
  "cookie",
  "cookie_store",
