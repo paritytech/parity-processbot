@@ -81,8 +81,14 @@ impl GithubBot {
 	}
 
 	/// Returns the project info associated with a repository.
-	pub fn project_info(&self, repository: &github::Repository) -> Result<github::ProjectInfo> {
-		unimplemented!();
+	pub fn contents(&self, repository: &github::Repository, path: &str) -> Result<github::Contents> {
+		self.get(&format!(
+			"{repos_url}/{owner}/{repo_name}/contents/{path}",
+			repos_url = self.organization.repos_url,
+			owner = self.organization.login,
+			repo_name = repository.name,
+                        path = path
+		))
 	}
 
 	/// Returns the team with a given team slug (eg. 'core-devs').

@@ -19,6 +19,7 @@ use crate::{
 	github,
 	github_bot::GithubBot,
 	matrix_bot::MatrixBot,
+	project,
 	pull_request::handle_pull_request,
 	Result,
 };
@@ -31,9 +32,31 @@ pub fn update(
 	github_to_matrix: &HashMap<String, String>,
 ) -> Result<()> {
 	for repo in github_bot.repositories()? {
+		let projects = github_bot
+			.contents(&repo, "Project.toml")
+			.map_err(anyhow::Error::new)
+			.and_then(|c| {
+				toml::from_str::<toml::value::Table>(&dbg!(c).content).map_err(anyhow::Error::new)
+			})
+			.map(project::Projects::from)
+			.map(|p| p.0);
+		let project_info = if let Ok(ref projects) = projects {
+			projects.get(&repo.name)
+		} else {
+			None
+		};
+
 		let prs = github_bot.pull_requests(&repo)?;
 		for pr in prs {
-			handle_pull_request(db, github_bot, matrix_bot, core_devs, github_to_matrix, &pr)?;
+			handle_pull_request(
+				db,
+				github_bot,
+				matrix_bot,
+				core_devs,
+				github_to_matrix,
+				project_info,
+				&pr,
+			)?;
 		}
 	}
 	Ok(())

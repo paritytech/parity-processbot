@@ -25,6 +25,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "anyhow"
+version = "1.0.25"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9267dff192e68f3399525901e709a48c1d3982c9c072fa32f2127a0cb0babf14"
+
+[[package]]
 name = "arc-swap"
 version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1125,6 +1131,7 @@ dependencies = [
 name = "parity-processbot"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "byteorder",
  "csv",
  "curl",
@@ -1143,6 +1150,7 @@ dependencies = [
  "serde_json",
  "snafu",
  "tokio 0.2.6",
+ "toml",
 ]
 
 [[package]]
@@ -1993,6 +2001,15 @@ dependencies = [
  "futures 0.1.29",
  "slab",
  "tokio-executor",
+]
+
+[[package]]
+name = "toml"
+version = "0.5.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "01d1404644c8b12b16bfcffa4322403a91a451584daaaa7c28d3152e6cbc98cf"
+dependencies = [
+ "serde",
 ]
 
 [[package]]

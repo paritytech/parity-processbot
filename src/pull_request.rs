@@ -5,6 +5,7 @@ use crate::{
 	github_bot::GithubBot,
 	matrix,
 	matrix_bot::MatrixBot,
+        project,
 	Result,
 };
 use rocksdb::DB;
@@ -30,9 +31,9 @@ const STATUS_FAILURE_NOTIFICATION: &'static str = "{1} has failed status checks.
 fn require_reviewer(
 	pull_request: &github::PullRequest,
 	repo: &github::Repository,
-	project_info: &github::ProjectInfo,
 	matrix_bot: &MatrixBot,
 	github_to_matrix: &HashMap<String, String>,
+	project_info: Option<&project::ProjectInfo>,
 ) {
 	let author_is_owner = repo
 		.project_owner()
@@ -46,7 +47,7 @@ fn require_reviewer(
 		// require review from project owner
 	} else {
 		// post a message in the project's Riot channel, requesting a review; repeat this message every 24 hours until a reviewer is assigned.
-		if let Some(room_id) = &project_info.room_id {
+		if let Some(ref room_id) = &project_info.and_then(|p| p.matrix_room_id.as_ref()) {
 			matrix_bot.send_public_message(
 				&room_id,
 				&REQUESTING_REVIEWS_MESSAGE.replace("{1}", &format!("{}", pull_request.html_url)),
@@ -72,6 +73,7 @@ pub fn handle_pull_request(
 	matrix_bot: &MatrixBot,
 	core_devs: &[github::User],
 	github_to_matrix: &HashMap<String, String>,
+	project_info: Option<&project::ProjectInfo>,
 	pull_request: &github::PullRequest,
 ) -> Result<()> {
 	let pr_id = pull_request.id;
@@ -95,7 +97,6 @@ pub fn handle_pull_request(
 	let reviews = github_bot.reviews(pull_request)?;
 	let issue = github_bot.issue(pull_request)?;
 	let statuses = github_bot.statuses(pull_request)?;
-	let project_info = github_bot.project_info(&pull_request.repository)?;
 
 	let author_is_owner = repo.owner.id == author.id;
 	let author_is_whitelisted = repo
@@ -116,9 +117,9 @@ pub fn handle_pull_request(
 					require_reviewer(
 						&pull_request,
 						&repo,
-						&project_info,
 						matrix_bot,
 						github_to_matrix,
+						project_info,
 					);
 				} else {
 					if author_is_owner || author_is_whitelisted {
@@ -128,9 +129,9 @@ pub fn handle_pull_request(
 						require_reviewer(
 							&pull_request,
 							&repo,
-							&project_info,
 							matrix_bot,
 							github_to_matrix,
+							project_info,
 						);
 					} else if author_is_core {
 						let days = db_entry
@@ -184,7 +185,7 @@ pub fn handle_pull_request(
 								{
 									db_entry.actions_taken |=
 										PullRequestCoreDevAuthorIssueNotAssigned24h;
-									if let Some(room_id) = project_info.room_id {
+									if let Some(ref room_id) = project_info.and_then(|p| p.matrix_room_id.as_ref()) {
 										matrix_bot.send_public_message(
 											&room_id,
 											&ISSUE_ASSIGNEE_NOTIFICATION

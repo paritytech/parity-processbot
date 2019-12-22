@@ -50,6 +50,22 @@ pub struct Organization {
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Contents {
+	#[serde(rename = "type")]
+	pub contents_type: String,
+	pub encoding: String,
+	pub size: i64,
+	pub name: String,
+	pub path: String,
+	pub content: String,
+	pub sha: String,
+	pub url: String,
+	pub git_url: String,
+	pub html_url: String,
+	pub download_url: String,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Team {
 	pub id: i64,
 	pub node_id: String,

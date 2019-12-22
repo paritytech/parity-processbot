@@ -1,0 +1,6 @@
+[parity-processbot]
+owner = "sjeohp"
+whitelist = [
+	"XAMPPRocky"
+],
+matrix_room_id = "!VDLSjvBpNqqgyMDIBO:matrix.parity.io"
