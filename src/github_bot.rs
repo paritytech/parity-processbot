@@ -91,6 +91,17 @@ impl GithubBot {
 		))
 	}
 
+	/// Returns events assiciated with an issue.
+	pub fn issue_events(&self, repo_name: &str, issue_number: i64) -> Result<github::IssueEvent> {
+		self.get(&format!(
+			"{base_url}/repos/{owner}/{repo_name}/issues/{issue_number}/events",
+			base_url = Self::BASE_URL,
+			owner = self.organization.login,
+			repo_name = repo_name,
+			issue_number = issue_number
+		))
+	}
+
 	/// Returns the team with a given team slug (eg. 'core-devs').
 	pub fn team(&self, slug: &str) -> Result<github::Team> {
 		self.get(&format!("{}/teams/{}", self.organization.url, slug))

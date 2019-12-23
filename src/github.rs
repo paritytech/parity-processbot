@@ -65,6 +65,51 @@ pub struct Contents {
 	pub download_url: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Event {
+	AddedToProject,
+	Assigned,
+	Closed,
+	ConvertedNoteToIssue,
+	Demilestoned,
+	HeadRefDeleted,
+	HeadRefRestored,
+	Labeled,
+	Locked,
+	Mentioned,
+	MarkedAsDuplicate,
+	Merged,
+	Milestoned,
+	MovedColumnsInProject,
+	Referenced,
+	RemovedFromProject,
+	Renamed,
+	Reopened,
+	ReviewDismissed,
+	ReviewRequested,
+	ReviewRequestRemoved,
+	Subscribed,
+	Transferred,
+	Unassigned,
+	Unlabeled,
+	Unlocked,
+	UnmarkedAsDuplicate,
+	UserBlocked,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct IssueEvent {
+	pub id: i64,
+	pub node_id: String,
+	pub url: String,
+	pub actor: User,
+	pub event: Event,
+	pub commit_id: Option<String>,
+	pub commit_url: Option<String>,
+	pub created_at: String,
+}
+
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Team {
 	pub id: i64,
