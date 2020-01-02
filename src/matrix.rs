@@ -129,17 +129,17 @@ pub fn send_message(homeserver: &str, access_token: &str, room_id: &str, body: &
 /// If the pattern is recognised, return the full matrix id.
 /// Otherwise, return None.
 pub fn parse_id(matrix_id: &str) -> Option<String> {
-	let re1 = Regex::new(r"^@[\w]+:matrix.parity.io$").unwrap();
-	let re2 = Regex::new(r"^[\w]+:matrix.parity.io$").unwrap();
-	let re3 = Regex::new(r"^@[\w]+$").unwrap();
-	let re4 = Regex::new(r"^[\w]+$").unwrap();
-	if re1.is_match(matrix_id) {
+	let full_handle = Regex::new(r"^@[\w]+:matrix.parity.io$").unwrap();
+	let no_at = Regex::new(r"^[\w]+:matrix.parity.io$").unwrap();
+	let no_domain = Regex::new(r"^@[\w]+$").unwrap();
+	let name_only = Regex::new(r"^[\w]+$").unwrap();
+	if full_handle .is_match(matrix_id) {
 		Some(format!("{}", matrix_id))
-	} else if re2.is_match(matrix_id) {
+	} else if no_at.is_match(matrix_id) {
 		Some(format!("@{}", matrix_id))
-	} else if re3.is_match(matrix_id) {
+	} else if no_domain.is_match(matrix_id) {
 		Some(format!("{}:matrix.parity.io", matrix_id))
-	} else if re4.is_match(matrix_id) {
+	} else if name_only.is_match(matrix_id) {
 		Some(format!("@{}:matrix.parity.io", matrix_id))
 	} else {
 		None
