@@ -34,11 +34,9 @@ pub fn login(homeserver: &str, username: &str, password: &str) -> Result<LoginRe
 		.or_else(error::map_curl_error)?;
 	handle
                 .post_fields_copy(
-                        format!(
-                                "{{\"type\":\"m.login.password\", \"identifier\": {{ \"type\": \"m.id.thirdparty\", \"medium\": \"email\", \"address\": \"{}\" }}, \"password\":\"{}\"}}",
-                                username, password
-                        )
-                        .as_bytes(),
+                        serde_json::json!({ "type": "m.login.password", "identifier": { "type": "m.id.thirdparty", "medium": "email", "address": username }, "password": password })
+                                .to_string()
+                                .as_bytes(),
                 )
                 .or_else(error::map_curl_error)?;
 	{
@@ -67,7 +65,11 @@ pub fn create_room(homeserver: &str, access_token: &str) -> Result<CreateRoomRes
 		)
 		.or_else(error::map_curl_error)?;
 	handle
-		.post_fields_copy(format!("{{\"room_alias\":\"\"}}").as_bytes())
+		.post_fields_copy(
+			serde_json::json!({ "room_alias": "" })
+				.to_string()
+				.as_bytes(),
+		)
 		.or_else(error::map_curl_error)?;
 	{
 		let mut transfer = handle.transfer();
@@ -94,7 +96,11 @@ pub fn invite(homeserver: &str, access_token: &str, room_id: &str, user_id: &str
 		)
 		.or_else(error::map_curl_error)?;
 	handle
-		.post_fields_copy(format!("{{\"user_id\":\"{}\"}}", user_id).as_bytes())
+		.post_fields_copy(
+			serde_json::json!({ "user_id": user_id })
+				.to_string()
+				.as_bytes(),
+		)
 		.or_else(error::map_curl_error)?;
 	handle.perform().or_else(error::map_curl_error)
 }
@@ -111,7 +117,11 @@ pub fn send_message(homeserver: &str, access_token: &str, room_id: &str, body: &
 		)
 		.or_else(error::map_curl_error)?;
 	handle
-		.post_fields_copy(format!("{{\"msgtype\":\"m.text\",\"body\":\"{}\"}}", body).as_bytes())
+		.post_fields_copy(
+			serde_json::json!({ "msgtype": "m.text", "body": body })
+				.to_string()
+				.as_bytes(),
+		)
 		.or_else(error::map_curl_error)?;
 	handle.perform().or_else(error::map_curl_error)
 }
