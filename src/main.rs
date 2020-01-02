@@ -51,9 +51,13 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 		github_organization
 	);
 
+	dbg!(github_bot.request_reviews("parity-processbot", 14, &["XAMPPRocky"]));
+	return Ok(());
+
 	let core_devs = dbg!(github_bot.team_members(github_bot.team("core-devs")?.id)?);
 
-	//        rayon::ThreadPoolBuilder::new().num_threads(22).build_global().unwrap();
+	//        rayon::ThreadPoolBuilder::new().num_threads(22).build_global().
+	// unwrap();
 	let github_to_matrix = dbg!(bamboo::github_to_matrix(&bamboo_token))?;
 
 	let mut interval = tokio::time::interval(Duration::from_secs(tick_secs));

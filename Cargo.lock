@@ -188,6 +188,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b486ce3ccf7ffd79fdeb678eac06a9e6c09fc88d33836340becb8fffe87c5e33"
 
 [[package]]
+name = "chrono"
+version = "0.4.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "31850b4a4d6bae316f7a09e691c944c28299298837edc0a03f755618c23cbc01"
+dependencies = [
+ "num-integer",
+ "num-traits",
+ "serde",
+ "time",
+]
+
+[[package]]
 name = "clang-sys"
 version = "0.28.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1091,6 +1103,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "num-integer"
+version = "0.1.41"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b85e541ef8255f6cf42bbfe4ef361305c6c135d10919ecc26126c4e5ae94bc09"
+dependencies = [
+ "autocfg",
+ "num-traits",
+]
+
+[[package]]
+name = "num-traits"
+version = "0.2.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d4c81ffc11c212fa327657cb19dd85eb7419e163b5b076bede2bdb5c974c07e4"
+dependencies = [
+ "autocfg",
+]
+
+[[package]]
 name = "num_cpus"
 version = "1.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1140,6 +1171,7 @@ dependencies = [
  "anyhow",
  "base64 0.11.0",
  "byteorder",
+ "chrono",
  "csv",
  "curl",
  "curl-sys",

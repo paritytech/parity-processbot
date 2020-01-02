@@ -107,7 +107,24 @@ pub struct IssueEvent {
 	pub event: Event,
 	pub commit_id: Option<String>,
 	pub commit_url: Option<String>,
-	pub created_at: String,
+	pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Project {
+	pub owner_url: String,
+	pub url: String,
+	pub html_url: Option<String>,
+	pub columns_url: Option<String>,
+	pub id: i64,
+	pub node_id: String,
+	pub name: String,
+	pub body: String,
+	pub number: i64,
+	pub state: String,
+	pub creator: User,
+	pub created_at: chrono::DateTime<chrono::Utc>,
+	pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -176,7 +193,7 @@ pub struct PullRequest {
 	pub author_association: Option<String>,
 	pub draft: Option<bool>,
 	#[serde(rename = "repo")]
-	pub repository: Repository,
+	pub repository: Option<Repository>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -395,14 +412,14 @@ pub struct Base {
 	repo: Repository,
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Status {
 	pub id: i64,
 	pub node_id: String,
 	pub avatar_url: String,
 	pub url: String,
-	pub created_at: String,
-	pub updated_at: String,
+	pub created_at: chrono::DateTime<chrono::Utc>,
+	pub updated_at: chrono::DateTime<chrono::Utc>,
 	pub state: String,
 	pub creator: User,
 }
@@ -415,14 +432,14 @@ pub struct ProjectInfo {
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Links {
 	#[serde(rename = "self")]
-	pub self_link: SelfLink,
-	pub html_link: HtmlLink,
-	pub issue_link: IssueLink,
-	pub comments_link: CommentsLink,
-	pub review_comments_link: ReviewCommentsLink,
-	pub review_comment_link: ReviewCommentLink,
-	pub commits_link: CommitsLink,
-	pub statuses_link: StatusesLink,
+	pub self_link: Option<SelfLink>,
+	pub html_link: Option<HtmlLink>,
+	pub issue_link: Option<IssueLink>,
+	pub comments_link: Option<CommentsLink>,
+	pub review_comments_link: Option<ReviewCommentsLink>,
+	pub review_comment_link: Option<ReviewCommentLink>,
+	pub commits_link: Option<CommitsLink>,
+	pub statuses_link: Option<StatusesLink>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]

@@ -9,7 +9,10 @@ use crate::{
 	Result,
 };
 use rocksdb::DB;
-use snafu::ResultExt;
+use snafu::{
+	GenerateBacktrace,
+	ResultExt,
+};
 use std::collections::HashMap;
 use std::time::{
 	Duration,
@@ -35,18 +38,24 @@ fn require_reviewer(
 	github_to_matrix: &HashMap<String, String>,
 	project_info: Option<&project::ProjectInfo>,
 ) {
-	let author_is_owner = repo
-		.project_owner()
-		.map_or(false, |owner| owner.id == pull_request.user.id);
-	let author_is_delegated =
-		repo.delegated_reviewer().as_ref().unwrap_or(&repo.owner).id == pull_request.user.id;
+	let author_is_owner = project_info
+		.and_then(|p| p.owner.as_ref())
+		.map(|u| u == &pull_request.user.login)
+		.unwrap_or(false);
+	let author_is_delegated = project_info
+		.and_then(|p| p.delegated_reviewer.as_ref())
+		.map(|u| u == &pull_request.user.login)
+		.unwrap_or(false);
 
 	if !author_is_delegated {
+		// TODO
 		// require review from delegated reviewer
 	} else if !author_is_owner {
+		// TODO
 		// require review from project owner
 	} else {
-		// post a message in the project's Riot channel, requesting a review; repeat this message every 24 hours until a reviewer is assigned.
+		// post a message in the project's Riot channel, requesting a review; repeat
+		// this message every 24 hours until a reviewer is assigned.
 		if let Some(ref room_id) = &project_info.and_then(|p| p.matrix_room_id.as_ref()) {
 			matrix_bot.send_public_message(
 				&room_id,
@@ -61,9 +70,12 @@ fn require_reviewer(
 	}
 
 	/*
-	 * if they are not the Delegated Reviewer (by default the project owner), then Require a Review from the Delegated Reviewer;
-	 * otherwise, if the author is not the project owner, then Require a Review from the Project Owner;
-	 * otherwise, post a message in the project's Riot channel, requesting a review; repeat this message every 24 hours until a reviewer is assigned.
+	 * if they are not the Delegated Reviewer (by default the project owner),
+	 * then Require a Review from the Delegated Reviewer; otherwise, if the
+	 * author is not the project owner, then Require a Review from the
+	 * Project Owner; otherwise, post a message in the project's Riot
+	 * channel, requesting a review; repeat this message every 24 hours until
+	 * a reviewer is assigned.
 	 */
 }
 
@@ -93,10 +105,15 @@ pub fn handle_pull_request(
 	}
 
 	let author = &pull_request.user;
-	let repo = &pull_request.repository;
+	let repo = pull_request
+		.repository
+		.as_ref()
+		.ok_or(error::Error::MissingData {
+			backtrace: snafu::Backtrace::generate(),
+		})?;
 	let reviews = github_bot.reviews(pull_request)?;
 	let issue = github_bot.issue(pull_request)?;
-	let statuses = github_bot.statuses(pull_request)?;
+	let mut statuses = github_bot.statuses(pull_request)?;
 
 	let author_is_owner = repo.owner.id == author.id;
 	let author_is_whitelisted = repo
@@ -178,7 +195,8 @@ pub fn handle_pull_request(
 							}
 							Some(0) => { /* do nothing */ }
 							Some(1) | Some(2) => {
-								// if after 24 hours there is no change, then send a message into the project's Riot channel
+								// if after 24 hours there is no change, then send a message into
+								// the project's Riot channel
 								if db_entry.actions_taken
 									& PullRequestCoreDevAuthorIssueNotAssigned24h
 									== NoAction
@@ -213,7 +231,8 @@ pub fn handle_pull_request(
 								}
 							}
 							_ => {
-								// if after a further 48 hours there is still no change, then close the PR.
+								// if after a further 48 hours there is still no change, then close
+								// the PR.
 								if db_entry.actions_taken
 									& PullRequestCoreDevAuthorIssueNotAssigned72h
 									== NoAction
@@ -243,7 +262,11 @@ pub fn handle_pull_request(
 			.find(|r| r.user.id == owner.id)
 			.map_or(false, |r| r.state == "APPROVED")
 	});
-	if let Some(status) = statuses.first() {
+	let status = statuses.as_mut().and_then(|v| {
+		v.sort_by_key(|s| s.updated_at);
+		v.last()
+	});
+	if let Some(ref status) = status {
 		if status.state == "failure" {
 			// notify PR author by PM every 24 hours
 			if db_entry.status_failure_ping.map_or(true, |ping_time| {

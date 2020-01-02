@@ -31,8 +31,8 @@ pub struct GithubBot {
 impl GithubBot {
 	const BASE_URL: &'static str = "https://api.github.com";
 
-	/// Creates a new instance of `GithubBot` from a GitHub organization defined by
-	/// `org`, and a GitHub authenication key defined by `auth_key`.
+	/// Creates a new instance of `GithubBot` from a GitHub organization defined
+	/// by `org`, and a GitHub authenication key defined by `auth_key`.
 	/// # Errors
 	/// If the organization does not exist or `auth_key` does not have sufficent
 	/// permissions.
@@ -41,7 +41,7 @@ impl GithubBot {
 		let client = reqwest::Client::new();
 
 		let organization = client
-			.get(&format!("https://api.github.com/orgs/{}", org.as_ref()))
+			.get(&format!("{}/{}", Self::BASE_URL, org.as_ref()))
 			.bearer_auth(&auth_key)
 			.send()
 			.context(error::Http)?
@@ -70,14 +70,45 @@ impl GithubBot {
 		self.get_all(format!("{}/reviews", pull_request.html_url))
 	}
 
-	/// Returns all reviews associated with a pull request.
-	pub fn issue(&self, pull_request: &github::PullRequest) -> Result<Option<github::Issue>> {
-		self.get(&pull_request.links.issue_link.href)
+	/// Requests a review from a user.
+	pub fn request_reviews(
+		&self,
+		repo_name: &str,
+		pull_number: i64,
+		reviewers: &[&str],
+	) -> Result<github::PullRequest> {
+		let url = format!(
+			"{base_url}/repos/{owner}/{repo_name}/pulls/{pull_number}/requested_reviewers",
+			base_url = Self::BASE_URL,
+			owner = self.organization.login,
+			repo_name = repo_name,
+			pull_number = pull_number
+		);
+		let body = serde_json::json!({ "reviewers": reviewers });
+		self.post(&url, &body)
 	}
 
 	/// Returns all reviews associated with a pull request.
-	pub fn statuses(&self, pull_request: &github::PullRequest) -> Result<Vec<github::Status>> {
-		self.get(&pull_request.links.statuses_link.href)
+	pub fn issue(&self, pull_request: &github::PullRequest) -> Result<Option<github::Issue>> {
+		pull_request
+			.links
+			.issue_link
+			.as_ref()
+			.map(|github::IssueLink { href }| self.get(href))
+			.transpose()
+	}
+
+	/// Returns all reviews associated with a pull request.
+	pub fn statuses(
+		&self,
+		pull_request: &github::PullRequest,
+	) -> Result<Option<Vec<github::Status>>> {
+		pull_request
+			.links
+			.statuses_link
+			.as_ref()
+			.map(|github::StatusesLink { href }| self.get(href))
+			.transpose()
 	}
 
 	/// Returns the project info associated with a repository.
@@ -92,7 +123,11 @@ impl GithubBot {
 	}
 
 	/// Returns events assiciated with an issue.
-	pub fn issue_events(&self, repo_name: &str, issue_number: i64) -> Result<github::IssueEvent> {
+	pub fn issue_events(
+		&self,
+		repo_name: &str,
+		issue_number: i64,
+	) -> Result<Vec<github::IssueEvent>> {
 		self.get(&format!(
 			"{base_url}/repos/{owner}/{repo_name}/issues/{issue_number}/events",
 			base_url = Self::BASE_URL,
@@ -228,6 +263,24 @@ impl GithubBot {
 			.send()
 			.context(error::Http)
 			.map(|_| ())
+	}
+
+	/// Make a post request to GitHub.
+	fn post<'b, I, B, T>(&self, url: I, body: &B) -> Result<T>
+	where
+		I: Into<Cow<'b, str>>,
+		B: Serialize,
+		T: serde::de::DeserializeOwned,
+	{
+		let mut response = self
+			.client
+			.post(&*(url.into()))
+			.bearer_auth(&self.auth_key)
+			.json(body)
+			.send()
+			.context(error::Http)?;
+
+		response.json::<T>().context(error::Http)
 	}
 
 	/// Get a single entry from a resource in GitHub.

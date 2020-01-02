@@ -41,11 +41,13 @@ pub struct EmployeeResponse {
 	github: Option<String>,
 }
 
+const BASE_URL: &'static str = "https://api.bamboohr.com/api/gateway.php/parity/v1";
+
 fn get_employees_directory(access_token: &str) -> Result<EmployeesDirectoryResponse> {
 	let mut dst = Vec::new();
 	let mut handle = Easy::new();
 	handle
-		.url("https://api.bamboohr.com/api/gateway.php/parity/v1/employees/directory")
+		.url(&format!("{}/employees/directory", BASE_URL))
 		.or_else(error::map_curl_error)?;
 	handle
 		.username(access_token)
@@ -78,7 +80,13 @@ fn get_employee(access_token: &str, employee_id: &str) -> Result<EmployeeRespons
 	let mut dst = Vec::new();
 	let mut handle = Easy::new();
 	handle
-                .url(format!("https://api.bamboohr.com/api/gateway.php/parity/v1/employees/{}/?fields=customGithub%2CcustomRiotID", employee_id).as_ref())
+		.url(
+			format!(
+				"{}/employees/{}/?fields=customGithub%2CcustomRiotID",
+				BASE_URL, employee_id
+			)
+			.as_ref(),
+		)
 		.or_else(error::map_curl_error)?;
 	handle
 		.username(access_token)
