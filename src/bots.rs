@@ -35,9 +35,15 @@ pub fn update(
 		let projects = github_bot
 			.contents(&repo.name, "Projects.toml")
 			.map_err(anyhow::Error::new)
-			.and_then(|c| base64::decode(&c.content.replace("\n", "")).map_err(anyhow::Error::new))
+			.and_then(|c| {
+				base64::decode(&c.content.replace("\n", ""))
+					.map_err(anyhow::Error::new)
+			})
 			.and_then(|b| String::from_utf8(b).map_err(anyhow::Error::new))
-			.and_then(|s| toml::from_str::<toml::value::Table>(&s).map_err(anyhow::Error::new))
+			.and_then(|s| {
+				toml::from_str::<toml::value::Table>(&s)
+					.map_err(anyhow::Error::new)
+			})
 			.map(project::Projects::from)
 			.map(|p| p.0);
 		let project_info = if let Ok(ref projects) = projects {

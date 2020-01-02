@@ -36,7 +36,10 @@ impl GithubBot {
 	/// # Errors
 	/// If the organization does not exist or `auth_key` does not have sufficent
 	/// permissions.
-	pub fn new<A: AsRef<str>, I: Into<String>>(org: A, auth_key: I) -> Result<Self> {
+	pub fn new<A: AsRef<str>, I: Into<String>>(
+		org: A,
+		auth_key: I,
+	) -> Result<Self> {
 		let auth_key = auth_key.into();
 		let client = reqwest::Client::new();
 
@@ -61,12 +64,18 @@ impl GithubBot {
 	}
 
 	/// Returns all of the pull requests in a single repository.
-	pub fn pull_requests(&self, repo: &github::Repository) -> Result<Vec<github::PullRequest>> {
+	pub fn pull_requests(
+		&self,
+		repo: &github::Repository,
+	) -> Result<Vec<github::PullRequest>> {
 		self.get_all(repo.pulls_url.replace("{/number}", ""))
 	}
 
 	/// Returns all reviews associated with a pull request.
-	pub fn reviews(&self, pull_request: &github::PullRequest) -> Result<Vec<github::Review>> {
+	pub fn reviews(
+		&self,
+		pull_request: &github::PullRequest,
+	) -> Result<Vec<github::Review>> {
 		self.get_all(format!("{}/reviews", pull_request.html_url))
 	}
 
@@ -89,7 +98,10 @@ impl GithubBot {
 	}
 
 	/// Returns all reviews associated with a pull request.
-	pub fn issue(&self, pull_request: &github::PullRequest) -> Result<Option<github::Issue>> {
+	pub fn issue(
+		&self,
+		pull_request: &github::PullRequest,
+	) -> Result<Option<github::Issue>> {
 		pull_request
 			.links
 			.issue_link
@@ -112,7 +124,11 @@ impl GithubBot {
 	}
 
 	/// Returns the project info associated with a repository.
-	pub fn contents(&self, repo_name: &str, path: &str) -> Result<github::Contents> {
+	pub fn contents(
+		&self,
+		repo_name: &str,
+		path: &str,
+	) -> Result<github::Contents> {
 		self.get(&format!(
 			"{base_url}/repos/{owner}/{repo_name}/contents/{path}",
 			base_url = Self::BASE_URL,
@@ -148,7 +164,12 @@ impl GithubBot {
 	}
 
 	/// Creates a comment in the repo
-	pub fn add_comment<A, B>(&self, repo_name: A, issue_id: i64, comment: B) -> Result<()>
+	pub fn add_comment<A, B>(
+		&self,
+		repo_name: A,
+		issue_id: i64,
+		comment: B,
+	) -> Result<()>
 	where
 		A: AsRef<str>,
 		B: AsRef<str>,
@@ -175,7 +196,12 @@ impl GithubBot {
 			.map(|_| ())
 	}
 
-	pub fn assign_author<A, B>(&self, repo_name: A, issue_id: i64, author_login: B) -> Result<()>
+	pub fn assign_author<A, B>(
+		&self,
+		repo_name: A,
+		issue_id: i64,
+		author_login: B,
+	) -> Result<()>
 	where
 		A: AsRef<str>,
 		B: AsRef<str>,
@@ -199,7 +225,11 @@ impl GithubBot {
 			.map(|_| ())
 	}
 
-	pub fn merge_pull_request<A>(&self, repo_name: A, pull_number: i64) -> Result<()>
+	pub fn merge_pull_request<A>(
+		&self,
+		repo_name: A,
+		pull_number: i64,
+	) -> Result<()>
 	where
 		A: AsRef<str>,
 	{
@@ -221,7 +251,11 @@ impl GithubBot {
 			.map(|_| ())
 	}
 
-	pub fn close_pull_request<A>(&self, repo_name: A, pull_number: i64) -> Result<()>
+	pub fn close_pull_request<A>(
+		&self,
+		repo_name: A,
+		pull_number: i64,
+	) -> Result<()>
 	where
 		A: AsRef<str>,
 	{
@@ -327,7 +361,11 @@ impl GithubBot {
 						.iter()
 						.find(|link| {
 							link.rel()
-								.map(|rel| rel.contains(&hyperx::header::RelationType::Next))
+								.map(|rel| {
+									rel.contains(
+										&hyperx::header::RelationType::Next,
+									)
+								})
 								.unwrap_or(false)
 						})
 						.map(|l| l.link())

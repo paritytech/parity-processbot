@@ -26,7 +26,11 @@ pub struct CreateRoomResponse {
 	pub room_id: String,
 }
 
-pub fn login(homeserver: &str, username: &str, password: &str) -> Result<LoginResponse> {
+pub fn login(
+	homeserver: &str,
+	username: &str,
+	password: &str,
+) -> Result<LoginResponse> {
 	let mut dst = Vec::new();
 	let mut handle = Easy::new();
 	handle
@@ -49,10 +53,14 @@ pub fn login(homeserver: &str, username: &str, password: &str) -> Result<LoginRe
 			.or_else(error::map_curl_error)?;
 		transfer.perform().or_else(error::map_curl_error)?;
 	}
-	serde_json::from_str(dbg!(String::from_utf8(dst).as_ref()).unwrap()).context(error::Json)
+	serde_json::from_str(dbg!(String::from_utf8(dst).as_ref()).unwrap())
+		.context(error::Json)
 }
 
-pub fn create_room(homeserver: &str, access_token: &str) -> Result<CreateRoomResponse> {
+pub fn create_room(
+	homeserver: &str,
+	access_token: &str,
+) -> Result<CreateRoomResponse> {
 	let mut dst = Vec::new();
 	let mut handle = Easy::new();
 	handle
@@ -81,10 +89,16 @@ pub fn create_room(homeserver: &str, access_token: &str) -> Result<CreateRoomRes
 			.or_else(error::map_curl_error)?;
 		transfer.perform().or_else(error::map_curl_error)?;
 	}
-	serde_json::from_str(String::from_utf8(dst).as_ref().unwrap()).context(error::Json)
+	serde_json::from_str(String::from_utf8(dst).as_ref().unwrap())
+		.context(error::Json)
 }
 
-pub fn invite(homeserver: &str, access_token: &str, room_id: &str, user_id: &str) -> Result<()> {
+pub fn invite(
+	homeserver: &str,
+	access_token: &str,
+	room_id: &str,
+	user_id: &str,
+) -> Result<()> {
 	let mut handle = Easy::new();
 	handle
 		.url(
@@ -105,7 +119,12 @@ pub fn invite(homeserver: &str, access_token: &str, room_id: &str, user_id: &str
 	handle.perform().or_else(error::map_curl_error)
 }
 
-pub fn send_message(homeserver: &str, access_token: &str, room_id: &str, body: &str) -> Result<()> {
+pub fn send_message(
+	homeserver: &str,
+	access_token: &str,
+	room_id: &str,
+	body: &str,
+) -> Result<()> {
 	let mut handle = Easy::new();
 	handle
 		.url(
@@ -133,7 +152,7 @@ pub fn parse_id(matrix_id: &str) -> Option<String> {
 	let no_at = Regex::new(r"^[\w]+:matrix.parity.io$").unwrap();
 	let no_domain = Regex::new(r"^@[\w]+$").unwrap();
 	let name_only = Regex::new(r"^[\w]+$").unwrap();
-	if full_handle .is_match(matrix_id) {
+	if full_handle.is_match(matrix_id) {
 		Some(format!("{}", matrix_id))
 	} else if no_at.is_match(matrix_id) {
 		Some(format!("@{}", matrix_id))
