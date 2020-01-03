@@ -44,7 +44,7 @@ impl GithubBot {
 		let client = reqwest::Client::new();
 
 		let organization = client
-			.get(&format!("{}/{}", Self::BASE_URL, org.as_ref()))
+			.get(&format!("{}/orgs/{}", Self::BASE_URL, org.as_ref()))
 			.bearer_auth(&auth_key)
 			.send()
 			.context(error::Http)?
