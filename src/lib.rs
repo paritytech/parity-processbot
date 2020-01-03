@@ -1,5 +1,3 @@
-#![feature(async_closure)]
-
 pub mod bamboo;
 pub mod bots;
 pub mod db;

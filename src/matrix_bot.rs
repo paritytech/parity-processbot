@@ -7,7 +7,11 @@ pub struct MatrixBot {
 }
 
 impl MatrixBot {
-	pub fn new(homeserver: &str, username: &str, password: &str) -> Result<Self> {
+	pub fn new(
+		homeserver: &str,
+		username: &str,
+		password: &str,
+	) -> Result<Self> {
 		matrix::login(homeserver, username, password).map(
 			|matrix::LoginResponse { access_token }| Self {
 				homeserver: homeserver.to_owned(),
@@ -19,13 +23,28 @@ impl MatrixBot {
 	pub fn send_private_message(&self, user_id: &str, msg: &str) -> Result<()> {
 		matrix::create_room(&self.homeserver, &self.access_token).and_then(
 			|matrix::CreateRoomResponse { room_id }| {
-				matrix::invite(&self.homeserver, &self.access_token, &room_id, user_id)?;
-				matrix::send_message(&self.homeserver, &self.access_token, &room_id, msg)
+				matrix::invite(
+					&self.homeserver,
+					&self.access_token,
+					&room_id,
+					user_id,
+				)?;
+				matrix::send_message(
+					&self.homeserver,
+					&self.access_token,
+					&room_id,
+					msg,
+				)
 			},
 		)
 	}
 
 	pub fn send_public_message(&self, room_id: &str, msg: &str) -> Result<()> {
-		matrix::send_message(&self.homeserver, &self.access_token, &room_id, msg)
+		matrix::send_message(
+			&self.homeserver,
+			&self.access_token,
+			&room_id,
+			msg,
+		)
 	}
 }

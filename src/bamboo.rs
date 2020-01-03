@@ -41,9 +41,12 @@ pub struct EmployeeResponse {
 	github: Option<String>,
 }
 
-const BASE_URL: &'static str = "https://api.bamboohr.com/api/gateway.php/parity/v1";
+const BASE_URL: &'static str =
+	"https://api.bamboohr.com/api/gateway.php/parity/v1";
 
-fn get_employees_directory(access_token: &str) -> Result<EmployeesDirectoryResponse> {
+fn get_employees_directory(
+	access_token: &str,
+) -> Result<EmployeesDirectoryResponse> {
 	let mut dst = Vec::new();
 	let mut handle = Easy::new();
 	handle
@@ -73,10 +76,14 @@ fn get_employees_directory(access_token: &str) -> Result<EmployeesDirectoryRespo
 			.or_else(error::map_curl_error)?;
 		transfer.perform().or_else(error::map_curl_error)?;
 	}
-	serde_json::from_str(String::from_utf8(dst).as_ref().unwrap()).context(error::Json)
+	serde_json::from_str(String::from_utf8(dst).as_ref().unwrap())
+		.context(error::Json)
 }
 
-fn get_employee(access_token: &str, employee_id: &str) -> Result<EmployeeResponse> {
+fn get_employee(
+	access_token: &str,
+	employee_id: &str,
+) -> Result<EmployeeResponse> {
 	let mut dst = Vec::new();
 	let mut handle = Easy::new();
 	handle
@@ -112,7 +119,8 @@ fn get_employee(access_token: &str, employee_id: &str) -> Result<EmployeeRespons
 			.or_else(error::map_curl_error)?;
 		transfer.perform().or_else(error::map_curl_error)?;
 	}
-	serde_json::from_str(String::from_utf8(dst).as_ref().unwrap()).context(error::Json)
+	serde_json::from_str(String::from_utf8(dst).as_ref().unwrap())
+		.context(error::Json)
 }
 
 pub fn github_to_matrix(access_token: &str) -> Result<HashMap<String, String>> {

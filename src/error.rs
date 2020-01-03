@@ -56,7 +56,9 @@ pub enum Error {
 }
 
 /// Maps the response into an error if it's not a success.
-pub fn map_response_status(mut val: reqwest::Response) -> Result<reqwest::Response> {
+pub fn map_response_status(
+	mut val: reqwest::Response,
+) -> Result<reqwest::Response> {
 	if val.status().is_success() {
 		Ok(val)
 	} else {

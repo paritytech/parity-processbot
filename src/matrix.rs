@@ -26,7 +26,11 @@ pub struct CreateRoomResponse {
 	pub room_id: String,
 }
 
-pub fn login(homeserver: &str, username: &str, password: &str) -> Result<LoginResponse> {
+pub fn login(
+	homeserver: &str,
+	username: &str,
+	password: &str,
+) -> Result<LoginResponse> {
 	let mut dst = Vec::new();
 	let mut handle = Easy::new();
 	handle
@@ -34,11 +38,9 @@ pub fn login(homeserver: &str, username: &str, password: &str) -> Result<LoginRe
 		.or_else(error::map_curl_error)?;
 	handle
                 .post_fields_copy(
-                        format!(
-                                "{{\"type\":\"m.login.password\", \"identifier\": {{ \"type\": \"m.id.thirdparty\", \"medium\": \"email\", \"address\": \"{}\" }}, \"password\":\"{}\"}}",
-                                username, password
-                        )
-                        .as_bytes(),
+                        serde_json::json!({ "type": "m.login.password", "identifier": { "type": "m.id.thirdparty", "medium": "email", "address": username }, "password": password })
+                                .to_string()
+                                .as_bytes(),
                 )
                 .or_else(error::map_curl_error)?;
 	{
@@ -51,10 +53,14 @@ pub fn login(homeserver: &str, username: &str, password: &str) -> Result<LoginRe
 			.or_else(error::map_curl_error)?;
 		transfer.perform().or_else(error::map_curl_error)?;
 	}
-	serde_json::from_str(dbg!(String::from_utf8(dst).as_ref()).unwrap()).context(error::Json)
+	serde_json::from_str(dbg!(String::from_utf8(dst).as_ref()).unwrap())
+		.context(error::Json)
 }
 
-pub fn create_room(homeserver: &str, access_token: &str) -> Result<CreateRoomResponse> {
+pub fn create_room(
+	homeserver: &str,
+	access_token: &str,
+) -> Result<CreateRoomResponse> {
 	let mut dst = Vec::new();
 	let mut handle = Easy::new();
 	handle
@@ -67,7 +73,11 @@ pub fn create_room(homeserver: &str, access_token: &str) -> Result<CreateRoomRes
 		)
 		.or_else(error::map_curl_error)?;
 	handle
-		.post_fields_copy(format!("{{\"room_alias\":\"\"}}").as_bytes())
+		.post_fields_copy(
+			serde_json::json!({ "room_alias": "" })
+				.to_string()
+				.as_bytes(),
+		)
 		.or_else(error::map_curl_error)?;
 	{
 		let mut transfer = handle.transfer();
@@ -79,10 +89,16 @@ pub fn create_room(homeserver: &str, access_token: &str) -> Result<CreateRoomRes
 			.or_else(error::map_curl_error)?;
 		transfer.perform().or_else(error::map_curl_error)?;
 	}
-	serde_json::from_str(String::from_utf8(dst).as_ref().unwrap()).context(error::Json)
+	serde_json::from_str(String::from_utf8(dst).as_ref().unwrap())
+		.context(error::Json)
 }
 
-pub fn invite(homeserver: &str, access_token: &str, room_id: &str, user_id: &str) -> Result<()> {
+pub fn invite(
+	homeserver: &str,
+	access_token: &str,
+	room_id: &str,
+	user_id: &str,
+) -> Result<()> {
 	let mut handle = Easy::new();
 	handle
 		.url(
@@ -94,12 +110,21 @@ pub fn invite(homeserver: &str, access_token: &str, room_id: &str, user_id: &str
 		)
 		.or_else(error::map_curl_error)?;
 	handle
-		.post_fields_copy(format!("{{\"user_id\":\"{}\"}}", user_id).as_bytes())
+		.post_fields_copy(
+			serde_json::json!({ "user_id": user_id })
+				.to_string()
+				.as_bytes(),
+		)
 		.or_else(error::map_curl_error)?;
 	handle.perform().or_else(error::map_curl_error)
 }
 
-pub fn send_message(homeserver: &str, access_token: &str, room_id: &str, body: &str) -> Result<()> {
+pub fn send_message(
+	homeserver: &str,
+	access_token: &str,
+	room_id: &str,
+	body: &str,
+) -> Result<()> {
 	let mut handle = Easy::new();
 	handle
 		.url(
@@ -111,7 +136,11 @@ pub fn send_message(homeserver: &str, access_token: &str, room_id: &str, body: &
 		)
 		.or_else(error::map_curl_error)?;
 	handle
-		.post_fields_copy(format!("{{\"msgtype\":\"m.text\",\"body\":\"{}\"}}", body).as_bytes())
+		.post_fields_copy(
+			serde_json::json!({ "msgtype": "m.text", "body": body })
+				.to_string()
+				.as_bytes(),
+		)
 		.or_else(error::map_curl_error)?;
 	handle.perform().or_else(error::map_curl_error)
 }
@@ -119,17 +148,17 @@ pub fn send_message(homeserver: &str, access_token: &str, room_id: &str, body: &
 /// If the pattern is recognised, return the full matrix id.
 /// Otherwise, return None.
 pub fn parse_id(matrix_id: &str) -> Option<String> {
-	let re1 = Regex::new(r"^@[\w]+:matrix.parity.io$").unwrap();
-	let re2 = Regex::new(r"^[\w]+:matrix.parity.io$").unwrap();
-	let re3 = Regex::new(r"^@[\w]+$").unwrap();
-	let re4 = Regex::new(r"^[\w]+$").unwrap();
-	if re1.is_match(matrix_id) {
+	let full_handle = Regex::new(r"^@[\w]+:matrix.parity.io$").unwrap();
+	let no_at = Regex::new(r"^[\w]+:matrix.parity.io$").unwrap();
+	let no_domain = Regex::new(r"^@[\w]+$").unwrap();
+	let name_only = Regex::new(r"^[\w]+$").unwrap();
+	if full_handle.is_match(matrix_id) {
 		Some(format!("{}", matrix_id))
-	} else if re2.is_match(matrix_id) {
+	} else if no_at.is_match(matrix_id) {
 		Some(format!("@{}", matrix_id))
-	} else if re3.is_match(matrix_id) {
+	} else if no_domain.is_match(matrix_id) {
 		Some(format!("{}:matrix.parity.io", matrix_id))
-	} else if re4.is_match(matrix_id) {
+	} else if name_only.is_match(matrix_id) {
 		Some(format!("@{}:matrix.parity.io", matrix_id))
 	} else {
 		None

@@ -26,7 +26,8 @@ const STATUS_FAILURE_PING_PERIOD: u64 = 3600 * 24;
 const ISSUE_NOT_ASSIGNED_PING_PERIOD: u64 = 3600 * 24;
 
 const FALLBACK_ROOM_ID: &'static str = "!aenJixaHcSKbJOWxYk:matrix.parity.io";
-const ISSUE_MUST_EXIST_MESSAGE: &'static str = "Every pull request must address an issue.";
+const ISSUE_MUST_EXIST_MESSAGE: &'static str =
+	"Every pull request must address an issue.";
 const ISSUE_ASSIGNEE_NOTIFICATION: &'static str = "{1} addressing {2} has been opened by {3}. Please reassign the issue or close the pull request.";
 const REQUESTING_REVIEWS_MESSAGE: &'static str = "{1} is in need of reviewers.";
 const STATUS_FAILURE_NOTIFICATION: &'static str = "{1} has failed status checks.";
@@ -90,9 +91,11 @@ fn require_reviewer(
 			github_bot.request_reviews(&repo.name, pr_number, &[github_id.as_ref()]);
 		}
 	} else {
-		// post a message in the project's Riot channel, requesting a review; repeat
-		// this message every 24 hours until a reviewer is assigned.
-		if let Some(ref room_id) = &project_info.and_then(|p| p.matrix_room_id.as_ref()) {
+		// post a message in the project's Riot channel, requesting a review;
+		// repeat this message every 24 hours until a reviewer is assigned.
+		if let Some(ref room_id) =
+			&project_info.and_then(|p| p.matrix_room_id.as_ref())
+		{
 			matrix_bot.send_public_message(
 				&room_id,
 				&REQUESTING_REVIEWS_MESSAGE.replace("{1}", &format!("{}", pr_html_url)),
@@ -131,8 +134,10 @@ pub fn handle_pull_request(
 	};
 	if let Ok(Some(entry)) = db.get_pinned(db_key).map(|v| {
 		v.map(|value| {
-			serde_json::from_str::<DbEntry>(String::from_utf8(value.to_vec()).unwrap().as_str())
-				.expect("deserialize entry")
+			serde_json::from_str::<DbEntry>(
+				String::from_utf8(value.to_vec()).unwrap().as_str(),
+			)
+			.expect("deserialize entry")
 		})
 	}) {
 		db_entry = entry;
@@ -208,7 +213,10 @@ pub fn handle_pull_request(
 						let days = db_entry
 							.issue_not_assigned_ping
 							.and_then(|ping| ping.elapsed().ok())
-							.map(|elapsed| elapsed.as_secs() / ISSUE_NOT_ASSIGNED_PING_PERIOD);
+							.map(|elapsed| {
+								elapsed.as_secs()
+									/ ISSUE_NOT_ASSIGNED_PING_PERIOD
+							});
 						match days {
 							None => {
 								// notify the the issue assignee and project owner through a PM
@@ -216,8 +224,9 @@ pub fn handle_pull_request(
 								if let Some(assignee) = issue_assignee {
 									if let Some(matrix_id) = github_to_matrix
 										.get(&assignee.login)
-										.and_then(|matrix_id| matrix::parse_id(matrix_id))
-									{
+										.and_then(|matrix_id| {
+											matrix::parse_id(matrix_id)
+										}) {
 										matrix_bot.send_private_message(
 											&matrix_id,
 											&ISSUE_ASSIGNEE_NOTIFICATION
@@ -231,8 +240,9 @@ pub fn handle_pull_request(
 								}
 								if let Some(matrix_id) = github_to_matrix
 									.get(&repo.owner.login)
-									.and_then(|matrix_id| matrix::parse_id(matrix_id))
-								{
+									.and_then(|matrix_id| {
+										matrix::parse_id(matrix_id)
+									}) {
 									matrix_bot.send_private_message(
 										&matrix_id,
 										&ISSUE_ASSIGNEE_NOTIFICATION
@@ -246,8 +256,9 @@ pub fn handle_pull_request(
 							}
 							Some(0) => { /* do nothing */ }
 							Some(1) | Some(2) => {
-								// if after 24 hours there is no change, then send a message into
-								// the project's Riot channel
+								// if after 24 hours there is no change, then
+								// send a message into the project's Riot
+								// channel
 								if db_entry.actions_taken
 									& PullRequestCoreDevAuthorIssueNotAssigned24h
 									== NoAction
@@ -276,8 +287,8 @@ pub fn handle_pull_request(
 								}
 							}
 							_ => {
-								// if after a further 48 hours there is still no change, then close
-								// the PR.
+								// if after a further 48 hours there is still no
+								// change, then close the PR.
 								if db_entry.actions_taken
 									& PullRequestCoreDevAuthorIssueNotAssigned72h
 									== NoAction
