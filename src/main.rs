@@ -60,9 +60,6 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 		github_organization
 	);
 
-	dbg!(github_bot.request_reviews("parity-processbot", 14, &["XAMPPRocky"]));
-	return Ok(());
-
 	let core_devs =
 		dbg!(github_bot.team_members(github_bot.team("core-devs")?.id)?);
 
