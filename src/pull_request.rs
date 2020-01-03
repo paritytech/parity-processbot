@@ -37,7 +37,7 @@ fn require_reviewer(
 	matrix_bot: &MatrixBot,
 	github_to_matrix: &HashMap<String, String>,
 	project_info: Option<&project::ProjectInfo>,
-) {
+) -> Result<()> {
 	let author_is_owner = project_info
 		.and_then(|p| p.owner.as_ref())
 		.map(|u| u == &pull_request.user.login)
@@ -46,6 +46,12 @@ fn require_reviewer(
 		.and_then(|p| p.delegated_reviewer.as_ref())
 		.map(|u| u == &pull_request.user.login)
 		.unwrap_or(false);
+	let pr_html_url = pull_request
+		.html_url
+		.as_ref()
+		.ok_or(error::Error::MissingData {
+			backtrace: snafu::Backtrace::generate(),
+		})?;
 
 	if !author_is_delegated {
 		// TODO
@@ -59,16 +65,17 @@ fn require_reviewer(
 		if let Some(ref room_id) = &project_info.and_then(|p| p.matrix_room_id.as_ref()) {
 			matrix_bot.send_public_message(
 				&room_id,
-				&REQUESTING_REVIEWS_MESSAGE.replace("{1}", &format!("{}", pull_request.html_url)),
+				&REQUESTING_REVIEWS_MESSAGE.replace("{1}", &format!("{}", pr_html_url)),
 			);
 		} else {
 			matrix_bot.send_public_message(
 				&FALLBACK_ROOM_ID,
-				&REQUESTING_REVIEWS_MESSAGE.replace("{1}", &format!("{}", pull_request.html_url)),
+				&REQUESTING_REVIEWS_MESSAGE.replace("{1}", &format!("{}", pr_html_url)),
 			);
 		}
 	}
 
+	Ok(())
 	/*
 	 * if they are not the Delegated Reviewer (by default the project owner),
 	 * then Require a Review from the Delegated Reviewer; otherwise, if the
@@ -88,7 +95,12 @@ pub fn handle_pull_request(
 	project_info: Option<&project::ProjectInfo>,
 	pull_request: &github::PullRequest,
 ) -> Result<()> {
-	let pr_id = pull_request.id;
+	let pr_id = pull_request.id.ok_or(error::Error::MissingData {
+		backtrace: snafu::Backtrace::generate(),
+	})?;
+	let pr_number = pull_request.number.ok_or(error::Error::MissingData {
+		backtrace: snafu::Backtrace::generate(),
+	})?;
 	let db_key = &format!("{}", pr_id).into_bytes();
 	let mut db_entry = DbEntry {
 		actions_taken: NoAction,
@@ -111,6 +123,13 @@ pub fn handle_pull_request(
 		.ok_or(error::Error::MissingData {
 			backtrace: snafu::Backtrace::generate(),
 		})?;
+	let pr_html_url = pull_request
+		.html_url
+		.as_ref()
+		.ok_or(error::Error::MissingData {
+			backtrace: snafu::Backtrace::generate(),
+		})?;
+
 	let reviews = github_bot.reviews(pull_request)?;
 	let issue = github_bot.issue(pull_request)?;
 	let mut statuses = github_bot.statuses(pull_request)?;
@@ -125,9 +144,13 @@ pub fn handle_pull_request(
 
 	if !(author_is_owner || author_is_whitelisted) {
 		match issue {
-			Some(issue) => {
-				if issue
-					.assignee
+			Some(github::Issue {
+				id: issue_id,
+				html_url: ref issue_html_url,
+				assignee: ref issue_assignee,
+				..
+			}) => {
+				if issue_assignee
 					.as_ref()
 					.map_or(false, |issue_assignee| issue_assignee.id == author.id)
 				{
@@ -139,10 +162,17 @@ pub fn handle_pull_request(
 						project_info,
 					);
 				} else {
+					let issue_id = issue_id.ok_or(error::Error::MissingData {
+						backtrace: snafu::Backtrace::generate(),
+					})?;
+					let issue_html_url =
+						issue_html_url.as_ref().ok_or(error::Error::MissingData {
+							backtrace: snafu::Backtrace::generate(),
+						})?;
 					if author_is_owner || author_is_whitelisted {
 						// never true ... ?
 						// assign the issue to the author
-						github_bot.assign_author(&repo.name, issue.id, &author.login)?;
+						github_bot.assign_author(&repo.name, issue_id, &author.login)?;
 						require_reviewer(
 							&pull_request,
 							&repo,
@@ -159,7 +189,7 @@ pub fn handle_pull_request(
 							None => {
 								// notify the the issue assignee and project owner through a PM
 								db_entry.issue_not_assigned_ping = Some(SystemTime::now());
-								if let Some(assignee) = issue.assignee {
+								if let Some(assignee) = issue_assignee {
 									if let Some(matrix_id) = github_to_matrix
 										.get(&assignee.login)
 										.and_then(|matrix_id| matrix::parse_id(matrix_id))
@@ -167,11 +197,8 @@ pub fn handle_pull_request(
 										matrix_bot.send_private_message(
 											&matrix_id,
 											&ISSUE_ASSIGNEE_NOTIFICATION
-												.replace(
-													"{1}",
-													&format!("{}", pull_request.html_url),
-												)
-												.replace("{2}", &format!("{}", issue.html_url))
+												.replace("{1}", &format!("{}", pr_html_url))
+												.replace("{2}", &format!("{}", issue_html_url))
 												.replace("{3}", &format!("{}", author.login)),
 										);
 									} else {
@@ -185,8 +212,8 @@ pub fn handle_pull_request(
 									matrix_bot.send_private_message(
 										&matrix_id,
 										&ISSUE_ASSIGNEE_NOTIFICATION
-											.replace("{1}", &format!("{}", pull_request.html_url))
-											.replace("{2}", &format!("{}", issue.html_url))
+											.replace("{1}", &format!("{}", pr_html_url))
+											.replace("{2}", &format!("{}", issue_html_url))
 											.replace("{3}", &format!("{}", author.login)),
 									);
 								} else {
@@ -209,22 +236,16 @@ pub fn handle_pull_request(
 										matrix_bot.send_public_message(
 											&room_id,
 											&ISSUE_ASSIGNEE_NOTIFICATION
-												.replace(
-													"{1}",
-													&format!("{}", pull_request.html_url),
-												)
-												.replace("{2}", &format!("{}", issue.html_url))
+												.replace("{1}", &format!("{}", pr_html_url))
+												.replace("{2}", &format!("{}", issue_html_url))
 												.replace("{3}", &format!("{}", author.login)),
 										);
 									} else {
 										matrix_bot.send_public_message(
 											&FALLBACK_ROOM_ID,
 											&ISSUE_ASSIGNEE_NOTIFICATION
-												.replace(
-													"{1}",
-													&format!("{}", pull_request.html_url),
-												)
-												.replace("{2}", &format!("{}", issue.html_url))
+												.replace("{1}", &format!("{}", pr_html_url))
+												.replace("{2}", &format!("{}", issue_html_url))
 												.replace("{3}", &format!("{}", author.login)),
 										);
 									}
@@ -240,7 +261,7 @@ pub fn handle_pull_request(
 									db_entry.actions_taken |=
 										PullRequestCoreDevAuthorIssueNotAssigned72h;
 									github_bot
-										.close_pull_request(&repo.name, pull_request.number)?;
+										.close_pull_request(&repo.name, pr_number)?;
 								}
 							}
 						}
@@ -250,8 +271,8 @@ pub fn handle_pull_request(
 			None => {
 				// leave a message that a corresponding issue must exist for each PR
 				// close the PR
-				github_bot.add_comment(&repo.name, pull_request.id, &ISSUE_MUST_EXIST_MESSAGE)?;
-				github_bot.close_pull_request(&repo.name, pull_request.number)?;
+				github_bot.add_comment(&repo.name, pr_id, &ISSUE_MUST_EXIST_MESSAGE)?;
+				github_bot.close_pull_request(&repo.name, pr_number)?;
 			}
 		}
 	}
@@ -260,14 +281,14 @@ pub fn handle_pull_request(
 		reviews
 			.iter()
 			.find(|r| r.user.id == owner.id)
-			.map_or(false, |r| r.state == "APPROVED")
+			.map_or(false, |r| r.state == Some("APPROVED".to_owned()))
 	});
 	let status = statuses.as_mut().and_then(|v| {
 		v.sort_by_key(|s| s.updated_at);
 		v.last()
 	});
 	if let Some(ref status) = status {
-		if status.state == "failure" {
+		if status.state == Some("failure".to_owned()) {
 			// notify PR author by PM every 24 hours
 			if db_entry.status_failure_ping.map_or(true, |ping_time| {
 				ping_time.elapsed().ok().map_or(true, |elapsed| {
@@ -281,17 +302,16 @@ pub fn handle_pull_request(
 				{
 					matrix_bot.send_private_message(
 						&matrix_id,
-						&STATUS_FAILURE_NOTIFICATION
-							.replace("{1}", &format!("{}", pull_request.html_url)),
+						&STATUS_FAILURE_NOTIFICATION.replace("{1}", &format!("{}", pr_html_url)),
 					);
 				} else {
 					log::warn!("Couldn't send a message to {}; either their Github or Matrix handle is not set in Bamboo", &repo.owner.login);
 				}
 			}
-		} else if status.state == "success" {
+		} else if status.state == Some("success".to_owned()) {
 			if owner_approved {
 				// merge & delete branch
-				github_bot.merge_pull_request(&repo.name, pull_request.number)?;
+				github_bot.merge_pull_request(&repo.name, pr_number)?;
 				db.delete(db_key).context(error::Db)?;
 				return Ok(());
 			} else {

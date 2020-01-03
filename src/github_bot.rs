@@ -13,7 +13,10 @@ use rocksdb::{
 	DB,
 };
 use serde::*;
-use snafu::ResultExt;
+use snafu::{
+	GenerateBacktrace,
+	ResultExt,
+};
 
 use crate::{
 	error,
@@ -41,7 +44,7 @@ impl GithubBot {
 		let client = reqwest::Client::new();
 
 		let organization = client
-			.get(&format!("{}/{}", Self::BASE_URL, org.as_ref()))
+			.get(&format!("{}/orgs/{}", Self::BASE_URL, org.as_ref()))
 			.bearer_auth(&auth_key)
 			.send()
 			.context(error::Http)?
@@ -67,7 +70,13 @@ impl GithubBot {
 
 	/// Returns all reviews associated with a pull request.
 	pub fn reviews(&self, pull_request: &github::PullRequest) -> Result<Vec<github::Review>> {
-		self.get_all(format!("{}/reviews", pull_request.html_url))
+		pull_request
+			.html_url
+			.as_ref()
+			.ok_or(error::Error::MissingData {
+				backtrace: snafu::Backtrace::generate(),
+			})
+			.and_then(|html_url| self.get_all(format!("{}/reviews", html_url)))
 	}
 
 	/// Requests a review from a user.
@@ -88,7 +97,7 @@ impl GithubBot {
 		self.post(&url, &body)
 	}
 
-	/// Returns all reviews associated with a pull request.
+	/// Returns the issue associated with a pull request.
 	pub fn issue(&self, pull_request: &github::PullRequest) -> Result<Option<github::Issue>> {
 		pull_request
 			.links
@@ -96,6 +105,21 @@ impl GithubBot {
 			.as_ref()
 			.map(|github::IssueLink { href }| self.get(href))
 			.transpose()
+	}
+
+	/// Returns events assiciated with an issue.
+	pub fn issue_events(
+		&self,
+		repo_name: &str,
+		issue_number: i64,
+	) -> Result<Vec<github::IssueEvent>> {
+		self.get(&format!(
+			"{base_url}/repos/{owner}/{repo_name}/issues/{issue_number}/events",
+			base_url = Self::BASE_URL,
+			owner = self.organization.login,
+			repo_name = repo_name,
+			issue_number = issue_number
+		))
 	}
 
 	/// Returns all reviews associated with a pull request.
@@ -122,24 +146,15 @@ impl GithubBot {
 		))
 	}
 
-	/// Returns events assiciated with an issue.
-	pub fn issue_events(
-		&self,
-		repo_name: &str,
-		issue_number: i64,
-	) -> Result<Vec<github::IssueEvent>> {
-		self.get(&format!(
-			"{base_url}/repos/{owner}/{repo_name}/issues/{issue_number}/events",
-			base_url = Self::BASE_URL,
-			owner = self.organization.login,
-			repo_name = repo_name,
-			issue_number = issue_number
-		))
-	}
-
 	/// Returns the team with a given team slug (eg. 'core-devs').
 	pub fn team(&self, slug: &str) -> Result<github::Team> {
-		self.get(&format!("{}/teams/{}", self.organization.url, slug))
+		self.organization
+			.url
+			.as_ref()
+			.ok_or(error::Error::MissingData {
+				backtrace: snafu::Backtrace::generate(),
+			})
+			.and_then(|url| self.get(&format!("{}/teams/{}", url, slug)))
 	}
 
 	/// Returns members of the team with a id.
@@ -292,6 +307,10 @@ impl GithubBot {
 		let mut response = self
 			.client
 			.get(&*(url.into()))
+			.header(
+				reqwest::header::ACCEPT,
+				"application/vnd.github.starfox-preview+json",
+			)
 			.bearer_auth(&self.auth_key)
 			.send()
 			.context(error::Http)?;
