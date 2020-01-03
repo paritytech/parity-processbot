@@ -30,6 +30,10 @@ const ISSUE_MUST_EXIST_MESSAGE: &'static str = "Every pull request must address 
 const ISSUE_ASSIGNEE_NOTIFICATION: &'static str = "{1} addressing {2} has been opened by {3}. Please reassign the issue or close the pull request.";
 const REQUESTING_REVIEWS_MESSAGE: &'static str = "{1} is in need of reviewers.";
 const STATUS_FAILURE_NOTIFICATION: &'static str = "{1} has failed status checks.";
+const REQUEST_DELEGATED_REVIEW_MESSAGE: &'static str =
+	"{1} needs your review in the next 72 hours, as you are the delegated reviewer.";
+const REQUEST_OWNER_REVIEW_MESSAGE: &'static str =
+	"{1} needs your review in the next 72 hours, as you are the project owner.";
 
 /*
  * if they are not the Delegated Reviewer (by default the project owner),
@@ -42,6 +46,7 @@ const STATUS_FAILURE_NOTIFICATION: &'static str = "{1} has failed status checks.
 fn require_reviewer(
 	pull_request: &github::PullRequest,
 	repo: &github::Repository,
+	github_bot: &GithubBot,
 	matrix_bot: &MatrixBot,
 	github_to_matrix: &HashMap<String, String>,
 	project_info: Option<&project::ProjectInfo>,
@@ -60,13 +65,30 @@ fn require_reviewer(
 		.ok_or(error::Error::MissingData {
 			backtrace: snafu::Backtrace::generate(),
 		})?;
+	let pr_number = error::unwrap_field(pull_request.number)?;
 
 	if !author_is_delegated {
-		// TODO
-		// require review from delegated reviewer
+		if let Some((github_id, matrix_id)) = project_info
+			.and_then(|p| p.delegated_reviewer.as_ref())
+			.and_then(|u| github_to_matrix.get(u).map(|m| (u, m)))
+		{
+			matrix_bot.send_private_message(
+				&matrix_id,
+				&REQUEST_DELEGATED_REVIEW_MESSAGE.replace("{1}", &pr_html_url),
+			);
+			github_bot.request_reviews(&repo.name, pr_number, &[github_id.as_ref()]);
+		}
 	} else if !author_is_owner {
-		// TODO
-		// require review from project owner
+		if let Some((github_id, matrix_id)) = project_info
+			.and_then(|p| p.owner.as_ref())
+			.and_then(|u| github_to_matrix.get(u).map(|m| (u, m)))
+		{
+			matrix_bot.send_private_message(
+				&matrix_id,
+				&REQUEST_OWNER_REVIEW_MESSAGE.replace("{1}", &pr_html_url),
+			);
+			github_bot.request_reviews(&repo.name, pr_number, &[github_id.as_ref()]);
+		}
 	} else {
 		// post a message in the project's Riot channel, requesting a review; repeat
 		// this message every 24 hours until a reviewer is assigned.
@@ -157,6 +179,7 @@ pub fn handle_pull_request(
 					require_reviewer(
 						&pull_request,
 						&repo,
+						github_bot,
 						matrix_bot,
 						github_to_matrix,
 						project_info,
@@ -176,6 +199,7 @@ pub fn handle_pull_request(
 						require_reviewer(
 							&pull_request,
 							&repo,
+							github_bot,
 							matrix_bot,
 							github_to_matrix,
 							project_info,
