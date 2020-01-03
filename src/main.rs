@@ -1,13 +1,18 @@
 use rocksdb::DB;
+use snafu::GenerateBacktrace;
 use std::collections::HashMap;
 use std::fs::File;
 use std::time::Duration;
 
-use parity_processbot::bamboo;
-use parity_processbot::bots;
-use parity_processbot::github_bot;
-use parity_processbot::matrix_bot;
-use parity_processbot::project;
+use parity_processbot::{
+	bamboo,
+	bots,
+	error,
+	github_bot,
+	issue,
+	matrix_bot,
+	project,
+};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -51,10 +56,17 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 		github_organization
 	);
 
-	dbg!(github_bot.request_reviews("parity-processbot", 14, &["XAMPPRocky"]));
+	dbg!(github_bot.issue_events("parity-processbot", 10));
+
 	return Ok(());
 
-	let core_devs = dbg!(github_bot.team_members(github_bot.team("core-devs")?.id)?);
+	let core_devs = dbg!(
+		github_bot.team_members(github_bot.team("core-devs")?.id.ok_or(
+			error::Error::MissingData {
+				backtrace: snafu::Backtrace::generate(),
+			}
+		)?)?
+	);
 
 	//        rayon::ThreadPoolBuilder::new().num_threads(22).build_global().
 	// unwrap();

@@ -1,9 +1,16 @@
 use crate::Result;
 use snafu::{
 	Backtrace,
+	GenerateBacktrace,
 	ResultExt,
 	Snafu,
 };
+
+pub fn unwrap_field<T>(x: Option<T>) -> Result<T> {
+	x.ok_or(Error::MissingData {
+		backtrace: snafu::Backtrace::generate(),
+	})
+}
 
 #[derive(Debug, Snafu)]
 #[snafu(visibility = "pub")]

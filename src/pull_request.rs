@@ -31,6 +31,14 @@ const ISSUE_ASSIGNEE_NOTIFICATION: &'static str = "{1} addressing {2} has been o
 const REQUESTING_REVIEWS_MESSAGE: &'static str = "{1} is in need of reviewers.";
 const STATUS_FAILURE_NOTIFICATION: &'static str = "{1} has failed status checks.";
 
+/*
+ * if they are not the Delegated Reviewer (by default the project owner),
+ * then Require a Review from the Delegated Reviewer; otherwise, if the
+ * author is not the project owner, then Require a Review from the
+ * Project Owner; otherwise, post a message in the project's Riot
+ * channel, requesting a review; repeat this message every 24 hours until
+ * a reviewer is assigned.
+ */
 fn require_reviewer(
 	pull_request: &github::PullRequest,
 	repo: &github::Repository,
@@ -76,14 +84,6 @@ fn require_reviewer(
 	}
 
 	Ok(())
-	/*
-	 * if they are not the Delegated Reviewer (by default the project owner),
-	 * then Require a Review from the Delegated Reviewer; otherwise, if the
-	 * author is not the project owner, then Require a Review from the
-	 * Project Owner; otherwise, post a message in the project's Riot
-	 * channel, requesting a review; repeat this message every 24 hours until
-	 * a reviewer is assigned.
-	 */
 }
 
 pub fn handle_pull_request(
@@ -260,8 +260,7 @@ pub fn handle_pull_request(
 								{
 									db_entry.actions_taken |=
 										PullRequestCoreDevAuthorIssueNotAssigned72h;
-									github_bot
-										.close_pull_request(&repo.name, pr_number)?;
+									github_bot.close_pull_request(&repo.name, pr_number)?;
 								}
 							}
 						}

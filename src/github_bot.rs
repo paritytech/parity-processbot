@@ -122,7 +122,7 @@ impl GithubBot {
 		))
 	}
 
-	/// Returns all reviews associated with a pull request.
+	/// Returns statuses associated with a pull request.
 	pub fn statuses(
 		&self,
 		pull_request: &github::PullRequest,
@@ -135,7 +135,7 @@ impl GithubBot {
 			.transpose()
 	}
 
-	/// Returns the project info associated with a repository.
+	/// Returns the contents of a file in a repository.
 	pub fn contents(&self, repo_name: &str, path: &str) -> Result<github::Contents> {
 		self.get(&format!(
 			"{base_url}/repos/{owner}/{repo_name}/contents/{path}",
@@ -299,7 +299,7 @@ impl GithubBot {
 	}
 
 	/// Get a single entry from a resource in GitHub.
-	fn get<'b, I, T>(&self, url: I) -> Result<T>
+	pub fn get<'b, I, T>(&self, url: I) -> Result<T>
 	where
 		I: Into<Cow<'b, str>>,
 		T: serde::de::DeserializeOwned,
