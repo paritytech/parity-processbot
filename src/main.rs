@@ -1,20 +1,11 @@
 use rocksdb::DB;
-use snafu::{
-	GenerateBacktrace,
-	OptionExt,
-};
+use snafu::{GenerateBacktrace, OptionExt};
 use std::collections::HashMap;
 use std::fs::File;
 use std::time::Duration;
 
 use parity_processbot::{
-	bamboo,
-	bots,
-	error,
-	github_bot,
-	issue,
-	matrix_bot,
-	project,
+	bamboo, bots, error, github_bot, issue, matrix_bot, project,
 };
 
 #[tokio::main]

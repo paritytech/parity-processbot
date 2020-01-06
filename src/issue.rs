@@ -1,25 +1,13 @@
 use crate::db::*;
 use crate::{
-	error,
-	github,
-	github_bot::GithubBot,
-	matrix,
-	matrix_bot::MatrixBot,
-	project,
-	Result,
+	error, github, github_bot::GithubBot, matrix, matrix_bot::MatrixBot,
+	project, Result,
 };
 use itertools::Itertools;
 use rocksdb::DB;
-use snafu::{
-	GenerateBacktrace,
-	OptionExt,
-	ResultExt,
-};
+use snafu::{GenerateBacktrace, OptionExt, ResultExt};
 use std::collections::HashMap;
-use std::time::{
-	Duration,
-	SystemTime,
-};
+use std::time::{Duration, SystemTime};
 
 const ISSUE_NEEDS_A_PROJECT_MESSAGE: &'static str =
 	"{1} needs to be attached to a project or it will be closed.";

@@ -1,9 +1,4 @@
-use crate::{
-	error,
-	github,
-	github_bot::GithubBot,
-	Result,
-};
+use crate::{error, github, github_bot::GithubBot, Result};
 
 impl github::Repository {
 	pub fn project_owner(&self) -> Option<github::User> {

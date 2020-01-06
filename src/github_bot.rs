@@ -2,29 +2,14 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::time::SystemTime;
 
-use byteorder::{
-	BigEndian,
-	ByteOrder,
-};
+use byteorder::{BigEndian, ByteOrder};
 use futures::future::Future;
 use hyperx::header::TypedHeaders;
-use rocksdb::{
-	IteratorMode,
-	DB,
-};
+use rocksdb::{IteratorMode, DB};
 use serde::*;
-use snafu::{
-	GenerateBacktrace,
-	OptionExt,
-	ResultExt,
-};
+use snafu::{GenerateBacktrace, OptionExt, ResultExt};
 
-use crate::{
-	error,
-	github,
-	pull_request::handle_pull_request,
-	Result,
-};
+use crate::{error, github, pull_request::handle_pull_request, Result};
 
 pub struct GithubBot {
 	client: reqwest::Client,

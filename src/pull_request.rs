@@ -1,24 +1,12 @@
 use crate::db::*;
 use crate::{
-	error,
-	github,
-	github_bot::GithubBot,
-	matrix,
-	matrix_bot::MatrixBot,
-	project,
-	Result,
+	error, github, github_bot::GithubBot, matrix, matrix_bot::MatrixBot,
+	project, Result,
 };
 use rocksdb::DB;
-use snafu::{
-	GenerateBacktrace,
-	OptionExt,
-	ResultExt,
-};
+use snafu::{GenerateBacktrace, OptionExt, ResultExt};
 use std::collections::HashMap;
-use std::time::{
-	Duration,
-	SystemTime,
-};
+use std::time::{Duration, SystemTime};
 
 /*
  * Ping periods measured in seconds

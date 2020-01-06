@@ -1,13 +1,7 @@
-use byteorder::{
-	BigEndian,
-	ByteOrder,
-};
+use byteorder::{BigEndian, ByteOrder};
 use futures::future::Future;
 use hyperx::header::TypedHeaders;
-use rocksdb::{
-	IteratorMode,
-	DB,
-};
+use rocksdb::{IteratorMode, DB};
 use serde::*;
 use snafu::ResultExt;
 use std::borrow::Cow;
@@ -15,13 +9,8 @@ use std::collections::HashMap;
 use std::time::SystemTime;
 
 use crate::{
-	error,
-	github,
-	github_bot::GithubBot,
-	matrix_bot::MatrixBot,
-	project,
-	pull_request::handle_pull_request,
-	Result,
+	error, github, github_bot::GithubBot, matrix_bot::MatrixBot, project,
+	pull_request::handle_pull_request, Result,
 };
 
 pub fn update(
