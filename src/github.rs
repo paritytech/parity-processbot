@@ -121,7 +121,7 @@ pub struct IssueEvent {
 pub struct ProjectCard {
 	pub id: Option<i64>,
 	pub url: Option<String>,
-        pub project_id: Option<i64>,
+	pub project_id: Option<i64>,
 	pub project_url: Option<String>,
 	pub html_url: Option<String>,
 	pub column_name: Option<String>,

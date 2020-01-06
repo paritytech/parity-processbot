@@ -65,16 +65,15 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 		github_organization
 	);
 
-	let core_devs = dbg!(
-		github_bot.team_members(github_bot.team("core-devs")?.id.ok_or(
-			error::Error::MissingData {
+	let core_devs = dbg!(github_bot.team_members(
+		github_bot
+			.team("core-devs")?
+			.id
+			.ok_or(error::Error::MissingData {
 				backtrace: snafu::Backtrace::generate(),
-			}
-		)?)?
-	);
+			})?
+	)?);
 
-	//        rayon::ThreadPoolBuilder::new().num_threads(22).build_global().
-	// unwrap();
 	let github_to_matrix = dbg!(bamboo::github_to_matrix(&bamboo_token))?;
 
 	let mut interval = tokio::time::interval(Duration::from_secs(tick_secs));

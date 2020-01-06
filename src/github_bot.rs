@@ -15,6 +15,7 @@ use rocksdb::{
 use serde::*;
 use snafu::{
 	GenerateBacktrace,
+	OptionExt,
 	ResultExt,
 };
 
@@ -75,13 +76,14 @@ impl GithubBot {
 	}
 
 	/// Returns all reviews associated with a pull request.
-	pub fn reviews(&self, pull_request: &github::PullRequest) -> Result<Vec<github::Review>> {
+	pub fn reviews(
+		&self,
+		pull_request: &github::PullRequest,
+	) -> Result<Vec<github::Review>> {
 		pull_request
 			.html_url
 			.as_ref()
-			.ok_or(error::Error::MissingData {
-				backtrace: snafu::Backtrace::generate(),
-			})
+			.context(error::MissingData)
 			.and_then(|html_url| self.get_all(format!("{}/reviews", html_url)))
 	}
 
@@ -104,7 +106,10 @@ impl GithubBot {
 	}
 
 	/// Returns the issue associated with a pull request.
-	pub fn issue(&self, pull_request: &github::PullRequest) -> Result<Option<github::Issue>> {
+	pub fn issue(
+		&self,
+		pull_request: &github::PullRequest,
+	) -> Result<Option<github::Issue>> {
 		pull_request
 			.links
 			.issue_link
@@ -113,7 +118,7 @@ impl GithubBot {
 			.transpose()
 	}
 
-	/// Returns events assiciated with an issue.
+	/// Returns events associated with an issue.
 	pub fn issue_events(
 		&self,
 		repo_name: &str,
@@ -142,7 +147,11 @@ impl GithubBot {
 	}
 
 	/// Returns the contents of a file in a repository.
-	pub fn contents(&self, repo_name: &str, path: &str) -> Result<github::Contents> {
+	pub fn contents(
+		&self,
+		repo_name: &str,
+		path: &str,
+	) -> Result<github::Contents> {
 		self.get(&format!(
 			"{base_url}/repos/{owner}/{repo_name}/contents/{path}",
 			base_url = Self::BASE_URL,
@@ -157,9 +166,7 @@ impl GithubBot {
 		self.organization
 			.url
 			.as_ref()
-			.ok_or(error::Error::MissingData {
-				backtrace: snafu::Backtrace::generate(),
-			})
+			.context(error::MissingData)
 			.and_then(|url| self.get(&format!("{}/teams/{}", url, slug)))
 	}
 
