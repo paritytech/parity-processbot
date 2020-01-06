@@ -1,5 +1,6 @@
 pub mod bamboo;
 pub mod bots;
+pub mod constants;
 pub mod db;
 pub mod error;
 pub mod github;

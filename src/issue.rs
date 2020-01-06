@@ -1,5 +1,6 @@
 use crate::db::*;
 use crate::{
+	constants::*,
 	error,
 	github,
 	github_bot::GithubBot,
@@ -20,9 +21,6 @@ use std::time::{
 	Duration,
 	SystemTime,
 };
-
-const ISSUE_NEEDS_A_PROJECT_MESSAGE: &'static str =
-	"{1} needs to be attached to a project or it will be closed.";
 
 fn issue_actor_and_project(
 	issue: &github::Issue,
@@ -71,69 +69,133 @@ pub fn handle_issue(
 	github_to_matrix: &HashMap<String, String>,
 	projects: Option<&project::Projects>,
 	issue: &github::Issue,
+	default_channel_id: &str,
 ) -> Result<()> {
-	// TODO: handle multiple projcets in a single repo
-	let project_info =
-		projects.and_then(|p| p.0.iter().last().map(|p| p.1.clone()));
-
-	let author = &issue.user;
-	let repo = &issue.repository;
-
-	let author_is_owner = project_info
-		.as_ref()
-		.and_then(|p| p.owner.as_ref().map(|u| u == &author.login))
-		.unwrap_or(false);
-	let author_is_delegated = project_info
-		.as_ref()
-		.and_then(|p| p.delegated_reviewer.as_ref().map(|u| u == &author.login))
-		.unwrap_or(false);
-	let author_is_whitelisted = project_info
-		.as_ref()
-		.and_then(|p| {
-			p.whitelist
-				.as_ref()
-				.map(|w| w.iter().find(|&w| w == &author.login).is_some())
-		})
-		.unwrap_or(false);
-	let author_is_core = core_devs.iter().find(|u| u.id == author.id).is_some();
+	// TODO: handle multiple projects in a single repo
 
 	let issue_id = issue.id.context(error::MissingData)?;
 	let issue_html_url = issue.html_url.as_ref().context(error::MissingData)?;
 
-	match issue_actor_and_project(issue, github_bot)? {
-		None => {
-			if author_is_owner || author_is_whitelisted {
-				// leave a comment and message the author that the issue needs a
-				// project
-				github_bot.add_comment(
-					&repo.name,
-					issue_id,
-					&ISSUE_NEEDS_A_PROJECT_MESSAGE
-						.replace("{1}", &issue_html_url),
-				)?;
-				if let Some(matrix_id) =
-					github_to_matrix.get(&author.login).map(|m| m)
-				{
-					matrix_bot.send_private_message(
-						&matrix_id,
-						&ISSUE_NEEDS_A_PROJECT_MESSAGE
-							.replace("{1}", &issue_html_url),
-					);
-				}
-			} else if author_is_core {
-				// ..otherwise if the owner is a core developer, sent a message
-				// to "Core Developers" room on Riot with the title of the issue
-				// and a link. Send a reminder at 8 hour intervals thereafter.
-				// If after 3 days there is still no project attached, move the
-				// issue to Core Sorting repository;
-			} else {
-				// ..otherwise, sent a message to the "Core Developers" room on
-				// Riot with the title of the issue and a link. If after 15
-				// minutes there is still no project attached, move the issue to
-				// Core Sorting repository.
-			}
-		}
-		Some((actor, project)) => {}
+	let db_key = &format!("{}", issue_id).into_bytes();
+	let mut db_entry = DbEntry::new();
+	if let Ok(Some(entry)) = db.get_pinned(db_key).map(|v| {
+		v.map(|value| {
+			serde_json::from_str::<DbEntry>(
+				String::from_utf8(value.to_vec()).unwrap().as_str(),
+			)
+			.expect("deserialize entry")
+		})
+	}) {
+		db_entry = entry;
 	}
+
+	let author = &issue.user;
+	let author_is_core = core_devs.iter().find(|u| u.id == author.id).is_some();
+
+	let repo = &issue.repository;
+
+	match if projects.map_or(true, |p| p.0.is_empty()) {
+		unimplemented!()
+	} else {
+		match issue_actor_and_project(issue, github_bot)? {
+			None => {
+				let since = db_entry
+					.issue_no_project_ping
+					.and_then(|ping| ping.elapsed().ok());
+
+				if author_is_core {
+					let ticks = since.map(|elapsed| {
+						elapsed.as_secs() / ISSUE_NO_PROJECT_CORE_PING_PERIOD
+					});
+					match ticks {
+						None => {
+							db_entry.issue_no_project_ping =
+								Some(SystemTime::now());
+							matrix_bot.send_public_message(
+								default_channel_id,
+								&ISSUE_NO_PROJECT_MESSAGE
+									.replace("{1}", issue_html_url),
+							);
+							DbEntryState::Update
+						}
+						Some(0) => DbEntryState::DoNothing,
+						Some(i) => {
+							if i == ISSUE_NO_PROJECT_ACTION_AFTER_NPINGS {
+								// If after 3 days there is still no project
+								// attached, move the issue to Core Sorting
+								// repository
+								github_bot.close_issue(&repo.name, issue_id);
+								github_bot.create_issue(
+									CORE_SORTING_REPO,
+									serde_json::json!({ "title": issue.title, "body": issue.body.as_ref().unwrap_or(&"".to_owned()) }),
+								);
+								DbEntryState::Delete
+							} else if (db_entry.issue_no_project_npings) < i {
+								db_entry.issue_no_project_npings = i;
+								matrix_bot.send_public_message(
+									default_channel_id,
+									&ISSUE_NO_PROJECT_MESSAGE
+										.replace("{1}", issue_html_url),
+								);
+								DbEntryState::Update
+							} else {
+								DbEntryState::DoNothing
+							}
+						}
+					}
+				} else {
+					// ..otherwise, sent a message to the "Core Developers" room
+					// on Riot with the title of the issue and a link.
+					// If after 15 minutes there is still no project attached,
+					// move the issue to Core Sorting repository.
+					let ticks = since.map(|elapsed| {
+						elapsed.as_secs()
+							/ ISSUE_NO_PROJECT_NON_CORE_PING_PERIOD
+					});
+					match ticks {
+						None => {
+							db_entry.issue_no_project_ping =
+								Some(SystemTime::now());
+							matrix_bot.send_public_message(
+								default_channel_id,
+								&ISSUE_NO_PROJECT_MESSAGE
+									.replace("{1}", issue_html_url),
+							);
+							DbEntryState::Update
+						}
+						Some(0) => DbEntryState::DoNothing,
+						_ => {
+							// If after 15 minutes there is still no project
+							// attached, move the issue to Core Sorting
+							// repository.
+							github_bot.close_issue(&repo.name, issue_id);
+							github_bot.create_issue(
+                                                                CORE_SORTING_REPO, 
+                                                                serde_json::json!({ "title": issue.title, "body": issue.body.as_ref().unwrap_or(&"".to_owned()) })
+                                                        );
+							DbEntryState::Delete
+						}
+					}
+				}
+			}
+			Some((actor, project)) => unimplemented!(),
+		}
+	} {
+		DbEntryState::Delete => {
+			db.delete(db_key).context(error::Db)?;
+		}
+		DbEntryState::Update => {
+			db.delete(db_key).context(error::Db)?;
+			db.put(
+				db_key,
+				serde_json::to_string(&db_entry)
+					.expect("serialize db entry")
+					.as_bytes(),
+			)
+			.unwrap();
+		}
+		_ => {}
+	}
+
 	Ok(())
 }

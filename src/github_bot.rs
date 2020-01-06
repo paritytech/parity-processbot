@@ -311,6 +311,28 @@ impl GithubBot {
 			.map(|_| ())
 	}
 
+	pub fn create_issue<A, B>(&self, repo_name: A, parameters: B) -> Result<()>
+	where
+		A: AsRef<str>,
+		B: Serialize,
+	{
+		let repo = repo_name.as_ref();
+		let base = &self.organization.repos_url;
+		let url = format!(
+			"{base}/repos/{owner}/{repo}/issues",
+			base = base,
+			owner = self.organization.login,
+			repo = repo,
+		);
+		self.client
+			.post(&url)
+			.bearer_auth(&self.auth_key)
+			.json(&parameters)
+			.send()
+			.context(error::Http)
+			.map(|_| ())
+	}
+
 	/// Make a post request to GitHub.
 	fn post<'b, I, B, T>(&self, url: I, body: &B) -> Result<T>
 	where

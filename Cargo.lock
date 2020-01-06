@@ -321,15 +321,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "crossbeam-queue"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dfd6515864a82d2f877b42813d4553292c6659498c9a2aa31bab5a15243c2700"
-dependencies = [
- "crossbeam-utils 0.7.0",
-]
-
-[[package]]
 name = "crossbeam-utils"
 version = "0.6.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1191,7 +1182,6 @@ dependencies = [
  "hyperx",
  "itertools",
  "log",
- "rayon",
  "regex",
  "reqwest",
  "rocksdb",
@@ -1487,30 +1477,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cbf7e9e623549b0e21f6e97cf8ecf247c1a8fd2e8a992ae265314300b2455d5c"
 dependencies = [
  "rand_core 0.3.1",
-]
-
-[[package]]
-name = "rayon"
-version = "1.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "43739f8831493b276363637423d3622d4bd6394ab6f0a9c4a552e208aeb7fddd"
-dependencies = [
- "crossbeam-deque",
- "either",
- "rayon-core",
-]
-
-[[package]]
-name = "rayon-core"
-version = "1.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f8bf17de6f23b05473c437eb958b9c850bfc8af0961fe17b4cc92d5a627b4791"
-dependencies = [
- "crossbeam-deque",
- "crossbeam-queue 0.2.0",
- "crossbeam-utils 0.7.0",
- "lazy_static",
- "num_cpus",
 ]
 
 [[package]]
@@ -2030,7 +1996,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f0c32ffea4827978e9aa392d2f743d973c1dfa3730a2ed3f22ce1e6984da848c"
 dependencies = [
  "crossbeam-deque",
- "crossbeam-queue 0.1.2",
+ "crossbeam-queue",
  "crossbeam-utils 0.6.6",
  "futures 0.1.29",
  "lazy_static",

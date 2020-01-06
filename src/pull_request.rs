@@ -1,5 +1,6 @@
 use crate::db::*;
 use crate::{
+	constants::*,
 	error,
 	github,
 	github_bot::GithubBot,
@@ -19,24 +20,6 @@ use std::time::{
 	Duration,
 	SystemTime,
 };
-
-/*
- * Ping periods measured in seconds
- */
-const STATUS_FAILURE_PING_PERIOD: u64 = 3600 * 24;
-const ISSUE_NOT_ASSIGNED_PING_PERIOD: u64 = 3600 * 24;
-
-const FALLBACK_ROOM_ID: &'static str = "!aenJixaHcSKbJOWxYk:matrix.parity.io";
-const ISSUE_MUST_EXIST_MESSAGE: &'static str =
-	"Every pull request must address an issue.";
-const ISSUE_ASSIGNEE_NOTIFICATION: &'static str = "{1} addressing {2} has been opened by {3}. Please reassign the issue or close the pull request.";
-const REQUESTING_REVIEWS_MESSAGE: &'static str = "{1} is in need of reviewers.";
-const STATUS_FAILURE_NOTIFICATION: &'static str =
-	"{1} has failed status checks.";
-const REQUEST_DELEGATED_REVIEW_MESSAGE: &'static str =
-	"{1} needs your review in the next 72 hours, as you are the delegated reviewer.";
-const REQUEST_OWNER_REVIEW_MESSAGE: &'static str =
-	"{1} needs your review in the next 72 hours, as you are the project owner.";
 
 /*
  * if they are not the Delegated Reviewer (by default the project owner),
@@ -135,11 +118,7 @@ pub fn handle_pull_request(
 	let pr_id = pull_request.id.context(error::MissingData)?;
 	let pr_number = pull_request.number.context(error::MissingData)?;
 	let db_key = &format!("{}", pr_id).into_bytes();
-	let mut db_entry = DbEntry {
-		actions_taken: NoAction,
-		issue_not_assigned_ping: None,
-		status_failure_ping: None,
-	};
+	let mut db_entry = DbEntry::new();
 	if let Ok(Some(entry)) = db.get_pinned(db_key).map(|v| {
 		v.map(|value| {
 			serde_json::from_str::<DbEntry>(

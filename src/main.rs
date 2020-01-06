@@ -40,8 +40,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 	let matrix_user = dotenv::var("MATRIX_USER").expect("MATRIX_USER");
 	let matrix_password =
 		dotenv::var("MATRIX_PASSWORD").expect("MATRIX_PASSWORD");
-	let matrix_channel_id =
-		dotenv::var("MATRIX_CHANNEL_ID").expect("MATRIX_CHANNEL_ID");
+	let matrix_channel_id = dotenv::var("MATRIX_DEFAULT_CHANNEL_ID")
+		.expect("MATRIX_DEFAULT_CHANNEL_ID");
 	let engineers_path = dotenv::var("ENGINEERS_PATH").expect("ENGINEERS_PATH");
 	let tick_secs = dotenv::var("TICK_SECS")
 		.expect("TICK_SECS")

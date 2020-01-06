@@ -4,7 +4,6 @@ use crate::{
 };
 use curl::easy::Easy;
 use futures::stream::FuturesUnordered;
-use rayon::prelude::*;
 use serde::*;
 use serde::{
 	Deserialize,
