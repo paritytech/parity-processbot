@@ -1,13 +1,21 @@
 use rocksdb::DB;
+use snafu::{
+	GenerateBacktrace,
+	OptionExt,
+};
 use std::collections::HashMap;
 use std::fs::File;
 use std::time::Duration;
 
-use parity_processbot::bamboo;
-use parity_processbot::bots;
-use parity_processbot::github_bot;
-use parity_processbot::matrix_bot;
-use parity_processbot::project;
+use parity_processbot::{
+	bamboo,
+	bots,
+	error,
+	github_bot,
+	issue,
+	matrix_bot,
+	project,
+};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -60,11 +68,13 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 		github_organization
 	);
 
-	let core_devs =
-		dbg!(github_bot.team_members(github_bot.team("core-devs")?.id)?);
+	let core_devs = github_bot.team_members(
+		github_bot
+			.team("core-devs")?
+			.id
+			.context(error::MissingData)?,
+	)?;
 
-	//        rayon::ThreadPoolBuilder::new().num_threads(22).build_global().
-	// unwrap();
 	let github_to_matrix = dbg!(bamboo::github_to_matrix(&bamboo_token))?;
 
 	let mut interval = tokio::time::interval(Duration::from_secs(tick_secs));

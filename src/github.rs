@@ -6,9 +6,9 @@ use serde::{
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Organization {
 	pub login: String,
-	pub id: i64,
-	pub node_id: String,
-	pub url: String,
+	pub id: Option<i64>,
+	pub node_id: Option<String>,
+	pub url: Option<String>,
 	pub repos_url: String,
 	pub events_url: Option<String>,
 	pub hooks_url: Option<String>,
@@ -59,9 +59,9 @@ pub struct Contents {
 	pub path: String,
 	pub content: String,
 	pub sha: String,
-	pub url: String,
+	pub url: Option<String>,
 	pub git_url: String,
-	pub html_url: String,
+	pub html_url: Option<String>,
 	pub download_url: String,
 }
 
@@ -74,6 +74,7 @@ pub enum Event {
 	ConvertedNoteToIssue,
 	Demilestoned,
 	HeadRefDeleted,
+	HeadRefForcePushed,
 	HeadRefRestored,
 	Labeled,
 	Locked,
@@ -100,39 +101,55 @@ pub enum Event {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct IssueEvent {
-	pub id: i64,
-	pub node_id: String,
-	pub url: String,
+	pub id: Option<i64>,
+	pub node_id: Option<String>,
+	pub url: Option<String>,
 	pub actor: User,
-	pub event: Event,
+	pub assignee: Option<User>,
+	pub assignees: Option<Vec<User>>,
+	pub assigner: Option<User>,
+	pub labels: Option<Vec<Label>>,
+	pub milestone: Option<Milestone>,
+	pub project_card: Option<ProjectCard>,
+	pub event: Option<Event>,
 	pub commit_id: Option<String>,
 	pub commit_url: Option<String>,
 	pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProjectCard {
+	pub id: Option<i64>,
+	pub url: Option<String>,
+	pub project_id: Option<i64>,
+	pub project_url: Option<String>,
+	pub html_url: Option<String>,
+	pub column_name: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Project {
-	pub owner_url: String,
-	pub url: String,
+	pub owner_url: Option<String>,
+	pub url: Option<String>,
 	pub html_url: Option<String>,
 	pub columns_url: Option<String>,
-	pub id: i64,
-	pub node_id: String,
-	pub name: String,
-	pub body: String,
-	pub number: i64,
-	pub state: String,
-	pub creator: User,
-	pub created_at: chrono::DateTime<chrono::Utc>,
-	pub updated_at: chrono::DateTime<chrono::Utc>,
+	pub id: Option<i64>,
+	pub node_id: Option<String>,
+	pub name: Option<String>,
+	pub body: Option<String>,
+	pub number: Option<i64>,
+	pub state: Option<String>,
+	pub creator: Option<User>,
+	pub created_at: Option<chrono::DateTime<chrono::Utc>>,
+	pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Team {
-	pub id: i64,
-	pub node_id: String,
-	pub url: String,
-	pub html_url: String,
+	pub id: Option<i64>,
+	pub node_id: Option<String>,
+	pub url: Option<String>,
+	pub html_url: Option<String>,
 	pub name: String,
 	pub slug: String,
 	pub description: String,
@@ -156,10 +173,10 @@ pub struct Plan {
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PullRequest {
-	pub url: String,
-	pub id: i64,
-	pub node_id: String,
-	pub html_url: String,
+	pub url: Option<String>,
+	pub id: Option<i64>,
+	pub node_id: Option<String>,
+	pub html_url: Option<String>,
 	pub diff_url: String,
 	pub patch_url: String,
 	pub issue_url: String,
@@ -168,8 +185,8 @@ pub struct PullRequest {
 	pub review_comment_url: String,
 	pub comments_url: String,
 	pub statuses_url: String,
-	pub number: i64,
-	pub state: String,
+	pub number: Option<i64>,
+	pub state: Option<String>,
 	pub locked: bool,
 	pub title: String,
 	pub user: User,
@@ -198,13 +215,13 @@ pub struct PullRequest {
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Review {
-	pub id: i64,
-	pub node_id: String,
-	pub html_url: String,
+	pub id: Option<i64>,
+	pub node_id: Option<String>,
+	pub html_url: Option<String>,
 	pub user: User,
 	pub body: Option<String>,
 	pub commit_id: String,
-	pub state: String,
+	pub state: Option<String>,
 	pub pull_request_url: String,
 	#[serde(rename = "_links")]
 	pub links: Links,
@@ -212,13 +229,14 @@ pub struct Review {
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Issue {
-	pub id: i64,
-	pub node_id: String,
-	pub html_url: String,
+	pub id: Option<i64>,
+	pub node_id: Option<String>,
+	pub html_url: Option<String>,
 	pub user: User,
 	pub body: Option<String>,
 	pub title: String,
-	pub state: String,
+	pub state: Option<String>,
+	pub number: Option<i64>,
 	pub labels: Vec<Label>,
 	pub assignee: Option<User>,
 	pub assignees: Vec<User>,
@@ -235,12 +253,12 @@ pub struct Issue {
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct User {
 	pub login: String,
-	pub id: i64,
-	pub node_id: String,
+	pub id: Option<i64>,
+	pub node_id: Option<String>,
 	pub avatar_url: String,
 	pub gravatar_id: String,
-	pub url: String,
-	pub html_url: String,
+	pub url: Option<String>,
+	pub html_url: Option<String>,
 	pub followers_url: String,
 	pub following_url: String,
 	pub gists_url: String,
@@ -257,73 +275,73 @@ pub struct User {
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Label {
-	id: i64,
-	node_id: String,
-	url: String,
-	name: String,
-	description: Option<String>,
-	color: String,
-	default: bool,
+	pub id: Option<i64>,
+	pub node_id: Option<String>,
+	pub url: Option<String>,
+	pub name: String,
+	pub description: Option<String>,
+	pub color: String,
+	pub default: bool,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Milestone {
-	url: String,
-	html_url: String,
-	labels_url: String,
-	id: i64,
-	node_id: String,
-	number: i64,
-	state: String,
-	title: String,
-	description: Option<String>,
-	creator: User,
-	open_issues: i64,
-	closed_issues: i64,
-	created_at: String,
-	updated_at: String,
-	closed_at: String,
-	due_on: String,
+	pub url: Option<String>,
+	pub html_url: Option<String>,
+	pub labels_url: Option<String>,
+	pub id: Option<i64>,
+	pub node_id: Option<String>,
+	pub number: Option<i64>,
+	pub state: Option<String>,
+	pub title: String,
+	pub description: Option<String>,
+	pub creator: Option<User>,
+	pub open_issues: Option<i64>,
+	pub closed_issues: Option<i64>,
+	pub created_at: Option<String>,
+	pub updated_at: Option<String>,
+	pub closed_at: Option<String>,
+	pub due_on: Option<String>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RequestedTeam {
-	id: i64,
-	node_id: String,
-	url: String,
-	html_url: String,
-	name: String,
-	slug: String,
-	description: Option<String>,
-	privacy: String,
-	permission: String,
-	members_url: String,
-	repositories_url: String,
-	parent: ::serde_json::Value,
+	pub id: Option<i64>,
+	pub node_id: Option<String>,
+	pub url: Option<String>,
+	pub html_url: Option<String>,
+	pub name: String,
+	pub slug: String,
+	pub description: Option<String>,
+	pub privacy: String,
+	pub permission: String,
+	pub members_url: String,
+	pub repositories_url: String,
+	pub parent: ::serde_json::Value,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Head {
-	label: String,
+	pub label: String,
 	#[serde(rename = "ref")]
-	ref_field: String,
-	sha: String,
-	user: User,
-	repo: Repository,
+	pub ref_field: String,
+	pub sha: String,
+	pub user: User,
+	pub repo: Repository,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Repository {
-	pub id: i64,
-	pub node_id: String,
+	pub id: Option<i64>,
+	pub node_id: Option<String>,
 	pub name: String,
 	pub full_name: String,
 	pub owner: User,
 	pub private: bool,
-	pub html_url: String,
+	pub html_url: Option<String>,
 	pub description: Option<String>,
 	pub fork: bool,
-	pub url: String,
+	pub url: Option<String>,
 	pub archive_url: String,
 	pub assignees_url: String,
 	pub blobs_url: String,
@@ -346,7 +364,7 @@ pub struct Repository {
 	pub issue_events_url: String,
 	pub issues_url: String,
 	pub keys_url: String,
-	pub labels_url: String,
+	pub labels_url: Option<String>,
 	pub languages_url: String,
 	pub merges_url: String,
 	pub milestones_url: String,
@@ -414,14 +432,14 @@ pub struct Base {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Status {
-	pub id: i64,
-	pub node_id: String,
+	pub id: Option<i64>,
+	pub node_id: Option<String>,
 	pub avatar_url: String,
-	pub url: String,
+	pub url: Option<String>,
 	pub created_at: chrono::DateTime<chrono::Utc>,
 	pub updated_at: chrono::DateTime<chrono::Utc>,
-	pub state: String,
-	pub creator: User,
+	pub state: Option<String>,
+	pub creator: Option<User>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]

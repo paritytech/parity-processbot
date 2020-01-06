@@ -4,6 +4,7 @@ pub mod db;
 pub mod error;
 pub mod github;
 pub mod github_bot;
+pub mod issue;
 pub mod matrix;
 pub mod matrix_bot;
 pub mod project;

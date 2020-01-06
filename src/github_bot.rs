@@ -13,7 +13,11 @@ use rocksdb::{
 	DB,
 };
 use serde::*;
-use snafu::ResultExt;
+use snafu::{
+	GenerateBacktrace,
+	OptionExt,
+	ResultExt,
+};
 
 use crate::{
 	error,
@@ -76,7 +80,11 @@ impl GithubBot {
 		&self,
 		pull_request: &github::PullRequest,
 	) -> Result<Vec<github::Review>> {
-		self.get_all(format!("{}/reviews", pull_request.html_url))
+		pull_request
+			.html_url
+			.as_ref()
+			.context(error::MissingData)
+			.and_then(|html_url| self.get_all(format!("{}/reviews", html_url)))
 	}
 
 	/// Requests a review from a user.
@@ -97,7 +105,7 @@ impl GithubBot {
 		self.post(&url, &body)
 	}
 
-	/// Returns all reviews associated with a pull request.
+	/// Returns the issue associated with a pull request.
 	pub fn issue(
 		&self,
 		pull_request: &github::PullRequest,
@@ -110,35 +118,7 @@ impl GithubBot {
 			.transpose()
 	}
 
-	/// Returns all reviews associated with a pull request.
-	pub fn statuses(
-		&self,
-		pull_request: &github::PullRequest,
-	) -> Result<Option<Vec<github::Status>>> {
-		pull_request
-			.links
-			.statuses_link
-			.as_ref()
-			.map(|github::StatusesLink { href }| self.get(href))
-			.transpose()
-	}
-
-	/// Returns the project info associated with a repository.
-	pub fn contents(
-		&self,
-		repo_name: &str,
-		path: &str,
-	) -> Result<github::Contents> {
-		self.get(&format!(
-			"{base_url}/repos/{owner}/{repo_name}/contents/{path}",
-			base_url = Self::BASE_URL,
-			owner = self.organization.login,
-			repo_name = repo_name,
-			path = path
-		))
-	}
-
-	/// Returns events assiciated with an issue.
+	/// Returns events associated with an issue.
 	pub fn issue_events(
 		&self,
 		repo_name: &str,
@@ -153,9 +133,41 @@ impl GithubBot {
 		))
 	}
 
+	/// Returns statuses associated with a pull request.
+	pub fn statuses(
+		&self,
+		pull_request: &github::PullRequest,
+	) -> Result<Option<Vec<github::Status>>> {
+		pull_request
+			.links
+			.statuses_link
+			.as_ref()
+			.map(|github::StatusesLink { href }| self.get(href))
+			.transpose()
+	}
+
+	/// Returns the contents of a file in a repository.
+	pub fn contents(
+		&self,
+		repo_name: &str,
+		path: &str,
+	) -> Result<github::Contents> {
+		self.get(&format!(
+			"{base_url}/repos/{owner}/{repo_name}/contents/{path}",
+			base_url = Self::BASE_URL,
+			owner = self.organization.login,
+			repo_name = repo_name,
+			path = path
+		))
+	}
+
 	/// Returns the team with a given team slug (eg. 'core-devs').
 	pub fn team(&self, slug: &str) -> Result<github::Team> {
-		self.get(&format!("{}/teams/{}", self.organization.url, slug))
+		self.organization
+			.url
+			.as_ref()
+			.context(error::MissingData)
+			.and_then(|url| self.get(&format!("{}/teams/{}", url, slug)))
 	}
 
 	/// Returns members of the team with a id.
@@ -318,7 +330,7 @@ impl GithubBot {
 	}
 
 	/// Get a single entry from a resource in GitHub.
-	fn get<'b, I, T>(&self, url: I) -> Result<T>
+	pub fn get<'b, I, T>(&self, url: I) -> Result<T>
 	where
 		I: Into<Cow<'b, str>>,
 		T: serde::de::DeserializeOwned,
@@ -326,6 +338,10 @@ impl GithubBot {
 		let mut response = self
 			.client
 			.get(&*(url.into()))
+			.header(
+				reqwest::header::ACCEPT,
+				"application/vnd.github.starfox-preview+json",
+			)
 			.bearer_auth(&self.auth_key)
 			.send()
 			.context(error::Http)?;

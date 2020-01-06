@@ -45,12 +45,7 @@ pub fn update(
 					.map_err(anyhow::Error::new)
 			})
 			.map(project::Projects::from)
-			.map(|p| p.0);
-		let project_info = if let Ok(ref projects) = projects {
-			projects.get(&repo.name)
-		} else {
-			None
-		};
+			.ok();
 
 		let prs = github_bot.pull_requests(&repo)?;
 		for pr in prs {
@@ -60,7 +55,7 @@ pub fn update(
 				matrix_bot,
 				core_devs,
 				github_to_matrix,
-				project_info,
+				projects.as_ref(),
 				&pr,
 			)?;
 		}
