@@ -1,5 +1,8 @@
 use rocksdb::DB;
-use snafu::GenerateBacktrace;
+use snafu::{
+	GenerateBacktrace,
+	OptionExt,
+};
 use std::collections::HashMap;
 use std::fs::File;
 use std::time::Duration;
@@ -65,14 +68,12 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 		github_organization
 	);
 
-	let core_devs = dbg!(github_bot.team_members(
+	let core_devs = github_bot.team_members(
 		github_bot
 			.team("core-devs")?
 			.id
-			.ok_or(error::Error::MissingData {
-				backtrace: snafu::Backtrace::generate(),
-			})?
-	)?);
+			.context(error::MissingData)?,
+	)?;
 
 	let github_to_matrix = dbg!(bamboo::github_to_matrix(&bamboo_token))?;
 
