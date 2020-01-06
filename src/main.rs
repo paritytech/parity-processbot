@@ -1,11 +1,13 @@
 use rocksdb::DB;
-use snafu::{GenerateBacktrace, OptionExt};
-use std::collections::HashMap;
-use std::fs::File;
+use snafu::OptionExt;
 use std::time::Duration;
 
 use parity_processbot::{
-	bamboo, bots, error, github_bot, issue, matrix_bot, project,
+	bamboo,
+	bots,
+	error,
+	github_bot,
+	matrix_bot,
 };
 
 #[tokio::main]
@@ -31,9 +33,6 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 	let matrix_user = dotenv::var("MATRIX_USER").expect("MATRIX_USER");
 	let matrix_password =
 		dotenv::var("MATRIX_PASSWORD").expect("MATRIX_PASSWORD");
-	let matrix_channel_id =
-		dotenv::var("MATRIX_CHANNEL_ID").expect("MATRIX_CHANNEL_ID");
-	let engineers_path = dotenv::var("ENGINEERS_PATH").expect("ENGINEERS_PATH");
 	let tick_secs = dotenv::var("TICK_SECS")
 		.expect("TICK_SECS")
 		.parse::<u64>()

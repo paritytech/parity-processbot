@@ -9,6 +9,45 @@ pub struct ProjectInfo {
 	pub matrix_room_id: Option<String>,
 }
 
+#[derive(Default, Debug, Clone, Copy)]
+pub struct AuthorInfo {
+	pub is_owner: bool,
+	pub is_delegated_reviewer: bool,
+	pub is_whitelisted: bool,
+}
+
+impl ProjectInfo {
+	pub fn author_info(&self, login: &str) -> AuthorInfo {
+		let is_owner = self.is_owner(login);
+		let is_delegated_reviewer = self.is_delegated_reviewer(login);
+		let is_whitelisted = self.is_whitelisted(login);
+
+		AuthorInfo {
+			is_owner,
+			is_delegated_reviewer,
+			is_whitelisted,
+		}
+	}
+	/// Checks if the owner of the project matches the login given.
+	pub fn is_owner(&self, login: &str) -> bool {
+		self.owner.as_deref().map_or(false, |owner| owner == login)
+	}
+
+	/// Checks if the reviewer matches the login given.
+	pub fn is_delegated_reviewer(&self, login: &str) -> bool {
+		self.delegated_reviewer
+			.as_deref()
+			.map_or(false, |reviewer| reviewer == login)
+	}
+
+	/// Checks that the login is contained within the whitelist.
+	pub fn is_whitelisted(&self, login: &str) -> bool {
+		self.whitelist.as_ref().map_or(false, |whitelist| {
+			whitelist.iter().any(|user| user == login)
+		})
+	}
+}
+
 impl From<toml::value::Table> for Projects {
 	fn from(tab: toml::value::Table) -> Projects {
 		Projects(

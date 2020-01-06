@@ -1,15 +1,17 @@
-use crate::db::*;
 use crate::{
-	error, github, github_bot::GithubBot, matrix, matrix_bot::MatrixBot,
-	project, Result,
+	error,
+	github,
+	github_bot::GithubBot,
+	matrix_bot::MatrixBot,
+	project,
+	Result,
 };
 use itertools::Itertools;
 use rocksdb::DB;
-use snafu::{GenerateBacktrace, OptionExt, ResultExt};
+use snafu::OptionExt;
 use std::collections::HashMap;
-use std::time::{Duration, SystemTime};
 
-const ISSUE_NEEDS_A_PROJECT_MESSAGE: &'static str =
+const ISSUE_NEEDS_A_PROJECT_MESSAGE: &str =
 	"{1} needs to be attached to a project or it will be closed.";
 
 fn issue_actor_and_project(
@@ -52,7 +54,7 @@ fn issue_actor_and_project(
 }
 
 pub fn handle_issue(
-	db: &DB,
+	_db: &DB,
 	github_bot: &GithubBot,
 	matrix_bot: &MatrixBot,
 	core_devs: &[github::User],
@@ -66,31 +68,18 @@ pub fn handle_issue(
 
 	let author = &issue.user;
 	let repo = &issue.repository;
-
-	let author_is_owner = project_info
-		.as_ref()
-		.and_then(|p| p.owner.as_ref().map(|u| u == &author.login))
-		.unwrap_or(false);
-	let author_is_delegated = project_info
-		.as_ref()
-		.and_then(|p| p.delegated_reviewer.as_ref().map(|u| u == &author.login))
-		.unwrap_or(false);
-	let author_is_whitelisted = project_info
-		.as_ref()
-		.and_then(|p| {
-			p.whitelist
-				.as_ref()
-				.map(|w| w.iter().find(|&w| w == &author.login).is_some())
-		})
-		.unwrap_or(false);
-	let author_is_core = core_devs.iter().find(|u| u.id == author.id).is_some();
+	let author_info = project_info
+		.map_or_else(project::AuthorInfo::default, |p| {
+			p.author_info(&author.login)
+		});
+	let author_is_core = core_devs.iter().any(|u| u.id == author.id);
 
 	let issue_id = issue.id.context(error::MissingData)?;
 	let issue_html_url = issue.html_url.as_ref().context(error::MissingData)?;
 
 	match issue_actor_and_project(issue, github_bot)? {
 		None => {
-			if author_is_owner || author_is_whitelisted {
+			if author_info.is_owner || author_info.is_whitelisted {
 				// leave a comment and message the author that the issue needs a
 				// project
 				github_bot.add_comment(
@@ -106,7 +95,7 @@ pub fn handle_issue(
 						&matrix_id,
 						&ISSUE_NEEDS_A_PROJECT_MESSAGE
 							.replace("{1}", &issue_html_url),
-					);
+					)?;
 				}
 			} else if author_is_core {
 				// ..otherwise if the owner is a core developer, sent a message
@@ -121,7 +110,7 @@ pub fn handle_issue(
 				// Core Sorting repository.
 			}
 		}
-		Some((actor, project)) => {}
+		Some((_actor, _project)) => {}
 	}
 	Ok(())
 }
