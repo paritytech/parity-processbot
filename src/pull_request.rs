@@ -117,18 +117,8 @@ pub fn handle_pull_request(
 
 	let pr_id = pull_request.id.context(error::MissingData)?;
 	let pr_number = pull_request.number.context(error::MissingData)?;
-	let db_key = &format!("{}", pr_id).into_bytes();
-	let mut db_entry = DbEntry::new();
-	if let Ok(Some(entry)) = db.get_pinned(db_key).map(|v| {
-		v.map(|value| {
-			serde_json::from_str::<DbEntry>(
-				String::from_utf8(value.to_vec()).unwrap().as_str(),
-			)
-			.expect("deserialize entry")
-		})
-	}) {
-		db_entry = entry;
-	}
+	let db_key = format!("{}", pr_id).into_bytes();
+	let mut db_entry = DbEntry::new_or_with_key(db, db_key);
 
 	let author = &pull_request.user;
 	let repo = pull_request
@@ -341,49 +331,59 @@ pub fn handle_pull_request(
 		v.sort_by_key(|s| s.updated_at);
 		v.last()
 	});
-	if let Some(ref status) = status {
-		if status.state.as_deref() == Some("failure") {
-			// notify PR author by PM every 24 hours
-			if db_entry.status_failure_ping.map_or(true, |ping_time| {
-				ping_time.elapsed().ok().map_or(true, |elapsed| {
-					elapsed.as_secs() > STATUS_FAILURE_PING_PERIOD
-				})
-			}) {
-				db_entry.status_failure_ping = Some(SystemTime::now());
-				if let Some(matrix_id) = github_to_matrix
-					.get(&repo.owner.login)
-					.and_then(|matrix_id| matrix::parse_id(matrix_id))
-				{
-					matrix_bot.send_private_message(
-						&matrix_id,
-						&STATUS_FAILURE_NOTIFICATION
-							.replace("{1}", &format!("{}", pr_html_url)),
-					);
+
+	match if let Some(ref status) = status {
+		match status.state {
+			github::StatusState::Failure => {
+				// notify PR author by PM every 24 hours
+				if db_entry.status_failure_ping.map_or(true, |ping_time| {
+					ping_time.elapsed().ok().map_or(true, |elapsed| {
+						elapsed.as_secs() > STATUS_FAILURE_PING_PERIOD
+					})
+				}) {
+					db_entry.status_failure_ping = Some(SystemTime::now());
+					if let Some(matrix_id) = github_to_matrix
+						.get(&repo.owner.login)
+						.and_then(|matrix_id| matrix::parse_id(matrix_id))
+					{
+						matrix_bot.send_private_message(
+							&matrix_id,
+							&STATUS_FAILURE_NOTIFICATION
+								.replace("{1}", &format!("{}", pr_html_url)),
+						);
+					} else {
+						log::warn!("Couldn't send a message to {}; either their Github or Matrix handle is not set in Bamboo", &repo.owner.login);
+					}
+				}
+				DbEntryState::Update
+			}
+			github::StatusState::Success => {
+				if owner_approved {
+					// merge & delete branch
+					github_bot.merge_pull_request(&repo.name, pr_number)?;
+					DbEntryState::Delete
 				} else {
-					log::warn!("Couldn't send a message to {}; either their Github or Matrix handle is not set in Bamboo", &repo.owner.login);
+					db_entry.status_failure_ping = None;
+					DbEntryState::Update
 				}
 			}
-		} else if status.state.as_deref() == Some("success") {
-			if owner_approved {
-				// merge & delete branch
-				github_bot.merge_pull_request(&repo.name, pr_number)?;
-				db.delete(db_key).context(error::Db)?;
-				return Ok(());
-			} else {
-				db_entry.status_failure_ping = None;
-			}
+                        // this needs to update incase the block above mutated the entry
+                        // TODO improve this
+			github::StatusState::Pending => DbEntryState::Update,
 		}
 	} else {
 		// pull request has no status
+		// should never happen
+		unimplemented!()
+	} {
+		DbEntryState::Delete => {
+			db_entry.delete(db)?;
+		}
+		DbEntryState::Update => {
+			db_entry.update(db)?;
+		}
+		_ => {}
 	}
 
-	db.delete(db_key).context(error::Db)?;
-	db.put(
-		db_key,
-		serde_json::to_string(&db_entry)
-			.expect("serialize db entry")
-			.as_bytes(),
-	)
-	.unwrap();
 	Ok(())
 }

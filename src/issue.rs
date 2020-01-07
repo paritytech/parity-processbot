@@ -76,18 +76,8 @@ pub fn handle_issue(
 	let issue_id = issue.id.context(error::MissingData)?;
 	let issue_html_url = issue.html_url.as_ref().context(error::MissingData)?;
 
-	let db_key = &format!("{}", issue_id).into_bytes();
-	let mut db_entry = DbEntry::new();
-	if let Ok(Some(entry)) = db.get_pinned(db_key).map(|v| {
-		v.map(|value| {
-			serde_json::from_str::<DbEntry>(
-				String::from_utf8(value.to_vec()).unwrap().as_str(),
-			)
-			.expect("deserialize entry")
-		})
-	}) {
-		db_entry = entry;
-	}
+	let db_key = format!("{}", issue_id).into_bytes();
+        let mut db_entry = DbEntry::new_or_with_key(db, db_key);
 
 	let author = &issue.user;
 	let author_is_core = core_devs.iter().find(|u| u.id == author.id).is_some();
@@ -182,17 +172,10 @@ pub fn handle_issue(
 		}
 	} {
 		DbEntryState::Delete => {
-			db.delete(db_key).context(error::Db)?;
+                        db_entry.delete(db)?;
 		}
 		DbEntryState::Update => {
-			db.delete(db_key).context(error::Db)?;
-			db.put(
-				db_key,
-				serde_json::to_string(&db_entry)
-					.expect("serialize db entry")
-					.as_bytes(),
-			)
-			.unwrap();
+                        db_entry.update(db)?;
 		}
 		_ => {}
 	}

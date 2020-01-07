@@ -438,8 +438,16 @@ pub struct Status {
 	pub url: Option<String>,
 	pub created_at: chrono::DateTime<chrono::Utc>,
 	pub updated_at: chrono::DateTime<chrono::Utc>,
-	pub state: Option<String>,
+	pub state: StatusState,
 	pub creator: Option<User>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StatusState {
+	Failure,
+	Pending,
+	Success,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
