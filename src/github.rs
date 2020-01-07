@@ -135,7 +135,7 @@ pub struct Project {
 	pub columns_url: Option<String>,
 	pub id: Option<i64>,
 	pub node_id: Option<String>,
-	pub name: Option<String>,
+	pub name: String,
 	pub body: Option<String>,
 	pub number: Option<i64>,
 	pub state: Option<String>,

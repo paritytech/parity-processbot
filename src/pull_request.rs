@@ -232,7 +232,10 @@ pub fn handle_pull_request(
 												),
 										);
 									} else {
-										log::warn!("Couldn't send a message to {}; either their Github or Matrix handle is not set in Bamboo", &assignee.login);
+										log::warn!(
+											"Couldn't send a message to {}; either their Github or Matrix handle is not set in Bamboo",
+											&assignee.login
+										);
 									}
 								}
 								if let Some(matrix_id) = github_to_matrix
@@ -257,7 +260,10 @@ pub fn handle_pull_request(
 											),
 									);
 								} else {
-									log::warn!("Couldn't send a message to {}; either their Github or Matrix handle is not set in Bamboo", &repo.owner.login);
+									log::warn!(
+										"Couldn't send a message to {}; either their Github or Matrix handle is not set in Bamboo",
+										&repo.owner.login
+									);
 								}
 							}
 							Some(0) => { /* do nothing */ }
@@ -265,15 +271,9 @@ pub fn handle_pull_request(
 								// if after 24 hours there is no change, then
 								// send a message into the project's Riot
 								// channel
-								if db_entry.actions_taken
-									& PullRequestCoreDevAuthorIssueNotAssigned24h
-									== NoAction
-								{
-									db_entry.actions_taken |=
-										PullRequestCoreDevAuthorIssueNotAssigned24h;
-									if let Some(ref room_id) =
-										project_info.and_then(|p| p.matrix_room_id)
-									{
+								if db_entry.actions_taken & PullRequestCoreDevAuthorIssueNotAssigned24h == NoAction {
+									db_entry.actions_taken |= PullRequestCoreDevAuthorIssueNotAssigned24h;
+									if let Some(ref room_id) = project_info.and_then(|p| p.matrix_room_id) {
 										matrix_bot.send_public_message(
 											&room_id,
 											&ISSUE_ASSIGNEE_NOTIFICATION
@@ -295,12 +295,8 @@ pub fn handle_pull_request(
 							_ => {
 								// if after a further 48 hours there is still no
 								// change, then close the PR.
-								if db_entry.actions_taken
-									& PullRequestCoreDevAuthorIssueNotAssigned72h
-									== NoAction
-								{
-									db_entry.actions_taken |=
-										PullRequestCoreDevAuthorIssueNotAssigned72h;
+								if db_entry.actions_taken & PullRequestCoreDevAuthorIssueNotAssigned72h == NoAction {
+									db_entry.actions_taken |= PullRequestCoreDevAuthorIssueNotAssigned72h;
 									github_bot.close_pull_request(&repo.name, pr_number)?;
 								}
 							}
@@ -352,7 +348,10 @@ pub fn handle_pull_request(
 								.replace("{1}", &format!("{}", pr_html_url)),
 						);
 					} else {
-						log::warn!("Couldn't send a message to {}; either their Github or Matrix handle is not set in Bamboo", &repo.owner.login);
+						log::warn!(
+							"Couldn't send a message to {}; either their Github or Matrix handle is not set in Bamboo",
+							&repo.owner.login
+						);
 					}
 				}
 				DbEntryState::Update
@@ -367,8 +366,8 @@ pub fn handle_pull_request(
 					DbEntryState::Update
 				}
 			}
-                        // this needs to update incase the block above mutated the entry
-                        // TODO improve this
+			// this needs to update incase the block above mutated the entry
+			// TODO improve this
 			github::StatusState::Pending => DbEntryState::Update,
 		}
 	} else {

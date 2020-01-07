@@ -9,6 +9,35 @@ pub struct ProjectInfo {
 	pub matrix_room_id: Option<String>,
 }
 
+impl ProjectInfo {
+	pub fn user_is_owner(&self, user_login: &str) -> bool {
+		self.owner
+			.as_ref()
+			.map(|u| u == &user_login)
+			.unwrap_or(false)
+	}
+
+	pub fn user_is_delegated(&self, user_login: &str) -> bool {
+		self.delegated_reviewer
+			.as_ref()
+			.map(|u| u == &user_login)
+			.unwrap_or(false)
+	}
+
+	pub fn user_is_whitelisted(&self, user_login: &str) -> bool {
+		self.whitelist
+			.as_ref()
+			.map(|w| w.iter().find(|&w| w == &user_login).is_some())
+			.unwrap_or(false)
+	}
+
+	pub fn user_is_admin(&self, user_login: &str) -> bool {
+		self.user_is_owner(user_login)
+			|| self.user_is_delegated(user_login)
+			|| self.user_is_whitelisted(user_login)
+	}
+}
+
 impl From<toml::value::Table> for Projects {
 	fn from(tab: toml::value::Table) -> Projects {
 		Projects(

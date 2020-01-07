@@ -38,14 +38,24 @@ pub enum DbEntryState {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+pub enum ProjectState {
+	Confirmed(i64),
+	Unconfirmed(i64),
+	Denied(i64),
+}
+
+#[derive(Serialize, Deserialize, Debug)]
 pub struct DbEntry {
 	#[serde(skip)]
 	key: Vec<u8>,
 	pub actions_taken: u32,
+	pub status_failure_ping: Option<SystemTime>,
 	pub issue_not_assigned_ping: Option<SystemTime>,
 	pub issue_no_project_ping: Option<SystemTime>,
 	pub issue_no_project_npings: u64,
-	pub status_failure_ping: Option<SystemTime>,
+	pub issue_confirm_project_ping: Option<SystemTime>,
+	pub issue_project_state: Option<ProjectState>,
+	pub last_confirmed_project: Option<i64>,
 }
 
 impl DbEntry {
@@ -57,6 +67,9 @@ impl DbEntry {
 			issue_no_project_ping: None,
 			issue_no_project_npings: 0,
 			status_failure_ping: None,
+			issue_confirm_project_ping: None,
+			issue_project_state: None,
+			last_confirmed_project: None,
 		}
 	}
 
