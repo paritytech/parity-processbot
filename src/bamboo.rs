@@ -3,19 +3,9 @@ use crate::{
 	Result,
 };
 use curl::easy::Easy;
-use futures::stream::FuturesUnordered;
-use rayon::prelude::*;
-use serde::*;
-use serde::{
-	Deserialize,
-	Serialize,
-};
+use serde::Deserialize;
 use snafu::ResultExt;
 use std::collections::HashMap;
-use std::io::{
-	stdout,
-	Write,
-};
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -41,8 +31,7 @@ pub struct EmployeeResponse {
 	github: Option<String>,
 }
 
-const BASE_URL: &'static str =
-	"https://api.bamboohr.com/api/gateway.php/parity/v1";
+const BASE_URL: &str = "https://api.bamboohr.com/api/gateway.php/parity/v1";
 
 fn get_employees_directory(
 	access_token: &str,

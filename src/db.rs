@@ -1,15 +1,10 @@
-use rocksdb::{
-	IteratorMode,
-	DB,
-};
+// TODO: Move bitflags to use `bitflags` crate.
+#![allow(non_upper_case_globals)]
 use serde::{
 	Deserialize,
 	Serialize,
 };
-use std::time::{
-	Duration,
-	SystemTime,
-};
+use std::time::SystemTime;
 
 /// Bitflag indicating no action has been taken
 pub const NoAction: u32 = 0b00000000;
@@ -43,7 +38,7 @@ mod tests {
 		assert_eq!(
 			PullRequestCoreDevAuthorIssueNotAssigned24h
 				| PullRequestCoreDevAuthorIssueNotAssigned72h,
-			0b00000110
+			0b0000_0110
 		);
 		assert_eq!(
 			PullRequestCoreDevAuthorIssueNotAssigned24h & NoAction,
