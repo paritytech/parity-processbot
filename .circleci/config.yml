@@ -9,7 +9,7 @@ jobs:
 
       - run:
           name: Checking
-          command: cargo fmt --all -- --check
+          command: cargo +nightly fmt --all -- --check
       - run:
           name: Building
           command: cargo build --all --tests
