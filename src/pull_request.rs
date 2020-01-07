@@ -1,18 +1,10 @@
 use crate::db::*;
 use crate::{
-	error,
-	github,
-	github_bot::GithubBot,
-	matrix,
-	matrix_bot::MatrixBot,
-	project,
-	Result,
+	error, github, github_bot::GithubBot, matrix, matrix_bot::MatrixBot,
+	project, Result,
 };
 use rocksdb::DB;
-use snafu::{
-	OptionExt,
-	ResultExt,
-};
+use snafu::{OptionExt, ResultExt};
 use std::collections::HashMap;
 use std::time::SystemTime;
 

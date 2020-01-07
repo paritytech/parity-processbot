@@ -2,16 +2,9 @@ use std::borrow::Cow;
 
 use hyperx::header::TypedHeaders;
 use serde::*;
-use snafu::{
-	OptionExt,
-	ResultExt,
-};
+use snafu::{OptionExt, ResultExt};
 
-use crate::{
-	error,
-	github,
-	Result,
-};
+use crate::{error, github, Result};
 
 pub struct GithubBot {
 	client: reqwest::Client,
