@@ -3,10 +3,7 @@ use regex::Regex;
 use serde::Deserialize;
 use snafu::ResultExt;
 
-use crate::{
-	error,
-	Result,
-};
+use crate::{error, Result};
 
 #[derive(Deserialize, Debug)]
 pub struct LoginResponse {

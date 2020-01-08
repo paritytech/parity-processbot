@@ -1,9 +1,5 @@
 use crate::{
-	error,
-	github,
-	github_bot::GithubBot,
-	matrix_bot::MatrixBot,
-	project,
+	error, github, github_bot::GithubBot, matrix_bot::MatrixBot, project,
 	Result,
 };
 use itertools::Itertools;
