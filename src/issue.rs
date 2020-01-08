@@ -409,6 +409,7 @@ pub fn handle_issue(
 		core_devs.iter().find(|u| u.id == issue.user.id).is_some();
 
 	match if projects.map_or(true, |p| p.is_empty()) {
+		// there are no projects matching those listed in Projects.toml so do nothing
 		DbEntryState::DoNothing
 	} else {
 		let projects = projects.expect("just confirmed above");
