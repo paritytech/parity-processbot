@@ -409,7 +409,7 @@ pub fn handle_issue(
 		core_devs.iter().find(|u| u.id == issue.user.id).is_some();
 
 	match if projects.map_or(true, |p| p.is_empty()) {
-		unimplemented!()
+		DbEntryState::DoNothing
 	} else {
 		let projects = projects.expect("just confirmed above");
 		match issue_actor_and_project_card(issue, github_bot)? {
@@ -535,7 +535,7 @@ pub fn handle_issue(
 				} else {
 					// no key in in Projects.toml matches the project name
 					// TODO notification here
-					unimplemented!()
+					DbEntryState::DoNothing
 				}
 			}
 		}
