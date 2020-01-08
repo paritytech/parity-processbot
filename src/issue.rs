@@ -18,10 +18,10 @@ use std::time::{
 	SystemTime,
 };
 
-fn issue_actor_and_project(
+fn issue_actor_and_project_card(
 	issue: &github::Issue,
 	github_bot: &GithubBot,
-) -> Result<Option<(github::User, github::Project)>> {
+) -> Result<Option<(github::User, github::ProjectCard)>> {
 	let repo = &issue.repository;
 	let issue_number = issue.number.context(error::MissingData)?;
 	github_bot
@@ -39,20 +39,12 @@ fn issue_actor_and_project(
 				.and_then(|issue_event| {
 					if issue_event.event == Some(github::Event::AddedToProject)
 					{
-						issue_event.project_card.as_ref().and_then(|card| {
-							card.project_url.as_ref().map(|project_url| {
-								(issue_event.actor.clone(), project_url)
-							})
+						issue_event.project_card.as_ref().map(|card| {
+							(issue_event.actor.clone(), card.clone())
 						})
 					} else {
 						None
 					}
-				})
-				.and_then(|(actor, project_url)| {
-					github_bot
-						.get(project_url)
-						.ok()
-						.map(|project| (actor, project))
 				})
 		})
 }
@@ -184,7 +176,7 @@ pub fn handle_issue(
 		unimplemented!()
 	} else {
 		let projects = projects.expect("just confirmed above");
-		match issue_actor_and_project(issue, github_bot)? {
+		match issue_actor_and_project_card(issue, github_bot)? {
 			None => {
 				let since = db_entry
 					.issue_no_project_ping
@@ -235,7 +227,18 @@ pub fn handle_issue(
 					)?
 				}
 			}
-			Some((actor, project)) => {
+			Some((actor, card)) => {
+				let project: github::Project = card
+					.project_url
+					.as_ref()
+					.and_then(|url| github_bot.get(url).ok())
+					.context(error::MissingData)?;
+				let project_column: github::ProjectColumn = card
+					.column_url
+					.as_ref()
+					.and_then(|url| github_bot.get(url).ok())
+					.context(error::MissingData)?;
+
 				if let Some(project_info) = projects.0.get(&project.name) {
 					let issue_html_url =
 						issue.html_url.as_ref().context(error::MissingData)?;
@@ -243,8 +246,6 @@ pub fn handle_issue(
 						.html_url
 						.as_ref()
 						.context(error::MissingData)?;
-					let project_id =
-						project.id.as_ref().context(error::MissingData)?;
 
 					if !project_info.is_admin(&actor.login) {
 						// TODO check if confirmation has confirmed/denied.
@@ -257,9 +258,10 @@ pub fn handle_issue(
 								{
 									db_entry.issue_confirm_project_ping =
 										Some(SystemTime::now());
-									db_entry.issue_project_state = Some(
-										ProjectState::Unconfirmed(*project_id),
-									);
+									db_entry.issue_project_state =
+										Some(ProjectState::Unconfirmed(
+											project_column.id,
+										));
 									matrix_bot.send_public_message(
 										&room_id,
 										&ISSUE_CONFIRM_PROJECT_MESSAGE
@@ -276,8 +278,11 @@ pub fn handle_issue(
 												&format!("{}", issue_id),
 											)
 											.replace(
-												"{project_id}",
-												&format!("{}", project_id),
+												"{project_column.id}",
+												&format!(
+													"{}",
+													project_column.id
+												),
 											),
 									)?;
 								} else {
@@ -287,12 +292,13 @@ pub fn handle_issue(
 								DbEntryState::Update
 							}
 							Some(ProjectState::Unconfirmed(unconfirmed_id)) => {
-								if project_id != &unconfirmed_id {
+								if project_column.id != unconfirmed_id {
 									db_entry.issue_confirm_project_ping =
 										Some(SystemTime::now());
-									db_entry.issue_project_state = Some(
-										ProjectState::Unconfirmed(*project_id),
-									);
+									db_entry.issue_project_state =
+										Some(ProjectState::Unconfirmed(
+											project_column.id,
+										));
 									if let Some(room_id) =
 										&project_info.matrix_room_id
 									{
@@ -312,8 +318,11 @@ pub fn handle_issue(
 													&format!("{}", issue_id),
 												)
 												.replace(
-													"{project_id}",
-													&format!("{}", project_id),
+													"{project_column.id}",
+													&format!(
+														"{}",
+														project_column.id
+													),
 												),
 										)?;
 									} else {
@@ -347,6 +356,9 @@ pub fn handle_issue(
 															prev_project,
 														),
 													);
+												// reattach the last confirmed
+												// project
+												github_bot.create_project_card(prev_project, issue_id, github::ProjectCardContentType::Issue)?;
 											} else {
 												db_entry.issue_project_state =
 													None;
@@ -380,14 +392,15 @@ pub fn handle_issue(
 										Some(confirmed_id);
 								}
 
-								if project_id != &confirmed_id {
+								if project_column.id != confirmed_id {
 									// project has been changed since
 									// the confirmation
 									db_entry.issue_confirm_project_ping =
 										Some(SystemTime::now());
-									db_entry.issue_project_state = Some(
-										ProjectState::Unconfirmed(*project_id),
-									);
+									db_entry.issue_project_state =
+										Some(ProjectState::Unconfirmed(
+											project_column.id,
+										));
 									if let Some(room_id) =
 										&project_info.matrix_room_id
 									{
@@ -407,8 +420,11 @@ pub fn handle_issue(
 													&format!("{}", issue_id),
 												)
 												.replace(
-													"{project_id}",
-													&format!("{}", project_id),
+													"{project_column.id}",
+													&format!(
+														"{}",
+														project_column.id
+													),
 												),
 										)?;
 									} else {
@@ -427,6 +443,12 @@ pub fn handle_issue(
 									db_entry.issue_project_state = Some(
 										ProjectState::Confirmed(prev_project),
 									);
+									// reattach the last confirmed project
+									github_bot.create_project_card(
+										prev_project,
+										issue_id,
+										github::ProjectCardContentType::Issue,
+									)?;
 								} else {
 									db_entry.issue_project_state = None;
 								}

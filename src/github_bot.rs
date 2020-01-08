@@ -120,6 +120,14 @@ impl GithubBot {
 		))
 	}
 
+	/// Returns the project column at a url.
+	pub fn project_column<'b, I>(&self, url: I) -> Result<github::ProjectColumn>
+	where
+		I: Into<Cow<'b, str>>,
+	{
+                self.get(url)
+	}
+
 	/// Returns statuses associated with a pull request.
 	pub fn statuses(
 		&self,
@@ -311,6 +319,30 @@ impl GithubBot {
 			owner = self.organization.login,
 			repo = repo,
 		);
+		self.client
+			.post(&url)
+			.bearer_auth(&self.auth_key)
+			.json(&parameters)
+			.send()
+			.context(error::Http)
+			.map(|_| ())
+	}
+
+	pub fn create_project_card<A>(
+		&self,
+		column_id: A,
+		content_id: i64,
+		content_type: github::ProjectCardContentType,
+	) -> Result<()>
+	where
+		A: std::fmt::Display,
+	{
+		let url = format!(
+			"{base}/projects/columns/{column_id}/cards",
+			base = Self::BASE_URL,
+			column_id = column_id,
+		);
+		let parameters = serde_json::json!({ "content_id": content_id, "content_type": content_type });
 		self.client
 			.post(&url)
 			.bearer_auth(&self.auth_key)
