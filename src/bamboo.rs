@@ -1,7 +1,4 @@
-use crate::{
-	error,
-	Result,
-};
+use crate::{error, Result};
 use curl::easy::Easy;
 use serde::Deserialize;
 use snafu::ResultExt;
@@ -139,6 +136,7 @@ mod tests {
 	use super::*;
 
 	#[test]
+	#[ignore]
 	fn test_get_employees_directory() {
 		dotenv::dotenv().ok();
 		let bamboo_token = dotenv::var("BAMBOO_TOKEN").expect("BAMBOO_TOKEN");
@@ -149,13 +147,14 @@ mod tests {
 				.filter(|empl| empl.last_name == Some("Mark".to_owned()))
 				.collect::<Vec<_>>()
 		});
-		dbg!(res);
+		dbg!(res).unwrap();
 	}
 
 	#[test]
+	#[ignore]
 	fn test_get_employee() {
 		dotenv::dotenv().ok();
 		let bamboo_token = dotenv::var("BAMBOO_TOKEN").expect("BAMBOO_TOKEN");
-		dbg!(get_employee(&bamboo_token, "110"));
+		dbg!(get_employee(&bamboo_token, "110")).unwrap();
 	}
 }

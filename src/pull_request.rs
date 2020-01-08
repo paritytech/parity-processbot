@@ -1,13 +1,7 @@
 use crate::db::*;
 use crate::{
-	constants::*,
-	error,
-	github,
-	github_bot::GithubBot,
-	matrix,
-	matrix_bot::MatrixBot,
-	project_info,
-	Result,
+	constants::*, error, github, github_bot::GithubBot, matrix,
+	matrix_bot::MatrixBot, project_info, Result,
 };
 use rocksdb::DB;
 use snafu::OptionExt;

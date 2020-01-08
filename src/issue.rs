@@ -1,22 +1,13 @@
 use crate::db::*;
 use crate::{
-	constants::*,
-	error,
-	github,
-	github_bot::GithubBot,
-	matrix,
-	matrix_bot::MatrixBot,
-	project_info,
-	Result,
+	constants::*, error, github, github_bot::GithubBot, matrix,
+	matrix_bot::MatrixBot, project_info, Result,
 };
 use itertools::Itertools;
 use rocksdb::DB;
 use snafu::OptionExt;
 use std::collections::HashMap;
-use std::time::{
-	Duration,
-	SystemTime,
-};
+use std::time::{Duration, SystemTime};
 
 fn issue_actor_and_project_card(
 	issue: &github::Issue,

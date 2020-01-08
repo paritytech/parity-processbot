@@ -2,13 +2,7 @@ use rocksdb::DB;
 use snafu::OptionExt;
 use std::time::Duration;
 
-use parity_processbot::{
-	bamboo,
-	bots,
-	error,
-	github_bot,
-	matrix_bot,
-};
+use parity_processbot::{bamboo, bots, error, github_bot, matrix_bot};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -78,7 +72,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 			&matrix_bot,
 			&core_devs,
 			&github_to_matrix,
-                        &matrix_default_channel_id,
+			&matrix_default_channel_id,
 		)?;
 	}
 }

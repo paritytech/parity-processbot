@@ -1,14 +1,8 @@
 // TODO: Move bitflags to use `bitflags` crate.
 #![allow(non_upper_case_globals)]
-use crate::{
-	error,
-	Result,
-};
+use crate::{error, Result};
 use rocksdb::DB;
-use serde::{
-	Deserialize,
-	Serialize,
-};
+use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 use std::time::SystemTime;
 

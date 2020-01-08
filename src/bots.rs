@@ -2,13 +2,8 @@ use rocksdb::DB;
 use std::collections::HashMap;
 
 use crate::{
-	github,
-	github_bot::GithubBot,
-	matrix_bot::MatrixBot,
-	project_info,
-	pull_request::handle_pull_request,
-        issue::handle_issue,
-	Result,
+	github, github_bot::GithubBot, issue::handle_issue, matrix_bot::MatrixBot,
+	project_info, pull_request::handle_pull_request, Result,
 };
 
 pub fn update(

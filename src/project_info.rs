@@ -45,7 +45,7 @@ impl ProjectInfo {
 		self.whitelist.as_ref().map_or(false, |whitelist| {
 			whitelist.iter().any(|user| user == login)
 		})
-        }
+	}
 
 	pub fn is_admin(&self, login: &str) -> bool {
 		self.is_owner(login)
