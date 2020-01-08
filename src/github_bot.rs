@@ -120,6 +120,19 @@ impl GithubBot {
 		))
 	}
 
+	/// Returns events associated with an issue.
+	pub fn projects(
+		&self,
+		repo_name: &str,
+	) -> Result<Vec<github::Project>> {
+		self.get(&format!(
+			"{base_url}/repos/{owner}/{repo_name}/projects",
+			base_url = Self::BASE_URL,
+			owner = self.organization.login,
+			repo_name = repo_name,
+		))
+	}
+
 	/// Returns the project column at a url.
 	pub fn project_column<'b, I>(&self, url: I) -> Result<github::ProjectColumn>
 	where

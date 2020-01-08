@@ -6,7 +6,7 @@ use crate::{
 	github_bot::GithubBot,
 	matrix,
 	matrix_bot::MatrixBot,
-	project,
+	project_info,
 	Result,
 };
 use itertools::Itertools;
@@ -158,7 +158,7 @@ pub fn handle_issue(
 	matrix_bot: &MatrixBot,
 	core_devs: &[github::User],
 	github_to_matrix: &HashMap<String, String>,
-	projects: Option<&project::Projects>,
+	projects: Option<&Vec<(github::Project, project_info::ProjectInfo)>>,
 	issue: &github::Issue,
 	default_channel_id: &str,
 ) -> Result<()> {
@@ -172,7 +172,7 @@ pub fn handle_issue(
 	let author_is_core =
 		core_devs.iter().find(|u| u.id == issue.user.id).is_some();
 
-	match if projects.map_or(true, |p| p.0.is_empty()) {
+	match if projects.map_or(true, |p| p.is_empty()) {
 		unimplemented!()
 	} else {
 		let projects = projects.expect("just confirmed above");
@@ -182,11 +182,10 @@ pub fn handle_issue(
 					.issue_no_project_ping
 					.and_then(|ping| ping.elapsed().ok());
 
-				if projects.0.len() == 1
+				if projects.len() == 1
 					&& projects
-						.0
 						.iter()
-						.find(|p| p.1.is_admin(&issue.user.login))
+						.find(|(_, p)| p.is_admin(&issue.user.login))
 						.is_some()
 				{
 					// repo contains only one project and the author is admin
@@ -200,9 +199,8 @@ pub fn handle_issue(
 					)?
 				} else if author_is_core
 					|| projects
-						.0
 						.iter()
-						.find(|p| p.1.is_admin(&issue.user.login))
+						.find(|(_, p)| p.is_admin(&issue.user.login))
 						.is_some()
 				{
 					// author is a core developer or admin of at least one
@@ -239,7 +237,11 @@ pub fn handle_issue(
 					.and_then(|url| github_bot.get(url).ok())
 					.context(error::MissingData)?;
 
-				if let Some(project_info) = projects.0.get(&project.name) {
+				if let Some(project_info) = projects
+					.iter()
+					.find(|(p, _)| &p.name == &project.name)
+					.map(|(_, p)| p)
+				{
 					let issue_html_url =
 						issue.html_url.as_ref().context(error::MissingData)?;
 					let project_html_url = project
@@ -473,6 +475,7 @@ pub fn handle_issue(
 					}
 				} else {
 					// no key in in Projects.toml matches the project name
+					// TODO warning here
 					unimplemented!()
 				}
 			}

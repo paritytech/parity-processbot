@@ -8,7 +8,7 @@ pub mod github_bot;
 pub mod issue;
 pub mod matrix;
 pub mod matrix_bot;
-pub mod project;
+pub mod project_info;
 pub mod pull_request;
 pub mod repository;
 
