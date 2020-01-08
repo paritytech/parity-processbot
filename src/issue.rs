@@ -1,22 +1,13 @@
 use crate::db::*;
 use crate::{
-	constants::*,
-	error,
-	github,
-	github_bot::GithubBot,
-	matrix,
-	matrix_bot::MatrixBot,
-	project_info,
-	Result,
+	constants::*, error, github, github_bot::GithubBot, matrix,
+	matrix_bot::MatrixBot, project_info, Result,
 };
 use itertools::Itertools;
 use rocksdb::DB;
 use snafu::OptionExt;
 use std::collections::HashMap;
-use std::time::{
-	Duration,
-	SystemTime,
-};
+use std::time::{Duration, SystemTime};
 
 fn issue_actor_and_project_card(
 	issue: &github::Issue,
@@ -50,14 +41,41 @@ fn issue_actor_and_project_card(
 }
 
 fn author_admin_attach_only_project(
-	_db_entry: &mut DbEntry,
-	_github_bot: &GithubBot,
-	_matrix_bot: &MatrixBot,
-	_issue: &github::Issue,
-	_default_channel_id: &str,
-	_since: Option<Duration>,
+	db_entry: &mut DbEntry,
+	github_bot: &GithubBot,
+	issue: &github::Issue,
+	admin_of: &(github::Project, project_info::ProjectInfo),
 ) -> Result<DbEntryState> {
-	unimplemented!()
+	Ok(
+		if let Some(backlog_column) = admin_of
+			.0
+			.columns_url
+			.as_ref()
+			.and_then(|url| github_bot.project_columns(url).ok())
+			.and_then(|columns| {
+				columns.into_iter().find(|c| {
+					c.name
+						.as_ref()
+						.map(|name| {
+							name.to_lowercase()
+								== PROJECT_BACKLOG_COLUMN_NAME.to_lowercase()
+						})
+						.unwrap_or(false)
+				})
+			}) {
+			db_entry.issue_project_state =
+				Some(ProjectState::Confirmed(backlog_column.id));
+			github_bot.create_project_card(
+				backlog_column.id,
+				issue.id.context(error::MissingData)?,
+				github::ProjectCardContentType::Issue,
+			)?;
+			DbEntryState::Update
+		} else {
+			// TODO warn that the project lacks a backlog column
+			DbEntryState::DoNothing
+		},
+	)
 }
 
 fn author_core_no_project(
@@ -181,21 +199,18 @@ pub fn handle_issue(
 				let since = db_entry
 					.issue_no_project_ping
 					.and_then(|ping| ping.elapsed().ok());
+				let admin_of = projects
+					.iter()
+					.find(|(_, p)| p.is_admin(&issue.user.login));
 
-				if projects.len() == 1
-					&& projects
-						.iter()
-						.find(|(_, p)| p.is_admin(&issue.user.login))
-						.is_some()
-				{
+				if projects.len() == 1 && admin_of.is_some() {
 					// repo contains only one project and the author is admin
+					// so we can attach it with high confidence
 					author_admin_attach_only_project(
 						&mut db_entry,
 						github_bot,
-						matrix_bot,
 						issue,
-						default_channel_id,
-						since,
+						admin_of.expect("just checked"),
 					)?
 				} else if author_is_core
 					|| projects
@@ -347,8 +362,21 @@ pub fn handle_issue(
 										}
 										Some(0) => DbEntryState::DoNothing,
 										Some(_) => {
+											// confirmation
+											// timeout.
+											// delete
+											// project
+											// card and
+											// reattach
+											// last
+											// confirmed
+											// if
+											// possible
 											db_entry
 												.issue_confirm_project_ping = None;
+											github_bot.delete_project_card(
+												unconfirmed_id,
+											)?;
 											if let Some(prev_project) =
 												db_entry.last_confirmed_project
 											{
@@ -358,8 +386,7 @@ pub fn handle_issue(
 															prev_project,
 														),
 													);
-												// reattach the last confirmed
-												// project
+												// reattach the last confirmed project
 												github_bot.create_project_card(prev_project, issue_id, github::ProjectCardContentType::Issue)?;
 											} else {
 												db_entry.issue_project_state =

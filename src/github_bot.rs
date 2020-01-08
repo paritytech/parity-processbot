@@ -2,16 +2,9 @@ use std::borrow::Cow;
 
 use hyperx::header::TypedHeaders;
 use serde::*;
-use snafu::{
-	OptionExt,
-	ResultExt,
-};
+use snafu::{OptionExt, ResultExt};
 
-use crate::{
-	error,
-	github,
-	Result,
-};
+use crate::{error, github, Result};
 
 pub struct GithubBot {
 	client: reqwest::Client,
@@ -121,10 +114,7 @@ impl GithubBot {
 	}
 
 	/// Returns events associated with an issue.
-	pub fn projects(
-		&self,
-		repo_name: &str,
-	) -> Result<Vec<github::Project>> {
+	pub fn projects(&self, repo_name: &str) -> Result<Vec<github::Project>> {
 		self.get(&format!(
 			"{base_url}/repos/{owner}/{repo_name}/projects",
 			base_url = Self::BASE_URL,
@@ -138,7 +128,18 @@ impl GithubBot {
 	where
 		I: Into<Cow<'b, str>>,
 	{
-                self.get(url)
+		self.get(url)
+	}
+
+	/// Returns an array of project columns at a url.
+	pub fn project_columns<'b, I>(
+		&self,
+		url: I,
+	) -> Result<Vec<github::ProjectColumn>>
+	where
+		I: Into<Cow<'b, str>>,
+	{
+		self.get(url)
 	}
 
 	/// Returns statuses associated with a pull request.
@@ -360,6 +361,23 @@ impl GithubBot {
 			.post(&url)
 			.bearer_auth(&self.auth_key)
 			.json(&parameters)
+			.send()
+			.context(error::Http)
+			.map(|_| ())
+	}
+
+	pub fn delete_project_card<A>(&self, column_id: A) -> Result<()>
+	where
+		A: std::fmt::Display,
+	{
+		let url = format!(
+			"{base}/projects/columns/{column_id}",
+			base = Self::BASE_URL,
+			column_id = column_id,
+		);
+		self.client
+			.delete(&url)
+			.bearer_auth(&self.auth_key)
 			.send()
 			.context(error::Http)
 			.map(|_| ())

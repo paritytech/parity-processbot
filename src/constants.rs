@@ -10,6 +10,7 @@ pub const ISSUE_UNCONFIRMED_PROJECT_PING_PERIOD: u64 = 3600 * 8;
 
 pub const FALLBACK_ROOM_ID: &'static str =
 	"!aenJixaHcSKbJOWxYk:matrix.parity.io";
+pub const PROJECT_BACKLOG_COLUMN_NAME: &'static str = "backlog";
 
 pub const ISSUE_MUST_EXIST_MESSAGE: &'static str =
 	"Every pull request must address an issue.";
