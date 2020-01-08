@@ -7,6 +7,7 @@ use crate::{
 	matrix_bot::MatrixBot,
 	project_info,
 	pull_request::handle_pull_request,
+        issue::handle_issue,
 	Result,
 };
 
@@ -16,7 +17,7 @@ pub fn update(
 	matrix_bot: &MatrixBot,
 	core_devs: &[github::User],
 	github_to_matrix: &HashMap<String, String>,
-	_default_channel_id: &str,
+	default_channel_id: &str,
 ) -> Result<()> {
 	for repo in github_bot.repositories()? {
 		let repo_projects = github_bot.projects(&repo.name)?;
@@ -42,6 +43,20 @@ pub fn update(
 					.collect::<Vec<(github::Project, project_info::ProjectInfo)>>(
 					)
 			});
+
+		let issues = github_bot.issues(&repo)?;
+		for issue in issues {
+			handle_issue(
+				db,
+				github_bot,
+				matrix_bot,
+				core_devs,
+				github_to_matrix,
+				projects.as_ref(),
+				&issue,
+				default_channel_id,
+			)?;
+		}
 
 		let prs = github_bot.pull_requests(&repo)?;
 		for pr in prs {

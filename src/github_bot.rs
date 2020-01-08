@@ -55,6 +55,14 @@ impl GithubBot {
 		self.get_all(repo.pulls_url.replace("{/number}", ""))
 	}
 
+	/// Returns all of the issues in a single repository.
+	pub fn issues(
+		&self,
+		repo: &github::Repository,
+	) -> Result<Vec<github::Issue>> {
+		self.get_all(repo.issues_url.replace("{/number}", ""))
+	}
+
 	/// Returns all reviews associated with a pull request.
 	pub fn reviews(
 		&self,

@@ -1,13 +1,22 @@
 use crate::db::*;
 use crate::{
-	constants::*, error, github, github_bot::GithubBot, matrix,
-	matrix_bot::MatrixBot, project_info, Result,
+	constants::*,
+	error,
+	github,
+	github_bot::GithubBot,
+	matrix,
+	matrix_bot::MatrixBot,
+	project_info,
+	Result,
 };
 use itertools::Itertools;
 use rocksdb::DB;
 use snafu::OptionExt;
 use std::collections::HashMap;
-use std::time::{Duration, SystemTime};
+use std::time::{
+	Duration,
+	SystemTime,
+};
 
 fn issue_actor_and_project_card(
 	issue: &github::Issue,
@@ -170,6 +179,224 @@ fn author_unknown_no_project(
 	})
 }
 
+fn author_non_admin_project_state_none(
+	db_entry: &mut DbEntry,
+	matrix_bot: &MatrixBot,
+	issue: &github::Issue,
+	_default_channel_id: &str,
+	project: &github::Project,
+	project_column: &github::ProjectColumn,
+	project_info: &project_info::ProjectInfo,
+) -> Result<DbEntryState> {
+	if let Some(room_id) = &project_info.matrix_room_id {
+		db_entry.issue_confirm_project_ping = Some(SystemTime::now());
+		db_entry.issue_project_state =
+			Some(ProjectState::Unconfirmed(project_column.id));
+		matrix_bot.send_public_message(
+			&room_id,
+			&ISSUE_CONFIRM_PROJECT_MESSAGE
+				.replace(
+					"{issue_url}",
+					issue.html_url.as_ref().context(error::MissingData)?,
+				)
+				.replace(
+					"{project_url}",
+					project.html_url.as_ref().context(error::MissingData)?,
+				)
+				.replace(
+					"{issue_id}",
+					&format!("{}", issue.id.context(error::MissingData)?),
+				)
+				.replace(
+					"{project_column.id}",
+					&format!("{}", project_column.id),
+				),
+		)?;
+	} else {
+		// project info should include matrix room
+		// id. TODO some kind of notification here
+	}
+	Ok(DbEntryState::Update)
+}
+
+fn author_non_admin_project_state_unconfirmed(
+	db_entry: &mut DbEntry,
+	github_bot: &GithubBot,
+	matrix_bot: &MatrixBot,
+	github_to_matrix: &HashMap<String, String>,
+	issue: &github::Issue,
+	_default_channel_id: &str,
+	project: &github::Project,
+	project_column: &github::ProjectColumn,
+	project_info: &project_info::ProjectInfo,
+	actor: &github::User,
+	unconfirmed_id: i64,
+) -> Result<DbEntryState> {
+	let issue_id = issue.id.context(error::MissingData)?;
+	let issue_html_url = issue.html_url.as_ref().context(error::MissingData)?;
+	let project_html_url =
+		project.html_url.as_ref().context(error::MissingData)?;
+
+	Ok(if project_column.id != unconfirmed_id {
+		db_entry.issue_confirm_project_ping = Some(SystemTime::now());
+		db_entry.issue_project_state =
+			Some(ProjectState::Unconfirmed(project_column.id));
+		if let Some(room_id) = &project_info.matrix_room_id {
+			matrix_bot.send_public_message(
+				&room_id,
+				&ISSUE_CONFIRM_PROJECT_MESSAGE
+					.replace("{issue_url}", issue_html_url)
+					.replace("{project_url}", project_html_url)
+					.replace("{issue_id}", &format!("{}", issue_id))
+					.replace(
+						"{project_column.id}",
+						&format!("{}", project_column.id),
+					),
+			)?;
+		} else {
+			// project info should include matrix
+			// room id. TODO some kind of
+			// notification here
+		}
+		DbEntryState::Update
+	} else {
+		let ticks = db_entry
+			.issue_confirm_project_ping
+			.and_then(|t| t.elapsed().ok())
+			.map(|elapsed| {
+				elapsed.as_secs() / ISSUE_UNCONFIRMED_PROJECT_PING_PERIOD
+			});
+
+		match ticks {
+			None => {
+				panic!("don't know how long to wait for confirmation; shouldn't ever allow issue_project_state to be set without updating issue_confirm_project_ping");
+			}
+			Some(0) => DbEntryState::DoNothing,
+			Some(_) => {
+				// confirmation timeout. delete project card and reattach last
+				// confirmed if possible
+				db_entry.issue_confirm_project_ping = None;
+				github_bot.delete_project_card(unconfirmed_id)?;
+				if let Some(prev_project) = db_entry.last_confirmed_project {
+					db_entry.issue_project_state =
+						Some(ProjectState::Confirmed(prev_project));
+					github_bot.create_project_card(
+						prev_project,
+						issue_id,
+						github::ProjectCardContentType::Issue,
+					)?;
+				} else {
+					db_entry.issue_project_state = None;
+				}
+				if let Some(matrix_id) = github_to_matrix
+					.get(&actor.login)
+					.and_then(|matrix_id| matrix::parse_id(matrix_id))
+				{
+					matrix_bot.send_private_message(
+						&matrix_id,
+						&ISSUE_REVERT_PROJECT_NOTIFICATION
+							.replace("{1}", &issue_html_url),
+					)?;
+				} else {
+					// no matrix id to message
+				}
+				DbEntryState::Update
+			}
+		}
+	})
+}
+
+fn author_non_admin_project_state_denied(
+	db_entry: &mut DbEntry,
+	github_bot: &GithubBot,
+	matrix_bot: &MatrixBot,
+	github_to_matrix: &HashMap<String, String>,
+	issue: &github::Issue,
+	_default_channel_id: &str,
+	actor: &github::User,
+) -> Result<DbEntryState> {
+	let issue_id = issue.id.context(error::MissingData)?;
+	let issue_html_url = issue.html_url.as_ref().context(error::MissingData)?;
+
+	db_entry.issue_confirm_project_ping = None;
+	if let Some(prev_project) = db_entry.last_confirmed_project {
+		db_entry.issue_project_state =
+			Some(ProjectState::Confirmed(prev_project));
+		// reattach the last confirmed project
+		github_bot.create_project_card(
+			prev_project,
+			issue_id,
+			github::ProjectCardContentType::Issue,
+		)?;
+	} else {
+		db_entry.issue_project_state = None;
+	}
+	if let Some(matrix_id) = github_to_matrix
+		.get(&actor.login)
+		.and_then(|matrix_id| matrix::parse_id(matrix_id))
+	{
+		matrix_bot.send_private_message(
+			&matrix_id,
+			&ISSUE_REVERT_PROJECT_NOTIFICATION.replace("{1}", &issue_html_url),
+		)?;
+	} else {
+		// no matrix id to message
+	}
+	Ok(DbEntryState::Update)
+}
+
+fn author_non_admin_project_state_confirmed(
+	db_entry: &mut DbEntry,
+	matrix_bot: &MatrixBot,
+	issue: &github::Issue,
+	_default_channel_id: &str,
+	project: &github::Project,
+	project_column: &github::ProjectColumn,
+	project_info: &project_info::ProjectInfo,
+	confirmed_id: i64,
+) -> Result<DbEntryState> {
+	let issue_id = issue.id.context(error::MissingData)?;
+	let issue_html_url = issue.html_url.as_ref().context(error::MissingData)?;
+	let project_html_url =
+		project.html_url.as_ref().context(error::MissingData)?;
+
+	let confirmed_matches_last = db_entry
+		.last_confirmed_project
+		.map(|proj_id| proj_id == confirmed_id)
+		.unwrap_or(false);
+
+	if !confirmed_matches_last {
+		db_entry.issue_confirm_project_ping = None;
+		db_entry.last_confirmed_project = Some(confirmed_id);
+	}
+
+	if project_column.id != confirmed_id {
+		// project has been changed since
+		// the confirmation
+		db_entry.issue_confirm_project_ping = Some(SystemTime::now());
+		db_entry.issue_project_state =
+			Some(ProjectState::Unconfirmed(project_column.id));
+		if let Some(room_id) = &project_info.matrix_room_id {
+			matrix_bot.send_public_message(
+				&room_id,
+				&ISSUE_CONFIRM_PROJECT_MESSAGE
+					.replace("{issue_url}", issue_html_url)
+					.replace("{project_url}", project_html_url)
+					.replace("{issue_id}", &format!("{}", issue_id))
+					.replace(
+						"{project_column.id}",
+						&format!("{}", project_column.id),
+					),
+			)?;
+		} else {
+			// project info should include matrix
+			// room id. TODO some kind of
+			// notification here
+		}
+	}
+	Ok(DbEntryState::Update)
+}
+
 pub fn handle_issue(
 	db: &DB,
 	github_bot: &GithubBot,
@@ -257,243 +484,57 @@ pub fn handle_issue(
 					.find(|(p, _)| &p.name == &project.name)
 					.map(|(_, p)| p)
 				{
-					let issue_html_url =
-						issue.html_url.as_ref().context(error::MissingData)?;
-					let project_html_url = project
-						.html_url
-						.as_ref()
-						.context(error::MissingData)?;
-
 					if !project_info.is_admin(&actor.login) {
 						// TODO check if confirmation has confirmed/denied.
 						// requires parsing messages in project room
 
 						match db_entry.issue_project_state {
-							None => {
-								if let Some(room_id) =
-									&project_info.matrix_room_id
-								{
-									db_entry.issue_confirm_project_ping =
-										Some(SystemTime::now());
-									db_entry.issue_project_state =
-										Some(ProjectState::Unconfirmed(
-											project_column.id,
-										));
-									matrix_bot.send_public_message(
-										&room_id,
-										&ISSUE_CONFIRM_PROJECT_MESSAGE
-											.replace(
-												"{issue_url}",
-												issue_html_url,
-											)
-											.replace(
-												"{project_url}",
-												project_html_url,
-											)
-											.replace(
-												"{issue_id}",
-												&format!("{}", issue_id),
-											)
-											.replace(
-												"{project_column.id}",
-												&format!(
-													"{}",
-													project_column.id
-												),
-											),
-									)?;
-								} else {
-									// project info should include matrix room
-									// id. TODO some kind of warning here
-								}
-								DbEntryState::Update
-							}
+							None => author_non_admin_project_state_none(
+								&mut db_entry,
+								matrix_bot,
+								issue,
+								default_channel_id,
+								&project,
+								&project_column,
+								&project_info,
+							)?,
 							Some(ProjectState::Unconfirmed(unconfirmed_id)) => {
-								if project_column.id != unconfirmed_id {
-									db_entry.issue_confirm_project_ping =
-										Some(SystemTime::now());
-									db_entry.issue_project_state =
-										Some(ProjectState::Unconfirmed(
-											project_column.id,
-										));
-									if let Some(room_id) =
-										&project_info.matrix_room_id
-									{
-										matrix_bot.send_public_message(
-											&room_id,
-											&ISSUE_CONFIRM_PROJECT_MESSAGE
-												.replace(
-													"{issue_url}",
-													issue_html_url,
-												)
-												.replace(
-													"{project_url}",
-													project_html_url,
-												)
-												.replace(
-													"{issue_id}",
-													&format!("{}", issue_id),
-												)
-												.replace(
-													"{project_column.id}",
-													&format!(
-														"{}",
-														project_column.id
-													),
-												),
-										)?;
-									} else {
-										// project info should include matrix
-										// room id. TODO some kind of warning
-										// here
-									}
-									DbEntryState::Update
-								} else {
-									let ticks = db_entry
-										.issue_confirm_project_ping
-										.and_then(|t| t.elapsed().ok())
-										.map(|elapsed| {
-											elapsed.as_secs() / ISSUE_UNCONFIRMED_PROJECT_PING_PERIOD
-										});
-
-									match ticks {
-										None => {
-											panic!("don't know how long to wait for confirmation; shouldn't ever allow issue_project_state to be set without updating issue_confirm_project_ping");
-										}
-										Some(0) => DbEntryState::DoNothing,
-										Some(_) => {
-											// confirmation
-											// timeout.
-											// delete
-											// project
-											// card and
-											// reattach
-											// last
-											// confirmed
-											// if
-											// possible
-											db_entry
-												.issue_confirm_project_ping = None;
-											github_bot.delete_project_card(
-												unconfirmed_id,
-											)?;
-											if let Some(prev_project) =
-												db_entry.last_confirmed_project
-											{
-												db_entry.issue_project_state =
-													Some(
-														ProjectState::Confirmed(
-															prev_project,
-														),
-													);
-												// reattach the last confirmed project
-												github_bot.create_project_card(prev_project, issue_id, github::ProjectCardContentType::Issue)?;
-											} else {
-												db_entry.issue_project_state =
-													None;
-											}
-											if let Some(matrix_id) =
-												github_to_matrix
-													.get(&actor.login)
-													.and_then(|matrix_id| {
-														matrix::parse_id(
-															matrix_id,
-														)
-													}) {
-												matrix_bot.send_private_message(&matrix_id, &ISSUE_REVERT_PROJECT_NOTIFICATION.replace("{1}", &issue_html_url))?;
-											} else {
-												// no matrix id to message
-											}
-											DbEntryState::Update
-										}
-									}
-								}
-							}
-							Some(ProjectState::Confirmed(confirmed_id)) => {
-								let confirmed_matches_last = db_entry
-									.last_confirmed_project
-									.map(|proj_id| proj_id == confirmed_id)
-									.unwrap_or(false);
-
-								if !confirmed_matches_last {
-									db_entry.issue_confirm_project_ping = None;
-									db_entry.last_confirmed_project =
-										Some(confirmed_id);
-								}
-
-								if project_column.id != confirmed_id {
-									// project has been changed since
-									// the confirmation
-									db_entry.issue_confirm_project_ping =
-										Some(SystemTime::now());
-									db_entry.issue_project_state =
-										Some(ProjectState::Unconfirmed(
-											project_column.id,
-										));
-									if let Some(room_id) =
-										&project_info.matrix_room_id
-									{
-										matrix_bot.send_public_message(
-											&room_id,
-											&ISSUE_CONFIRM_PROJECT_MESSAGE
-												.replace(
-													"{issue_url}",
-													issue_html_url,
-												)
-												.replace(
-													"{project_url}",
-													project_html_url,
-												)
-												.replace(
-													"{issue_id}",
-													&format!("{}", issue_id),
-												)
-												.replace(
-													"{project_column.id}",
-													&format!(
-														"{}",
-														project_column.id
-													),
-												),
-										)?;
-									} else {
-										// project info should include matrix
-										// room id. TODO some kind of warning
-										// here
-									}
-								}
-								DbEntryState::Update
+								author_non_admin_project_state_unconfirmed(
+									&mut db_entry,
+									github_bot,
+									matrix_bot,
+									github_to_matrix,
+									issue,
+									default_channel_id,
+									&project,
+									&project_column,
+									&project_info,
+									&actor,
+									unconfirmed_id,
+								)?
 							}
 							Some(ProjectState::Denied(_)) => {
-								db_entry.issue_confirm_project_ping = None;
-								if let Some(prev_project) =
-									db_entry.last_confirmed_project
-								{
-									db_entry.issue_project_state = Some(
-										ProjectState::Confirmed(prev_project),
-									);
-									// reattach the last confirmed project
-									github_bot.create_project_card(
-										prev_project,
-										issue_id,
-										github::ProjectCardContentType::Issue,
-									)?;
-								} else {
-									db_entry.issue_project_state = None;
-								}
-								if let Some(matrix_id) =
-									github_to_matrix.get(&actor.login).and_then(
-										|matrix_id| matrix::parse_id(matrix_id),
-									) {
-									matrix_bot.send_private_message(
-										&matrix_id,
-										&ISSUE_REVERT_PROJECT_NOTIFICATION
-											.replace("{1}", &issue_html_url),
-									)?;
-								} else {
-									// no matrix id to message
-								}
-								DbEntryState::Update
+								author_non_admin_project_state_denied(
+									&mut db_entry,
+									github_bot,
+									matrix_bot,
+									github_to_matrix,
+									issue,
+									default_channel_id,
+									&actor,
+								)?
+							}
+							Some(ProjectState::Confirmed(confirmed_id)) => {
+								author_non_admin_project_state_confirmed(
+									&mut db_entry,
+									matrix_bot,
+									issue,
+									default_channel_id,
+									&project,
+									&project_column,
+									&project_info,
+									confirmed_id,
+								)?
 							}
 						}
 					} else {
@@ -502,7 +543,7 @@ pub fn handle_issue(
 					}
 				} else {
 					// no key in in Projects.toml matches the project name
-					// TODO warning here
+					// TODO notification here
 					unimplemented!()
 				}
 			}
