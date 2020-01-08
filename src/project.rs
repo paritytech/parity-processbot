@@ -9,32 +9,48 @@ pub struct ProjectInfo {
 	pub matrix_room_id: Option<String>,
 }
 
+#[derive(Default, Debug, Clone, Copy)]
+pub struct AuthorInfo {
+	pub is_owner: bool,
+	pub is_delegated_reviewer: bool,
+	pub is_whitelisted: bool,
+}
+
 impl ProjectInfo {
-	pub fn user_is_owner(&self, user_login: &str) -> bool {
-		self.owner
-			.as_ref()
-			.map(|u| u == &user_login)
-			.unwrap_or(false)
+	pub fn author_info(&self, login: &str) -> AuthorInfo {
+		let is_owner = self.is_owner(login);
+		let is_delegated_reviewer = self.is_delegated_reviewer(login);
+		let is_whitelisted = self.is_whitelisted(login);
+
+		AuthorInfo {
+			is_owner,
+			is_delegated_reviewer,
+			is_whitelisted,
+		}
+	}
+	/// Checks if the owner of the project matches the login given.
+	pub fn is_owner(&self, login: &str) -> bool {
+		self.owner.as_deref().map_or(false, |owner| owner == login)
 	}
 
-	pub fn user_is_delegated(&self, user_login: &str) -> bool {
+	/// Checks if the reviewer matches the login given.
+	pub fn is_delegated_reviewer(&self, login: &str) -> bool {
 		self.delegated_reviewer
-			.as_ref()
-			.map(|u| u == &user_login)
-			.unwrap_or(false)
+			.as_deref()
+			.map_or(false, |reviewer| reviewer == login)
 	}
 
-	pub fn user_is_whitelisted(&self, user_login: &str) -> bool {
-		self.whitelist
-			.as_ref()
-			.map(|w| w.iter().find(|&w| w == &user_login).is_some())
-			.unwrap_or(false)
-	}
+	/// Checks that the login is contained within the whitelist.
+	pub fn is_whitelisted(&self, login: &str) -> bool {
+		self.whitelist.as_ref().map_or(false, |whitelist| {
+			whitelist.iter().any(|user| user == login)
+		})
+        }
 
-	pub fn user_is_admin(&self, user_login: &str) -> bool {
-		self.user_is_owner(user_login)
-			|| self.user_is_delegated(user_login)
-			|| self.user_is_whitelisted(user_login)
+	pub fn is_admin(&self, login: &str) -> bool {
+		self.is_owner(login)
+			|| self.is_delegated_reviewer(login)
+			|| self.is_whitelisted(login)
 	}
 }
 

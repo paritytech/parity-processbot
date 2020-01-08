@@ -1,0 +1,19 @@
+version: 2
+jobs:
+  build:
+    docker:
+      - image: circleci/rust
+
+    steps:
+      - checkout
+
+      - run:
+          name: Checking
+          command: cargo fmt --all -- --check
+      - run:
+          name: Building
+          command: cargo build --all --tests
+
+      - run:
+          name: Testing
+          command: cargo test --all

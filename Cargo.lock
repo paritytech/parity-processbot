@@ -25,12 +25,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "anyhow"
-version = "1.0.25"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9267dff192e68f3399525901e709a48c1d3982c9c072fa32f2127a0cb0babf14"
-
-[[package]]
 name = "arc-swap"
 version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1168,7 +1162,6 @@ dependencies = [
 name = "parity-processbot"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "base64 0.11.0",
  "byteorder",
  "chrono",

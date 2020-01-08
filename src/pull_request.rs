@@ -11,15 +11,10 @@ use crate::{
 };
 use rocksdb::DB;
 use snafu::{
-	GenerateBacktrace,
 	OptionExt,
-	ResultExt,
 };
 use std::collections::HashMap;
-use std::time::{
-	Duration,
-	SystemTime,
-};
+use std::time::SystemTime;
 
 /*
  * if they are not the Delegated Reviewer (by default the project owner),
@@ -37,19 +32,15 @@ fn require_reviewer(
 	github_to_matrix: &HashMap<String, String>,
 	project_info: Option<&project::ProjectInfo>,
 ) -> Result<()> {
-	let author_is_owner = project_info
-		.and_then(|p| p.owner.as_ref())
-		.map(|u| u == &pull_request.user.login)
-		.unwrap_or(false);
-	let author_is_delegated = project_info
-		.and_then(|p| p.delegated_reviewer.as_ref())
-		.map(|u| u == &pull_request.user.login)
-		.unwrap_or(false);
+	let author_info = project_info
+		.map_or_else(project::AuthorInfo::default, |p| {
+			p.author_info(&pull_request.user.login)
+		});
 	let pr_html_url =
 		pull_request.html_url.as_ref().context(error::MissingData)?;
 	let pr_number = pull_request.number.context(error::MissingData)?;
 
-	if !author_is_delegated {
+	if !author_info.is_delegated_reviewer {
 		if let Some((github_id, matrix_id)) = project_info
 			.and_then(|p| p.delegated_reviewer.as_ref())
 			.and_then(|u| github_to_matrix.get(u).map(|m| (u, m)))
@@ -57,14 +48,14 @@ fn require_reviewer(
 			matrix_bot.send_private_message(
 				&matrix_id,
 				&REQUEST_DELEGATED_REVIEW_MESSAGE.replace("{1}", &pr_html_url),
-			);
+			)?;
 			github_bot.request_reviews(
 				&repo.name,
 				pr_number,
 				&[github_id.as_ref()],
-			);
+			)?;
 		}
-	} else if !author_is_owner {
+	} else if !author_info.is_owner {
 		if let Some((github_id, matrix_id)) = project_info
 			.and_then(|p| p.owner.as_ref())
 			.and_then(|u| github_to_matrix.get(u).map(|m| (u, m)))
@@ -72,12 +63,12 @@ fn require_reviewer(
 			matrix_bot.send_private_message(
 				&matrix_id,
 				&REQUEST_OWNER_REVIEW_MESSAGE.replace("{1}", &pr_html_url),
-			);
+			)?;
 			github_bot.request_reviews(
 				&repo.name,
 				pr_number,
 				&[github_id.as_ref()],
-			);
+			)?;
 		}
 	} else {
 		// post a message in the project's Riot channel, requesting a review;
@@ -87,15 +78,13 @@ fn require_reviewer(
 		{
 			matrix_bot.send_public_message(
 				&room_id,
-				&REQUESTING_REVIEWS_MESSAGE
-					.replace("{1}", &format!("{}", pr_html_url)),
-			);
+				&REQUESTING_REVIEWS_MESSAGE.replace("{1}", &pr_html_url),
+			)?;
 		} else {
 			matrix_bot.send_public_message(
 				&FALLBACK_ROOM_ID,
-				&REQUESTING_REVIEWS_MESSAGE
-					.replace("{1}", &format!("{}", pr_html_url)),
-			);
+				&REQUESTING_REVIEWS_MESSAGE.replace("{1}", &pr_html_url),
+			)?;
 		}
 	}
 
@@ -121,6 +110,11 @@ pub fn handle_pull_request(
 	let mut db_entry = DbEntry::new_or_with_key(db, db_key);
 
 	let author = &pull_request.user;
+	let author_info = project_info
+		.as_ref()
+		.map_or_else(project::AuthorInfo::default, |p| {
+			p.author_info(&author.login)
+		});
 	let repo = pull_request
 		.repository
 		.as_ref()
@@ -132,25 +126,9 @@ pub fn handle_pull_request(
 	let issue = github_bot.issue(pull_request)?;
 	let mut statuses = github_bot.statuses(pull_request)?;
 
-	let author_is_owner = project_info
-		.as_ref()
-		.and_then(|p| p.owner.as_ref().map(|u| u == &author.login))
-		.unwrap_or(false);
-	let author_is_delegated = project_info
-		.as_ref()
-		.and_then(|p| p.delegated_reviewer.as_ref().map(|u| u == &author.login))
-		.unwrap_or(false);
-	let author_is_whitelisted = project_info
-		.as_ref()
-		.and_then(|p| {
-			p.whitelist
-				.as_ref()
-				.map(|w| w.iter().find(|&w| w == &author.login).is_some())
-		})
-		.unwrap_or(false);
-	let author_is_core = core_devs.iter().find(|u| u.id == author.id).is_some();
+	let author_is_core = core_devs.iter().any(|u| u.id == author.id);
 
-	if !(author_is_owner || author_is_whitelisted) {
+	if !(author_info.is_owner || author_info.is_whitelisted) {
 		match issue {
 			Some(github::Issue {
 				id: issue_id,
@@ -158,9 +136,11 @@ pub fn handle_pull_request(
 				assignee: ref issue_assignee,
 				..
 			}) => {
-				if issue_assignee.as_ref().map_or(false, |issue_assignee| {
-					issue_assignee.id == author.id
-				}) {
+				let author_is_assignee =
+					issue_assignee.as_ref().map_or(false, |issue_assignee| {
+						issue_assignee.id == author.id
+					});
+				if author_is_assignee {
 					require_reviewer(
 						&pull_request,
 						&repo,
@@ -168,12 +148,12 @@ pub fn handle_pull_request(
 						matrix_bot,
 						github_to_matrix,
 						project_info.as_ref(),
-					);
+					)?;
 				} else {
 					let issue_id = issue_id.context(error::MissingData)?;
 					let issue_html_url =
 						issue_html_url.as_ref().context(error::MissingData)?;
-					if author_is_owner || author_is_whitelisted {
+					if author_info.is_owner || author_info.is_whitelisted {
 						// never true ... ?
 						// assign the issue to the author
 						github_bot.assign_author(
@@ -188,7 +168,7 @@ pub fn handle_pull_request(
 							matrix_bot,
 							github_to_matrix,
 							project_info.as_ref(),
-						);
+						)?;
 					} else if author_is_core {
 						let days = db_entry
 							.issue_not_assigned_ping
@@ -212,25 +192,10 @@ pub fn handle_pull_request(
 										matrix_bot.send_private_message(
 											&matrix_id,
 											&ISSUE_ASSIGNEE_NOTIFICATION
-												.replace(
-													"{1}",
-													&format!("{}", pr_html_url),
-												)
-												.replace(
-													"{2}",
-													&format!(
-														"{}",
-														issue_html_url
-													),
-												)
-												.replace(
-													"{3}",
-													&format!(
-														"{}",
-														author.login
-													),
-												),
-										);
+												.replace("{1}", &pr_html_url)
+												.replace("{2}", &issue_html_url)
+												.replace("{3}", &author.login),
+										)?;
 									} else {
 										log::warn!(
 											"Couldn't send a message to {}; either their Github or Matrix handle is not set in Bamboo",
@@ -246,19 +211,10 @@ pub fn handle_pull_request(
 									matrix_bot.send_private_message(
 										&matrix_id,
 										&ISSUE_ASSIGNEE_NOTIFICATION
-											.replace(
-												"{1}",
-												&format!("{}", pr_html_url),
-											)
-											.replace(
-												"{2}",
-												&format!("{}", issue_html_url),
-											)
-											.replace(
-												"{3}",
-												&format!("{}", author.login),
-											),
-									);
+											.replace("{1}", &pr_html_url)
+											.replace("{2}", &issue_html_url)
+											.replace("{3}", &author.login),
+									)?;
 								} else {
 									log::warn!(
 										"Couldn't send a message to {}; either their Github or Matrix handle is not set in Bamboo",
@@ -277,18 +233,18 @@ pub fn handle_pull_request(
 										matrix_bot.send_public_message(
 											&room_id,
 											&ISSUE_ASSIGNEE_NOTIFICATION
-												.replace("{1}", &format!("{}", pr_html_url))
-												.replace("{2}", &format!("{}", issue_html_url))
-												.replace("{3}", &format!("{}", author.login)),
-										);
+												.replace("{1}", &pr_html_url)
+												.replace("{2}", &issue_html_url)
+												.replace("{3}", &author.login),
+										)?;
 									} else {
 										matrix_bot.send_public_message(
 											&FALLBACK_ROOM_ID,
 											&ISSUE_ASSIGNEE_NOTIFICATION
-												.replace("{1}", &format!("{}", pr_html_url))
-												.replace("{2}", &format!("{}", issue_html_url))
-												.replace("{3}", &format!("{}", author.login)),
-										);
+												.replace("{1}", &pr_html_url)
+												.replace("{2}", &issue_html_url)
+												.replace("{3}", &author.login),
+										)?;
 									}
 								}
 							}
@@ -332,11 +288,14 @@ pub fn handle_pull_request(
 		match status.state {
 			github::StatusState::Failure => {
 				// notify PR author by PM every 24 hours
-				if db_entry.status_failure_ping.map_or(true, |ping_time| {
+			let should_ping =
+				db_entry.status_failure_ping.map_or(true, |ping_time| {
 					ping_time.elapsed().ok().map_or(true, |elapsed| {
 						elapsed.as_secs() > STATUS_FAILURE_PING_PERIOD
 					})
-				}) {
+				});
+
+                        if should_ping {
 					db_entry.status_failure_ping = Some(SystemTime::now());
 					if let Some(matrix_id) = github_to_matrix
 						.get(&repo.owner.login)
@@ -346,7 +305,7 @@ pub fn handle_pull_request(
 							&matrix_id,
 							&STATUS_FAILURE_NOTIFICATION
 								.replace("{1}", &format!("{}", pr_html_url)),
-						);
+						)?;
 					} else {
 						log::warn!(
 							"Couldn't send a message to {}; either their Github or Matrix handle is not set in Bamboo",

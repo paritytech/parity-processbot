@@ -1,24 +1,16 @@
+// TODO: Move bitflags to use `bitflags` crate.
+#![allow(non_upper_case_globals)]
 use crate::{
 	error,
 	Result,
 };
-use rocksdb::{
-	IteratorMode,
-	DB,
-};
+use rocksdb::DB;
 use serde::{
 	Deserialize,
 	Serialize,
 };
-use snafu::{
-	GenerateBacktrace,
-	OptionExt,
-	ResultExt,
-};
-use std::time::{
-	Duration,
-	SystemTime,
-};
+use snafu::ResultExt;
+use std::time::SystemTime;
 
 /// Bitflag indicating no action has been taken
 pub const NoAction: u32 = 0b00000000;
@@ -118,7 +110,7 @@ mod tests {
 		assert_eq!(
 			PullRequestCoreDevAuthorIssueNotAssigned24h
 				| PullRequestCoreDevAuthorIssueNotAssigned72h,
-			0b00000110
+			0b0000_0110
 		);
 		assert_eq!(
 			PullRequestCoreDevAuthorIssueNotAssigned24h & NoAction,

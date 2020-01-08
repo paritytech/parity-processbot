@@ -11,11 +11,7 @@ use crate::{
 };
 use itertools::Itertools;
 use rocksdb::DB;
-use snafu::{
-	GenerateBacktrace,
-	OptionExt,
-	ResultExt,
-};
+use snafu::OptionExt;
 use std::collections::HashMap;
 use std::time::{
 	Duration,
@@ -62,12 +58,12 @@ fn issue_actor_and_project(
 }
 
 fn author_admin_attach_only_project(
-	db_entry: &mut DbEntry,
-	github_bot: &GithubBot,
-	matrix_bot: &MatrixBot,
-	issue: &github::Issue,
-	default_channel_id: &str,
-	since: Option<Duration>,
+	_db_entry: &mut DbEntry,
+	_github_bot: &GithubBot,
+	_matrix_bot: &MatrixBot,
+	_issue: &github::Issue,
+	_default_channel_id: &str,
+	_since: Option<Duration>,
 ) -> Result<DbEntryState> {
 	unimplemented!()
 }
@@ -92,7 +88,7 @@ fn author_core_no_project(
 			matrix_bot.send_public_message(
 				default_channel_id,
 				&ISSUE_NO_PROJECT_MESSAGE.replace("{1}", issue_html_url),
-			);
+			)?;
 			DbEntryState::Update
 		}
 		Some(0) => DbEntryState::DoNothing,
@@ -101,19 +97,19 @@ fn author_core_no_project(
 				// If after 3 days there is still no project
 				// attached, move the issue to Core Sorting
 				// repository
-				github_bot.close_issue(&issue.repository.name, issue_id);
+				github_bot.close_issue(&issue.repository.name, issue_id)?;
 				let params = serde_json::json!({
 						"title": issue.title,
 						"body": issue.body.as_ref().unwrap_or(&"".to_owned())
 				});
-				github_bot.create_issue(CORE_SORTING_REPO, params);
+				github_bot.create_issue(CORE_SORTING_REPO, params)?;
 				DbEntryState::Delete
 			} else if (db_entry.issue_no_project_npings) < i {
 				db_entry.issue_no_project_npings = i;
 				matrix_bot.send_public_message(
 					default_channel_id,
 					&ISSUE_NO_PROJECT_MESSAGE.replace("{1}", issue_html_url),
-				);
+				)?;
 				DbEntryState::Update
 			} else {
 				DbEntryState::DoNothing
@@ -145,7 +141,7 @@ fn author_unknown_no_project(
 			matrix_bot.send_public_message(
 				default_channel_id,
 				&ISSUE_NO_PROJECT_MESSAGE.replace("{1}", issue_html_url),
-			);
+			)?;
 			DbEntryState::Update
 		}
 		Some(0) => DbEntryState::DoNothing,
@@ -153,12 +149,12 @@ fn author_unknown_no_project(
 			// If after 15 minutes there is still no project
 			// attached, move the issue to Core Sorting
 			// repository.
-			github_bot.close_issue(&issue.repository.name, issue_id);
+			github_bot.close_issue(&issue.repository.name, issue_id)?;
 			let params = serde_json::json!({
 					"title": issue.title,
 					"body": issue.body.as_ref().unwrap_or(&"".to_owned())
 			});
-			github_bot.create_issue(CORE_SORTING_REPO, params);
+			github_bot.create_issue(CORE_SORTING_REPO, params)?;
 			DbEntryState::Delete
 		}
 	})
@@ -198,7 +194,7 @@ pub fn handle_issue(
 					&& projects
 						.0
 						.iter()
-						.find(|p| p.1.user_is_admin(&issue.user.login))
+						.find(|p| p.1.is_admin(&issue.user.login))
 						.is_some()
 				{
 					// repo contains only one project and the author is admin
@@ -214,7 +210,7 @@ pub fn handle_issue(
 					|| projects
 						.0
 						.iter()
-						.find(|p| p.1.user_is_admin(&issue.user.login))
+						.find(|p| p.1.is_admin(&issue.user.login))
 						.is_some()
 				{
 					// author is a core developer or admin of at least one
@@ -250,7 +246,7 @@ pub fn handle_issue(
 					let project_id =
 						project.id.as_ref().context(error::MissingData)?;
 
-					if !project_info.user_is_admin(&actor.login) {
+					if !project_info.is_admin(&actor.login) {
 						// TODO check if confirmation has confirmed/denied.
 						// requires parsing messages in project room
 
@@ -283,7 +279,7 @@ pub fn handle_issue(
 												"{project_id}",
 												&format!("{}", project_id),
 											),
-									);
+									)?;
 								} else {
 									// project info should include matrix room
 									// id. TODO some kind of warning here
@@ -319,7 +315,7 @@ pub fn handle_issue(
 													"{project_id}",
 													&format!("{}", project_id),
 												),
-										);
+										)?;
 									} else {
 										// project info should include matrix
 										// room id. TODO some kind of warning
@@ -363,7 +359,7 @@ pub fn handle_issue(
 															matrix_id,
 														)
 													}) {
-												matrix_bot.send_private_message(&matrix_id, &ISSUE_REVERT_PROJECT_NOTIFICATION.replace("{1}", &issue_html_url));
+												matrix_bot.send_private_message(&matrix_id, &ISSUE_REVERT_PROJECT_NOTIFICATION.replace("{1}", &issue_html_url))?;
 											} else {
 												// no matrix id to message
 											}
@@ -382,12 +378,48 @@ pub fn handle_issue(
 									db_entry.issue_confirm_project_ping = None;
 									db_entry.last_confirmed_project =
 										Some(confirmed_id);
-									DbEntryState::Update
-								} else {
-									DbEntryState::DoNothing
 								}
+
+								if project_id != &confirmed_id {
+									// project has been changed since
+									// the confirmation
+									db_entry.issue_confirm_project_ping =
+										Some(SystemTime::now());
+									db_entry.issue_project_state = Some(
+										ProjectState::Unconfirmed(*project_id),
+									);
+									if let Some(room_id) =
+										&project_info.matrix_room_id
+									{
+										matrix_bot.send_public_message(
+											&room_id,
+											&ISSUE_CONFIRM_PROJECT_MESSAGE
+												.replace(
+													"{issue_url}",
+													issue_html_url,
+												)
+												.replace(
+													"{project_url}",
+													project_html_url,
+												)
+												.replace(
+													"{issue_id}",
+													&format!("{}", issue_id),
+												)
+												.replace(
+													"{project_id}",
+													&format!("{}", project_id),
+												),
+										)?;
+									} else {
+										// project info should include matrix
+										// room id. TODO some kind of warning
+										// here
+									}
+								}
+								DbEntryState::Update
 							}
-							Some(ProjectState::Denied(denied_id)) => {
+							Some(ProjectState::Denied(_)) => {
 								db_entry.issue_confirm_project_ping = None;
 								if let Some(prev_project) =
 									db_entry.last_confirmed_project
@@ -406,7 +438,7 @@ pub fn handle_issue(
 										&matrix_id,
 										&ISSUE_REVERT_PROJECT_NOTIFICATION
 											.replace("{1}", &issue_html_url),
-									);
+									)?;
 								} else {
 									// no matrix id to message
 								}
