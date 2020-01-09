@@ -23,11 +23,18 @@ pub enum DbEntryState {
 	DoNothing,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-pub enum ProjectState {
-	Confirmed(i64),
-	Unconfirmed(i64),
-	Denied(i64),
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+pub enum IssueProjectState {
+	Confirmed,
+	Unconfirmed,
+	Denied,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct IssueProject {
+	pub state: IssueProjectState,
+	pub actor_login: String,
+	pub project_column_id: i64,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -40,8 +47,8 @@ pub struct DbEntry {
 	pub issue_no_project_ping: Option<SystemTime>,
 	pub issue_no_project_npings: u64,
 	pub issue_confirm_project_ping: Option<SystemTime>,
-	pub issue_project_state: Option<ProjectState>,
-	pub last_confirmed_project: Option<i64>,
+	pub issue_project: Option<IssueProject>,
+	pub last_confirmed_project: Option<IssueProject>,
 }
 
 impl DbEntry {
@@ -54,7 +61,7 @@ impl DbEntry {
 			issue_no_project_npings: 0,
 			status_failure_ping: None,
 			issue_confirm_project_ping: None,
-			issue_project_state: None,
+			issue_project: None,
 			last_confirmed_project: None,
 		}
 	}

@@ -6,6 +6,16 @@ use crate::{
 	project_info, pull_request::handle_pull_request, Result,
 };
 
+fn projects_from_contents(
+	c: github::Contents,
+) -> Option<impl Iterator<Item = (String, project_info::ProjectInfo)>> {
+	base64::decode(&c.content.replace("\n", ""))
+		.ok()
+		.and_then(|s| toml::from_slice::<toml::value::Table>(&s).ok())
+		.map(project_info::projects_from_table)
+		.map(|p| p.into_iter())
+}
+
 pub fn update(
 	db: &DB,
 	github_bot: &GithubBot,
@@ -22,21 +32,15 @@ pub fn update(
 		let projects = github_bot
 			.contents(&repo.name, "Projects.toml")
 			.ok()
-			.and_then(|c| base64::decode(&c.content.replace("\n", "")).ok())
-			.and_then(|s| toml::from_slice::<toml::value::Table>(&s).ok())
-			.map(project_info::Projects::from)
-			.map(|projects| {
-				projects
-					.0
-					.into_iter()
-					.filter_map(|(key, project_info)| {
-						repo_projects
-							.iter()
-							.find(|rp| rp.name == key)
-							.map(|rp| (rp.clone(), project_info))
-					})
-					.collect::<Vec<(github::Project, project_info::ProjectInfo)>>(
-					)
+			.and_then(projects_from_contents)
+			.map(|p| {
+				p.filter_map(|(key, project_info)| {
+					repo_projects
+						.iter()
+						.find(|rp| rp.name == key)
+						.map(|rp| (rp.clone(), project_info))
+				})
+				.collect::<Vec<(github::Project, project_info::ProjectInfo)>>()
 			});
 
 		let issues = github_bot.issues(&repo)?;
