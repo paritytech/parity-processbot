@@ -1,5 +1,5 @@
 use crate::Result;
-use snafu::{Backtrace, GenerateBacktrace, ResultExt, Snafu};
+use snafu::{Backtrace, GenerateBacktrace, Snafu};
 
 pub fn unwrap_field<T>(x: Option<T>) -> Result<T> {
 	x.ok_or(Error::MissingData {
@@ -36,10 +36,16 @@ pub enum Error {
 	},
 
 	/// An error occurred with an integration service (e.g. GitHub).
-	#[snafu(display("Status code: {}\nBody:\n{:#?}", status, body))]
+	#[snafu(display(
+		"Status code: {}\nBody:\n{:#?}\nBacktrace:\n{}",
+		status,
+		body,
+		backtrace
+	))]
 	Response {
 		status: reqwest::StatusCode,
 		body: serde_json::Value,
+		backtrace: Backtrace,
 	},
 
 	/// An error occurred with a curl request.
@@ -48,20 +54,6 @@ pub enum Error {
 		status: curl_sys::CURLcode,
 		body: Option<String>,
 	},
-}
-
-/// Maps the response into an error if it's not a success.
-pub fn map_response_status(
-	mut val: reqwest::Response,
-) -> Result<reqwest::Response> {
-	if val.status().is_success() {
-		Ok(val)
-	} else {
-		Err(Error::Response {
-			status: val.status(),
-			body: val.json().context(Http)?,
-		})
-	}
 }
 
 /// Maps a curl error into a crate::error::Error.
