@@ -40,7 +40,7 @@ fn issue_actor_and_project_card(
 		})
 }
 
-fn author_admin_attach_only_project(
+fn author_special_attach_only_project(
 	db: &DB,
 	local_state: &mut LocalState,
 	github_bot: &GithubBot,
@@ -173,7 +173,7 @@ fn author_unknown_no_project(
 	Ok(())
 }
 
-fn author_non_admin_project_state_none(
+fn author_non_special_project_state_none(
 	db: &DB,
 	local_state: &mut LocalState,
 	matrix_bot: &MatrixBot,
@@ -223,7 +223,7 @@ fn author_non_admin_project_state_none(
 	Ok(())
 }
 
-fn author_non_admin_project_state_unconfirmed(
+fn author_non_special_project_state_unconfirmed(
 	db: &DB,
 	local_state: &mut LocalState,
 	github_bot: &GithubBot,
@@ -318,7 +318,7 @@ fn author_non_admin_project_state_unconfirmed(
 	Ok(())
 }
 
-fn author_non_admin_project_state_denied(
+fn author_non_special_project_state_denied(
 	db: &DB,
 	local_state: &mut LocalState,
 	github_bot: &GithubBot,
@@ -398,7 +398,7 @@ fn author_non_admin_project_state_denied(
 	Ok(())
 }
 
-fn author_non_admin_project_state_confirmed(
+fn author_non_special_project_state_confirmed(
 	db: &DB,
 	local_state: &mut LocalState,
 	matrix_bot: &MatrixBot,
@@ -491,15 +491,15 @@ pub fn handle_issue(
 				let since = local_state
 					.issue_no_project_ping()
 					.and_then(|ping| ping.elapsed().ok());
-				let admin_of = projects
+				let special_of = projects
 					.iter()
-					.find(|(_, p)| p.is_admin(&issue.user.login));
+					.find(|(_, p)| p.is_special(&issue.user.login));
 
-				if projects.len() == 1 && admin_of.is_some() {
-					// repo contains only one project and the author is admin
+				if projects.len() == 1 && special_of.is_some() {
+					// repo contains only one project and the author is special
 					// so we can attach it with high confidence
-					let (project, _) = admin_of.expect("checked above");
-					author_admin_attach_only_project(
+					let (project, _) = special_of.expect("checked above");
+					author_special_attach_only_project(
 						db,
 						&mut local_state,
 						github_bot,
@@ -510,10 +510,10 @@ pub fn handle_issue(
 				} else if author_is_core
 					|| projects
 						.iter()
-						.find(|(_, p)| p.is_admin(&issue.user.login))
+						.find(|(_, p)| p.is_special(&issue.user.login))
 						.is_some()
 				{
-					// author is a core developer or admin of at least one
+					// author is a core developer or special of at least one
 					// project in the repo
 					author_core_no_project(
 						db,
@@ -525,7 +525,7 @@ pub fn handle_issue(
 						since,
 					)?;
 				} else {
-					// author is neither core developer nor admin
+					// author is neither core developer nor special
 					author_unknown_no_project(
 						db,
 						&mut local_state,
@@ -554,12 +554,12 @@ pub fn handle_issue(
 					.find(|(p, _)| &p.name == &project.name)
 					.map(|(_, p)| p)
 				{
-					if !project_info.is_admin(&actor.login) {
+					if !project_info.is_special(&actor.login) {
 						// TODO check if confirmation has confirmed/denied.
 						// requires parsing messages in project room
 
 						match local_state.issue_project().map(|p| p.state) {
-							None => author_non_admin_project_state_none(
+							None => author_non_special_project_state_none(
 								db,
 								&mut local_state,
 								matrix_bot,
@@ -571,7 +571,7 @@ pub fn handle_issue(
 								&actor,
 							)?,
 							Some(IssueProjectState::Unconfirmed) => {
-								author_non_admin_project_state_unconfirmed(
+								author_non_special_project_state_unconfirmed(
 									db,
 									&mut local_state,
 									github_bot,
@@ -586,7 +586,7 @@ pub fn handle_issue(
 								)?
 							}
 							Some(IssueProjectState::Denied) => {
-								author_non_admin_project_state_denied(
+								author_non_special_project_state_denied(
 									db,
 									&mut local_state,
 									github_bot,
@@ -601,7 +601,7 @@ pub fn handle_issue(
 								)?
 							}
 							Some(IssueProjectState::Confirmed) => {
-								author_non_admin_project_state_confirmed(
+								author_non_special_project_state_confirmed(
 									db,
 									&mut local_state,
 									matrix_bot,
@@ -615,7 +615,7 @@ pub fn handle_issue(
 							}
 						};
 					} else {
-						// actor is admin so allow any change
+						// actor is special so allow any change
 					}
 				} else {
 					// no key in in Projects.toml matches the project name

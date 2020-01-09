@@ -32,7 +32,7 @@ impl ProjectInfo {
 		self.owner.as_deref().map_or(false, |owner| owner == login)
 	}
 
-	/// Checks if the reviewer matches the login given.
+	/// Checks if the delegated reviewer matches the login given.
 	pub fn is_delegated_reviewer(&self, login: &str) -> bool {
 		self.delegated_reviewer
 			.as_deref()
@@ -46,7 +46,7 @@ impl ProjectInfo {
 		})
 	}
 
-	pub fn is_admin(&self, login: &str) -> bool {
+	pub fn is_special(&self, login: &str) -> bool {
 		self.is_owner(login)
 			|| self.is_delegated_reviewer(login)
 			|| self.is_whitelisted(login)
