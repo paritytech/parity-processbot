@@ -328,7 +328,7 @@ impl GithubBot {
 			.map(|_| ())
 	}
 
-	pub fn create_issue<A, B>(&self, repo_name: A, parameters: B) -> Result<()>
+	pub fn create_issue<A, B>(&self, repo_name: A, parameters: &B) -> Result<()>
 	where
 		A: AsRef<str>,
 		B: Serialize,
@@ -344,7 +344,7 @@ impl GithubBot {
 		self.client
 			.post(&url)
 			.bearer_auth(&self.auth_key)
-			.json(&parameters)
+			.json(parameters)
 			.send()
 			.context(error::Http)
 			.map(|_| ())

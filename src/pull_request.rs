@@ -98,7 +98,7 @@ pub fn handle_pull_request(
 	let pr_id = pull_request.id.context(error::MissingData)?;
 	let pr_number = pull_request.number.context(error::MissingData)?;
 	let db_key = format!("{}", pr_id).into_bytes();
-	let mut db_entry = DbEntry::new_or_with_key(db, db_key);
+	let mut local_state = LocalState::get_or_new(db, db_key)?;
 
 	let author = &pull_request.user;
 	let author_info = project_info
@@ -161,8 +161,8 @@ pub fn handle_pull_request(
 							project_info.as_ref(),
 						)?;
 					} else if author_is_core {
-						let days = db_entry
-							.issue_not_assigned_ping
+						let days = local_state
+							.issue_not_assigned_ping()
 							.and_then(|ping| ping.elapsed().ok())
 							.map(|elapsed| {
 								elapsed.as_secs()
@@ -172,8 +172,10 @@ pub fn handle_pull_request(
 							None => {
 								// notify the the issue assignee and project
 								// owner through a PM
-								db_entry.issue_not_assigned_ping =
-									Some(SystemTime::now());
+								local_state.update_issue_not_assigned_ping(
+									Some(SystemTime::now()),
+									db,
+								)?;
 								if let Some(assignee) = issue_assignee {
 									if let Some(matrix_id) = github_to_matrix
 										.get(&assignee.login)
@@ -218,8 +220,8 @@ pub fn handle_pull_request(
 								// if after 24 hours there is no change, then
 								// send a message into the project's Riot
 								// channel
-								if db_entry.actions_taken & PullRequestCoreDevAuthorIssueNotAssigned24h == NoAction {
-									db_entry.actions_taken |= PullRequestCoreDevAuthorIssueNotAssigned24h;
+								if local_state.actions_taken() & PullRequestCoreDevAuthorIssueNotAssigned24h == NoAction {
+									local_state.update_actions_taken(local_state.actions_taken() | PullRequestCoreDevAuthorIssueNotAssigned24h, db)?;
 									if let Some(ref room_id) = project_info.and_then(|p| p.matrix_room_id) {
 										matrix_bot.send_public_message(
 											&room_id,
@@ -242,8 +244,8 @@ pub fn handle_pull_request(
 							_ => {
 								// if after a further 48 hours there is still no
 								// change, then close the PR.
-								if db_entry.actions_taken & PullRequestCoreDevAuthorIssueNotAssigned72h == NoAction {
-									db_entry.actions_taken |= PullRequestCoreDevAuthorIssueNotAssigned72h;
+								if local_state.actions_taken() & PullRequestCoreDevAuthorIssueNotAssigned72h == NoAction {
+									local_state.update_actions_taken(local_state.actions_taken() | PullRequestCoreDevAuthorIssueNotAssigned72h, db)?;
 									github_bot.close_pull_request(&repo.name, pr_number)?;
 								}
 							}
@@ -275,19 +277,24 @@ pub fn handle_pull_request(
 		v.last()
 	});
 
-	match if let Some(ref status) = status {
+	if let Some(ref status) = status {
 		match status.state {
 			github::StatusState::Failure => {
 				// notify PR author by PM every 24 hours
-				let should_ping =
-					db_entry.status_failure_ping.map_or(true, |ping_time| {
+				let should_ping = local_state.status_failure_ping().map_or(
+					true,
+					|ping_time| {
 						ping_time.elapsed().ok().map_or(true, |elapsed| {
 							elapsed.as_secs() > STATUS_FAILURE_PING_PERIOD
 						})
-					});
+					},
+				);
 
 				if should_ping {
-					db_entry.status_failure_ping = Some(SystemTime::now());
+					local_state.update_status_failure_ping(
+						Some(SystemTime::now()),
+						db,
+					)?;
 					if let Some(matrix_id) = github_to_matrix
 						.get(&repo.owner.login)
 						.and_then(|matrix_id| matrix::parse_id(matrix_id))
@@ -304,34 +311,22 @@ pub fn handle_pull_request(
 						);
 					}
 				}
-				DbEntryState::Update
 			}
 			github::StatusState::Success => {
 				if owner_approved {
 					// merge & delete branch
 					github_bot.merge_pull_request(&repo.name, pr_number)?;
-					DbEntryState::Delete
+					local_state.delete(db)?;
 				} else {
-					db_entry.status_failure_ping = None;
-					DbEntryState::Update
+					local_state.update_status_failure_ping(None, db)?;
 				}
 			}
-			// this needs to update incase the block above mutated the entry
-			// TODO improve this
-			github::StatusState::Pending => DbEntryState::Update,
+			github::StatusState::Pending => {}
 		}
 	} else {
 		// pull request has no status
 		// should never happen
 		unimplemented!()
-	} {
-		DbEntryState::Delete => {
-			db_entry.delete(db)?;
-		}
-		DbEntryState::Update => {
-			db_entry.update(db)?;
-		}
-		_ => {}
 	}
 
 	Ok(())
