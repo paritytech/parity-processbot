@@ -46,18 +46,21 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 	);
 
 	let github_bot =
-		github_bot::GithubBot::new(&github_organization, &github_token)?;
+		github_bot::GithubBot::new(&github_organization, &github_token).await?;
 	log::info!(
 		"[+] Connected to github organisation {}",
 		github_organization
 	);
 
-	let core_devs = github_bot.team_members(
-		github_bot
-			.team("core-devs")?
-			.id
-			.context(error::MissingData)?,
-	)?;
+	let core_devs = github_bot
+		.team_members(
+			github_bot
+				.team("core-devs")
+				.await?
+				.id
+				.context(error::MissingData)?,
+		)
+		.await?;
 
 	let github_to_matrix = dbg!(bamboo::github_to_matrix(&bamboo_token))?;
 
@@ -70,6 +73,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 			&matrix_bot,
 			&core_devs,
 			&github_to_matrix,
-		)?;
+		)
+		.await?;
 	}
 }

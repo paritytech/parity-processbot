@@ -33,7 +33,7 @@ const REQUEST_OWNER_REVIEW_MESSAGE: &str =
  * channel, requesting a review; repeat this message every 24 hours until
  * a reviewer is assigned.
  */
-fn require_reviewer(
+async fn require_reviewer(
 	pull_request: &github::PullRequest,
 	repo: &github::Repository,
 	github_bot: &GithubBot,
@@ -58,11 +58,9 @@ fn require_reviewer(
 				&matrix_id,
 				&REQUEST_DELEGATED_REVIEW_MESSAGE.replace("{1}", &pr_html_url),
 			)?;
-			github_bot.request_reviews(
-				&repo.name,
-				pr_number,
-				&[github_id.as_ref()],
-			)?;
+			github_bot
+				.request_reviews(&repo.name, pr_number, &[github_id.as_ref()])
+				.await?;
 		}
 	} else if !author_info.is_owner {
 		if let Some((github_id, matrix_id)) = project_info
@@ -73,11 +71,9 @@ fn require_reviewer(
 				&matrix_id,
 				&REQUEST_OWNER_REVIEW_MESSAGE.replace("{1}", &pr_html_url),
 			)?;
-			github_bot.request_reviews(
-				&repo.name,
-				pr_number,
-				&[github_id.as_ref()],
-			)?;
+			github_bot
+				.request_reviews(&repo.name, pr_number, &[github_id.as_ref()])
+				.await?;
 		}
 	} else {
 		// post a message in the project's Riot channel, requesting a review;
@@ -100,7 +96,7 @@ fn require_reviewer(
 	Ok(())
 }
 
-pub fn handle_pull_request(
+pub async fn handle_pull_request(
 	db: &DB,
 	github_bot: &GithubBot,
 	matrix_bot: &MatrixBot,
@@ -145,9 +141,11 @@ pub fn handle_pull_request(
 	let pr_html_url =
 		pull_request.html_url.as_ref().context(error::MissingData)?;
 
-	let reviews = github_bot.reviews(pull_request)?;
-	let issue = github_bot.issue(pull_request)?;
-	let mut statuses = github_bot.statuses(pull_request)?;
+	let (reviews, issue, mut statuses) = futures::try_join!(
+		github_bot.reviews(pull_request),
+		github_bot.issue(pull_request),
+		github_bot.statuses(pull_request)
+	)?;
 
 	let author_is_core = core_devs.iter().any(|u| u.id == author.id);
 
@@ -171,7 +169,8 @@ pub fn handle_pull_request(
 						matrix_bot,
 						github_to_matrix,
 						project_info.as_ref(),
-					)?;
+					)
+					.await?;
 				} else {
 					let issue_id = issue_id.context(error::MissingData)?;
 					let issue_html_url =
@@ -179,11 +178,9 @@ pub fn handle_pull_request(
 					if author_info.is_owner || author_info.is_whitelisted {
 						// never true ... ?
 						// assign the issue to the author
-						github_bot.assign_author(
-							&repo.name,
-							issue_id,
-							&author.login,
-						)?;
+						github_bot
+							.assign_author(&repo.name, issue_id, &author.login)
+							.await?;
 						require_reviewer(
 							&pull_request,
 							&repo,
@@ -191,7 +188,8 @@ pub fn handle_pull_request(
 							matrix_bot,
 							github_to_matrix,
 							project_info.as_ref(),
-						)?;
+						)
+						.await?;
 					} else if author_is_core {
 						let days = db_entry
 							.issue_not_assigned_ping
@@ -280,7 +278,7 @@ pub fn handle_pull_request(
 								{
 									db_entry.actions_taken |=
 										PullRequestCoreDevAuthorIssueNotAssigned72h;
-									github_bot.close_pull_request(&repo.name, pr_number)?;
+									github_bot.close_pull_request(&repo.name, pr_number).await?;
 								}
 							}
 						}
@@ -290,12 +288,10 @@ pub fn handle_pull_request(
 			None => {
 				// leave a message that a corresponding issue must exist for
 				// each PR close the PR
-				github_bot.add_comment(
-					&repo.name,
-					pr_id,
-					&ISSUE_MUST_EXIST_MESSAGE,
-				)?;
-				github_bot.close_pull_request(&repo.name, pr_number)?;
+				github_bot
+					.add_comment(&repo.name, pr_id, &ISSUE_MUST_EXIST_MESSAGE)
+					.await?;
+				github_bot.close_pull_request(&repo.name, pr_number).await?;
 			}
 		}
 	}
@@ -338,7 +334,7 @@ pub fn handle_pull_request(
 		} else if status.state.as_deref() == Some("success") {
 			if owner_approved {
 				// merge & delete branch
-				github_bot.merge_pull_request(&repo.name, pr_number)?;
+				github_bot.merge_pull_request(&repo.name, pr_number).await?;
 				db.delete(db_key).context(error::Db)?;
 				return Ok(());
 			} else {
