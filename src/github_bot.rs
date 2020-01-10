@@ -1,14 +1,11 @@
-use std::borrow::Cow;
-
-use hyperx::header::TypedHeaders;
-use serde::*;
-use snafu::{OptionExt, ResultExt};
-
 use crate::{error, github, Result};
 
+use snafu::OptionExt;
+
+use serde::Serialize;
+
 pub struct GithubBot {
-	client: reqwest::Client,
-	auth_key: String,
+	client: crate::http::Client,
 	organization: github::Organization,
 }
 
@@ -20,63 +17,59 @@ impl GithubBot {
 	/// # Errors
 	/// If the organization does not exist or `auth_key` does not have sufficent
 	/// permissions.
-	pub fn new<A: AsRef<str>, I: Into<String>>(
+	pub async fn new<A: AsRef<str>, I: Into<String>>(
 		org: A,
 		auth_key: I,
 	) -> Result<Self> {
-		let auth_key = auth_key.into();
-		let client = reqwest::Client::new();
+		let client = crate::http::Client::new(auth_key);
 
 		let organization = client
 			.get(&format!("{}/orgs/{}", Self::BASE_URL, org.as_ref()))
-			.bearer_auth(&auth_key)
-			.send()
-			.context(error::Http)?
-			.json()
-			.context(error::Http)?;
+			.await?;
 
 		Ok(Self {
 			client,
 			organization,
-			auth_key,
 		})
 	}
 
 	/// Returns all of the repositories managed by the organization.
-	pub fn repositories(&self) -> Result<Vec<github::Repository>> {
-		self.get_all(&self.organization.repos_url)
+	pub async fn repositories(&self) -> Result<Vec<github::Repository>> {
+		self.client.get_all(&self.organization.repos_url).await
 	}
 
 	/// Returns all of the pull requests in a single repository.
-	pub fn pull_requests(
+	pub async fn pull_requests(
 		&self,
 		repo: &github::Repository,
 	) -> Result<Vec<github::PullRequest>> {
-		self.get_all(repo.pulls_url.replace("{/number}", ""))
+		self.client
+			.get_all(repo.pulls_url.replace("{/number}", ""))
+			.await
 	}
 
 	/// Returns all of the issues in a single repository.
-	pub fn issues(
+	pub async fn issues(
 		&self,
 		repo: &github::Repository,
 	) -> Result<Vec<github::Issue>> {
-		self.get_all(repo.issues_url.replace("{/number}", ""))
+		self.client
+			.get_all(repo.issues_url.replace("{/number}", ""))
+			.await
 	}
 
 	/// Returns all reviews associated with a pull request.
-	pub fn reviews(
+	pub async fn reviews(
 		&self,
 		pull_request: &github::PullRequest,
 	) -> Result<Vec<github::Review>> {
-		pull_request
-			.html_url
-			.as_ref()
-			.context(error::MissingData)
-			.and_then(|html_url| self.get_all(format!("{}/reviews", html_url)))
+		let url = pull_request.html_url.as_ref().context(error::MissingData)?;
+
+		self.client.get_all(format!("{}/reviews", url)).await
 	}
 
 	/// Requests a review from a user.
-	pub fn request_reviews(
+	pub async fn request_reviews(
 		&self,
 		repo_name: &str,
 		pull_number: i64,
@@ -89,111 +82,132 @@ impl GithubBot {
 			repo_name = repo_name,
 			pull_number = pull_number
 		);
-		let body = serde_json::json!({ "reviewers": reviewers });
-		self.post(&url, &body)
+		let body = &serde_json::json!({ "reviewers": reviewers });
+
+		self.client.post(url, body).await
 	}
 
 	/// Returns the issue associated with a pull request.
-	pub fn issue(
+	pub async fn issue(
 		&self,
 		pull_request: &github::PullRequest,
 	) -> Result<Option<github::Issue>> {
-		pull_request
-			.links
-			.issue_link
-			.as_ref()
-			.map(|github::IssueLink { href }| self.get(href))
-			.transpose()
+		if let Some(github::IssueLink { href }) = &pull_request.links.issue_link
+		{
+			self.client.get(href).await.map(Some)
+		} else {
+			Ok(None)
+		}
+	}
+
+	pub async fn project(
+		&self,
+		card: &github::ProjectCard,
+	) -> Result<github::Project> {
+		let url = card.project_url.as_ref().context(error::MissingData)?;
+		self.client.get(url).await
+	}
+
+	pub async fn project_column(
+		&self,
+		card: &github::ProjectCard,
+	) -> Result<github::ProjectColumn> {
+		self.client
+			.get(card.column_url.as_ref().context(error::MissingData)?)
+			.await
+	}
+
+	pub async fn project_columns(
+		&self,
+		project: &github::Project,
+	) -> Result<Vec<github::ProjectColumn>> {
+		self.client
+			.get(project.columns_url.as_ref().context(error::MissingData)?)
+			.await
 	}
 
 	/// Returns events associated with an issue.
-	pub fn issue_events(
+	pub async fn issue_events(
 		&self,
 		repo_name: &str,
 		issue_number: i64,
 	) -> Result<Vec<github::IssueEvent>> {
-		self.get(&format!(
+		self.client
+			.get(format!(
 			"{base_url}/repos/{owner}/{repo_name}/issues/{issue_number}/events",
 			base_url = Self::BASE_URL,
 			owner = self.organization.login,
 			repo_name = repo_name,
 			issue_number = issue_number
 		))
+			.await
 	}
 
 	/// Returns events associated with an issue.
-	pub fn projects(&self, repo_name: &str) -> Result<Vec<github::Project>> {
-		self.get(&format!(
-			"{base_url}/repos/{owner}/{repo_name}/projects",
-			base_url = Self::BASE_URL,
-			owner = self.organization.login,
-			repo_name = repo_name,
-		))
-	}
-
-	/// Returns the project column at a url.
-	pub fn project_column<'b, I>(&self, url: I) -> Result<github::ProjectColumn>
-	where
-		I: Into<Cow<'b, str>>,
-	{
-		self.get(url)
-	}
-
-	/// Returns an array of project columns at a url.
-	pub fn project_columns<'b, I>(
+	pub async fn projects(
 		&self,
-		url: I,
-	) -> Result<Vec<github::ProjectColumn>>
-	where
-		I: Into<Cow<'b, str>>,
-	{
-		self.get(url)
+		repo_name: &str,
+	) -> Result<Vec<github::Project>> {
+		self.client
+			.get(&format!(
+				"{base_url}/repos/{owner}/{repo_name}/projects",
+				base_url = Self::BASE_URL,
+				owner = self.organization.login,
+				repo_name = repo_name,
+			))
+			.await
 	}
 
 	/// Returns statuses associated with a pull request.
-	pub fn statuses(
+	pub async fn statuses(
 		&self,
 		pull_request: &github::PullRequest,
 	) -> Result<Option<Vec<github::Status>>> {
-		pull_request
-			.links
-			.statuses_link
-			.as_ref()
-			.map(|github::StatusesLink { href }| self.get(href))
-			.transpose()
+		if let Some(github::StatusesLink { href }) =
+			&pull_request.links.statuses_link
+		{
+			self.client.get(href).await.map(Some)
+		} else {
+			Ok(None)
+		}
 	}
 
 	/// Returns the contents of a file in a repository.
-	pub fn contents(
+	pub async fn contents(
 		&self,
 		repo_name: &str,
 		path: &str,
 	) -> Result<github::Contents> {
-		self.get(&format!(
-			"{base_url}/repos/{owner}/{repo_name}/contents/{path}",
-			base_url = Self::BASE_URL,
-			owner = self.organization.login,
-			repo_name = repo_name,
-			path = path
-		))
+		self.client
+			.get(format!(
+				"{base_url}/repos/{owner}/{repo_name}/contents/{path}",
+				base_url = Self::BASE_URL,
+				owner = self.organization.login,
+				repo_name = repo_name,
+				path = path
+			))
+			.await
 	}
 
 	/// Returns the team with a given team slug (eg. 'core-devs').
-	pub fn team(&self, slug: &str) -> Result<github::Team> {
-		self.organization
-			.url
-			.as_ref()
-			.context(error::MissingData)
-			.and_then(|url| self.get(&format!("{}/teams/{}", url, slug)))
+	pub async fn team(&self, slug: &str) -> Result<github::Team> {
+		let url = self.organization.url.as_ref().context(error::MissingData)?;
+
+		self.client.get(format!("{}/teams/{}", url, slug)).await
 	}
 
 	/// Returns members of the team with a id.
-	pub fn team_members(&self, team_id: i64) -> Result<Vec<github::User>> {
-		self.get(&format!("{}/teams/{}/members", Self::BASE_URL, team_id))
+	pub async fn team_members(
+		&self,
+		team_id: i64,
+	) -> Result<Vec<github::User>> {
+		self.client
+			.get(format!("{}/teams/{}/members", Self::BASE_URL, team_id))
+			.await
 	}
 
 	/// Creates a comment in the repo
-	pub fn add_comment<A, B>(
+	pub async fn add_comment<A, B>(
 		&self,
 		repo_name: A,
 		issue_id: i64,
@@ -216,16 +230,12 @@ impl GithubBot {
 		log::info!("POST {}", url);
 
 		self.client
-			.post(&url)
-			.bearer_auth(&self.auth_key)
-			.json(&serde_json::json!({ "body": comment }))
-			.send()
-			.context(error::Http)
-			.and_then(error::map_response_status)
+			.post_response(&url, &serde_json::json!({ "body": comment }))
+			.await
 			.map(|_| ())
 	}
 
-	pub fn assign_author<A, B>(
+	pub async fn assign_author<A, B>(
 		&self,
 		repo_name: A,
 		issue_id: i64,
@@ -246,15 +256,12 @@ impl GithubBot {
 		);
 
 		self.client
-			.post(&url)
-			.bearer_auth(&self.auth_key)
-			.json(&serde_json::json!({ "assignees": [author] }))
-			.send()
-			.context(error::Http)
+			.post_response(&url, &serde_json::json!({ "assignees": [author] }))
+			.await
 			.map(|_| ())
 	}
 
-	pub fn merge_pull_request<A>(
+	pub async fn merge_pull_request<A>(
 		&self,
 		repo_name: A,
 		pull_number: i64,
@@ -272,15 +279,12 @@ impl GithubBot {
 			pull_number = pull_number
 		);
 		self.client
-			.put(&url)
-			.bearer_auth(&self.auth_key)
-			.json(&serde_json::json!({}))
-			.send()
-			.context(error::Http)
+			.put_response(&url, &serde_json::json!({}))
+			.await
 			.map(|_| ())
 	}
 
-	pub fn close_pull_request<A>(
+	pub async fn close_pull_request<A>(
 		&self,
 		repo_name: A,
 		pull_number: i64,
@@ -298,15 +302,16 @@ impl GithubBot {
 			pull_number = pull_number
 		);
 		self.client
-			.patch(&url)
-			.bearer_auth(&self.auth_key)
-			.json(&serde_json::json!({ "state": "closed" }))
-			.send()
-			.context(error::Http)
+			.patch_response(&url, &serde_json::json!({ "state": "closed" }))
+			.await
 			.map(|_| ())
 	}
 
-	pub fn close_issue<A>(&self, repo_name: A, issue_id: i64) -> Result<()>
+	pub async fn close_issue<A>(
+		&self,
+		repo_name: A,
+		issue_id: i64,
+	) -> Result<()>
 	where
 		A: AsRef<str>,
 	{
@@ -320,15 +325,16 @@ impl GithubBot {
 			issue_id = issue_id
 		);
 		self.client
-			.patch(&url)
-			.bearer_auth(&self.auth_key)
-			.json(&serde_json::json!({ "state": "closed" }))
-			.send()
-			.context(error::Http)
+			.patch_response(&url, &serde_json::json!({ "state": "closed" }))
+			.await
 			.map(|_| ())
 	}
 
-	pub fn create_issue<A, B>(&self, repo_name: A, parameters: &B) -> Result<()>
+	pub async fn create_issue<A, B>(
+		&self,
+		repo_name: A,
+		parameters: &B,
+	) -> Result<()>
 	where
 		A: AsRef<str>,
 		B: Serialize,
@@ -342,15 +348,12 @@ impl GithubBot {
 			repo = repo,
 		);
 		self.client
-			.post(&url)
-			.bearer_auth(&self.auth_key)
-			.json(parameters)
-			.send()
-			.context(error::Http)
+			.post_response(&url, parameters)
+			.await
 			.map(|_| ())
 	}
 
-	pub fn create_project_card<A>(
+	pub async fn create_project_card<A>(
 		&self,
 		column_id: A,
 		content_id: i64,
@@ -366,15 +369,12 @@ impl GithubBot {
 		);
 		let parameters = serde_json::json!({ "content_id": content_id, "content_type": content_type });
 		self.client
-			.post(&url)
-			.bearer_auth(&self.auth_key)
-			.json(&parameters)
-			.send()
-			.context(error::Http)
+			.post_response(&url, &parameters)
+			.await
 			.map(|_| ())
 	}
 
-	pub fn delete_project_card<A>(&self, column_id: A) -> Result<()>
+	pub async fn delete_project_card<A>(&self, column_id: A) -> Result<()>
 	where
 		A: std::fmt::Display,
 	{
@@ -384,95 +384,8 @@ impl GithubBot {
 			column_id = column_id,
 		);
 		self.client
-			.delete(&url)
-			.bearer_auth(&self.auth_key)
-			.send()
-			.context(error::Http)
+			.delete_response(&url, &serde_json::json!({}))
+			.await
 			.map(|_| ())
-	}
-
-	/// Make a post request to GitHub.
-	fn post<'b, I, B, T>(&self, url: I, body: &B) -> Result<T>
-	where
-		I: Into<Cow<'b, str>>,
-		B: Serialize,
-		T: serde::de::DeserializeOwned,
-	{
-		let mut response = self
-			.client
-			.post(&*(url.into()))
-			.bearer_auth(&self.auth_key)
-			.json(body)
-			.send()
-			.context(error::Http)?;
-
-		response.json::<T>().context(error::Http)
-	}
-
-	/// Get a single entry from a resource in GitHub.
-	pub fn get<'b, I, T>(&self, url: I) -> Result<T>
-	where
-		I: Into<Cow<'b, str>>,
-		T: serde::de::DeserializeOwned,
-	{
-		let mut response = self
-			.client
-			.get(&*(url.into()))
-			.header(
-				reqwest::header::ACCEPT,
-				"application/vnd.github.starfox-preview+json",
-			)
-			.bearer_auth(&self.auth_key)
-			.send()
-			.context(error::Http)?;
-
-		response.json::<T>().context(error::Http)
-	}
-
-	// Originally adapted from:
-	// https://github.com/XAMPPRocky/gh-auditor/blob/ca67641c0a29d64fc5c6b4244b45ae601604f3c1/src/lib.rs#L232-L267
-	/// Gets a all entries across all pages from a resource in GitHub.
-	fn get_all<'b, I, T>(&self, url: I) -> Result<Vec<T>>
-	where
-		I: Into<Cow<'b, str>>,
-		T: serde::de::DeserializeOwned,
-	{
-		let mut entities = Vec::new();
-		let mut next = Some(url.into());
-
-		while let Some(url) = next {
-			let mut response = self
-				.client
-				.get(&*url)
-				.bearer_auth(&self.auth_key)
-				.send()
-				.context(error::Http)?;
-
-			next = response
-				.headers()
-				.decode::<hyperx::header::Link>()
-				.ok()
-				.and_then(|v| {
-					v.values()
-						.iter()
-						.find(|link| {
-							link.rel()
-								.map(|rel| {
-									rel.contains(
-										&hyperx::header::RelationType::Next,
-									)
-								})
-								.unwrap_or(false)
-						})
-						.map(|l| l.link())
-						.map(str::to_owned)
-						.map(Cow::Owned)
-				});
-
-			let mut body = response.json::<Vec<T>>().context(error::Http)?;
-			entities.append(&mut body);
-		}
-
-		Ok(entities)
 	}
 }

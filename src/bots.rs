@@ -16,7 +16,7 @@ fn projects_from_contents(
 		.map(|p| p.into_iter())
 }
 
-pub fn update(
+pub async fn update(
 	db: &DB,
 	github_bot: &GithubBot,
 	matrix_bot: &MatrixBot,
@@ -24,13 +24,14 @@ pub fn update(
 	github_to_matrix: &HashMap<String, String>,
 	default_channel_id: &str,
 ) -> Result<()> {
-	for repo in github_bot.repositories()? {
-		let repo_projects = github_bot.projects(&repo.name)?;
+	for repo in github_bot.repositories().await? {
+		let repo_projects = github_bot.projects(&repo.name).await?;
 
 		// projects in Projects.toml are useless if they do not match a project
 		// in the repo
 		let projects = github_bot
 			.contents(&repo.name, "Projects.toml")
+			.await
 			.ok()
 			.and_then(projects_from_contents)
 			.map(|p| {
@@ -43,8 +44,7 @@ pub fn update(
 				.collect::<Vec<(github::Project, project_info::ProjectInfo)>>()
 			});
 
-		let issues = github_bot.issues(&repo)?;
-		for issue in issues {
+		for issue in github_bot.issues(&repo).await? {
 			handle_issue(
 				db,
 				github_bot,
@@ -54,11 +54,11 @@ pub fn update(
 				projects.as_ref(),
 				&issue,
 				default_channel_id,
-			)?;
+			)
+			.await?;
 		}
 
-		let prs = github_bot.pull_requests(&repo)?;
-		for pr in prs {
+		for pr in github_bot.pull_requests(&repo).await? {
 			handle_pull_request(
 				db,
 				github_bot,
@@ -67,7 +67,8 @@ pub fn update(
 				github_to_matrix,
 				projects.as_ref(),
 				&pr,
-			)?;
+			)
+			.await?;
 		}
 	}
 	Ok(())

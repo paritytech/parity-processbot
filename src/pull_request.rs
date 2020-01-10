@@ -16,7 +16,7 @@ use std::time::SystemTime;
  * channel, requesting a review; repeat this message every 24 hours until
  * a reviewer is assigned.
  */
-fn require_reviewer(
+async fn require_reviewer(
 	pull_request: &github::PullRequest,
 	repo: &github::Repository,
 	github_bot: &GithubBot,
@@ -41,11 +41,9 @@ fn require_reviewer(
 				&matrix_id,
 				&REQUEST_DELEGATED_REVIEW_MESSAGE.replace("{1}", &pr_html_url),
 			)?;
-			github_bot.request_reviews(
-				&repo.name,
-				pr_number,
-				&[github_id.as_ref()],
-			)?;
+			github_bot
+				.request_reviews(&repo.name, pr_number, &[github_id.as_ref()])
+				.await?;
 		}
 	} else if !author_info.is_owner {
 		if let Some((github_id, matrix_id)) = project_info
@@ -56,11 +54,9 @@ fn require_reviewer(
 				&matrix_id,
 				&REQUEST_OWNER_REVIEW_MESSAGE.replace("{1}", &pr_html_url),
 			)?;
-			github_bot.request_reviews(
-				&repo.name,
-				pr_number,
-				&[github_id.as_ref()],
-			)?;
+			github_bot
+				.request_reviews(&repo.name, pr_number, &[github_id.as_ref()])
+				.await?;
 		}
 	} else {
 		// post a message in the project's Riot channel, requesting a review;
@@ -83,7 +79,7 @@ fn require_reviewer(
 	Ok(())
 }
 
-fn author_is_core_unassigned(
+async fn author_is_core_unassigned(
 	db: &DB,
 	local_state: &mut LocalState,
 	github_bot: &GithubBot,
@@ -104,11 +100,9 @@ fn author_is_core_unassigned(
 		None => author_is_core_unassigned_ticks_none(
 			db,
 			local_state,
-			github_bot,
 			matrix_bot,
 			github_to_matrix,
 			project_info,
-			repo,
 			pull_request,
 			issue,
 		),
@@ -120,33 +114,32 @@ fn author_is_core_unassigned(
 		Some(1) | Some(2) => author_is_core_unassigned_ticks_passed(
 			db,
 			local_state,
-			github_bot,
 			matrix_bot,
 			project_info,
-			repo,
 			pull_request,
 			issue,
 		),
 		// if after a further 48 hours there is still no
 		// change, then close the PR.
-		_ => author_is_core_unassigned_ticks_expired(
-			db,
-			local_state,
-			github_bot,
-			repo,
-			pull_request,
-		),
+		_ => {
+			author_is_core_unassigned_ticks_expired(
+				db,
+				local_state,
+				github_bot,
+				repo,
+				pull_request,
+			)
+			.await
+		}
 	}
 }
 
 fn author_is_core_unassigned_ticks_none(
 	db: &DB,
 	local_state: &mut LocalState,
-	_github_bot: &GithubBot,
 	matrix_bot: &MatrixBot,
 	github_to_matrix: &HashMap<String, String>,
 	project_info: Option<&project_info::ProjectInfo>,
-	_repo: &github::Repository,
 	pull_request: &github::PullRequest,
 	issue: &github::Issue,
 ) -> Result<()> {
@@ -198,10 +191,8 @@ fn author_is_core_unassigned_ticks_none(
 fn author_is_core_unassigned_ticks_passed(
 	db: &DB,
 	local_state: &mut LocalState,
-	_github_bot: &GithubBot,
 	matrix_bot: &MatrixBot,
 	project_info: Option<&project_info::ProjectInfo>,
-	_repo: &github::Repository,
 	pull_request: &github::PullRequest,
 	issue: &github::Issue,
 ) -> Result<()> {
@@ -239,7 +230,7 @@ fn author_is_core_unassigned_ticks_passed(
 	Ok(())
 }
 
-fn author_is_core_unassigned_ticks_expired(
+async fn author_is_core_unassigned_ticks_expired(
 	db: &DB,
 	local_state: &mut LocalState,
 	github_bot: &GithubBot,
@@ -254,15 +245,17 @@ fn author_is_core_unassigned_ticks_expired(
 				| PullRequestCoreDevAuthorIssueNotAssigned72h,
 			db,
 		)?;
-		github_bot.close_pull_request(
-			&repo.name,
-			pull_request.number.context(error::MissingData)?,
-		)?;
+		github_bot
+			.close_pull_request(
+				&repo.name,
+				pull_request.number.context(error::MissingData)?,
+			)
+			.await?;
 	}
 	Ok(())
 }
 
-pub fn handle_pull_request(
+pub async fn handle_pull_request(
 	db: &DB,
 	github_bot: &GithubBot,
 	matrix_bot: &MatrixBot,
@@ -292,9 +285,11 @@ pub fn handle_pull_request(
 	let pr_html_url =
 		pull_request.html_url.as_ref().context(error::MissingData)?;
 
-	let reviews = github_bot.reviews(pull_request)?;
-	let issue = github_bot.issue(pull_request)?;
-	let mut statuses = github_bot.statuses(pull_request)?;
+	let (reviews, issue, mut statuses) = futures::try_join!(
+		github_bot.reviews(pull_request),
+		github_bot.issue(pull_request),
+		github_bot.statuses(pull_request)
+	)?;
 
 	let author_is_core = core_devs.iter().any(|u| u.id == author.id);
 
@@ -313,17 +308,16 @@ pub fn handle_pull_request(
 						matrix_bot,
 						github_to_matrix,
 						project_info.as_ref(),
-					)?;
+					)
+					.await?;
 				} else {
 					let issue_id = issue.id.context(error::MissingData)?;
 					if author_info.is_owner || author_info.is_whitelisted {
 						// never true ... ?
 						// assign the issue to the author
-						github_bot.assign_author(
-							&repo.name,
-							issue_id,
-							&author.login,
-						)?;
+						github_bot
+							.assign_author(&repo.name, issue_id, &author.login)
+							.await?;
 						require_reviewer(
 							&pull_request,
 							&repo,
@@ -331,7 +325,8 @@ pub fn handle_pull_request(
 							matrix_bot,
 							github_to_matrix,
 							project_info.as_ref(),
-						)?;
+						)
+						.await?;
 					} else if author_is_core {
 						author_is_core_unassigned(
 							db,
@@ -343,19 +338,18 @@ pub fn handle_pull_request(
 							repo,
 							pull_request,
 							&issue,
-						)?;
+						)
+						.await?;
 					}
 				}
 			}
 			None => {
 				// leave a message that a corresponding issue must exist for
 				// each PR close the PR
-				github_bot.add_comment(
-					&repo.name,
-					pr_id,
-					&ISSUE_MUST_EXIST_MESSAGE,
-				)?;
-				github_bot.close_pull_request(&repo.name, pr_number)?;
+				github_bot
+					.add_comment(&repo.name, pr_id, &ISSUE_MUST_EXIST_MESSAGE)
+					.await?;
+				github_bot.close_pull_request(&repo.name, pr_number).await?;
 			}
 		}
 	}
@@ -392,7 +386,8 @@ pub fn handle_pull_request(
 						db,
 					)?;
 					if let Some(matrix_id) = project_info
-						.and_then(|p| p.owner).as_ref()
+						.and_then(|p| p.owner)
+						.as_ref()
 						.and_then(|owner_login| {
 							github_to_matrix.get(owner_login).and_then(
 								|matrix_id| matrix::parse_id(matrix_id),
@@ -413,7 +408,9 @@ pub fn handle_pull_request(
 			github::StatusState::Success => {
 				if owner_approved {
 					// merge & delete branch
-					github_bot.merge_pull_request(&repo.name, pr_number)?;
+					github_bot
+						.merge_pull_request(&repo.name, pr_number)
+						.await?;
 					local_state.delete(db)?;
 				} else {
 					local_state.update_status_failure_ping(None, db)?;

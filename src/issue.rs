@@ -9,38 +9,33 @@ use snafu::OptionExt;
 use std::collections::HashMap;
 use std::time::{Duration, SystemTime};
 
-fn issue_actor_and_project_card(
+async fn issue_actor_and_project_card(
 	issue: &github::Issue,
 	github_bot: &GithubBot,
 ) -> Result<Option<(github::User, github::ProjectCard)>> {
 	let repo = &issue.repository;
 	let issue_number = issue.number.context(error::MissingData)?;
-	github_bot
+	Ok(github_bot
 		.issue_events(&repo.name, issue_number)
-		.map(|issue_events| {
-			issue_events
-				.iter()
-				.sorted_by_key(|ie| ie.created_at)
-				.rev()
-				.find(|issue_event| {
-					issue_event.event == Some(github::Event::AddedToProject)
-						|| issue_event.event
-							== Some(github::Event::RemovedFromProject)
-				})
-				.and_then(|issue_event| {
-					if issue_event.event == Some(github::Event::AddedToProject)
-					{
-						issue_event.project_card.as_ref().map(|card| {
-							(issue_event.actor.clone(), card.clone())
-						})
-					} else {
-						None
-					}
-				})
+		.await?
+		.into_iter()
+		.sorted_by_key(|ie| ie.created_at)
+		.rev()
+		.take_while(|issue_event| {
+			issue_event.event != Some(github::Event::RemovedFromProject)
 		})
+		.find(|issue_event| {
+			issue_event.event == Some(github::Event::AddedToProject)
+		})
+		.and_then(|mut issue_event| {
+			issue_event
+				.project_card
+				.take()
+				.map(|card| (issue_event.actor, card))
+		}))
 }
 
-fn author_special_attach_only_project(
+async fn author_special_attach_only_project(
 	db: &DB,
 	local_state: &mut LocalState,
 	github_bot: &GithubBot,
@@ -48,20 +43,18 @@ fn author_special_attach_only_project(
 	project: &github::Project,
 	actor: &github::User,
 ) -> Result<()> {
-	if let Some(backlog_column) = project
-		.columns_url
-		.as_ref()
-		.and_then(|url| github_bot.project_columns(url).ok())
-		.and_then(|columns| {
-			columns.into_iter().find(|c| {
-				c.name
-					.as_ref()
-					.map(|name| {
-						name.to_lowercase()
-							== PROJECT_BACKLOG_COLUMN_NAME.to_lowercase()
-					})
-					.unwrap_or(false)
-			})
+	if let Some(backlog_column) = github_bot
+		.project_columns(project)
+		.await?
+		.into_iter()
+		.find(|c| {
+			c.name
+				.as_ref()
+				.map(|name| {
+					name.to_lowercase()
+						== PROJECT_BACKLOG_COLUMN_NAME.to_lowercase()
+				})
+				.unwrap_or(false)
 		}) {
 		local_state.update_issue_project(
 			Some(IssueProject {
@@ -71,18 +64,20 @@ fn author_special_attach_only_project(
 			}),
 			db,
 		)?;
-		github_bot.create_project_card(
-			backlog_column.id,
-			issue.id.context(error::MissingData)?,
-			github::ProjectCardContentType::Issue,
-		)?;
+		github_bot
+			.create_project_card(
+				backlog_column.id,
+				issue.id.context(error::MissingData)?,
+				github::ProjectCardContentType::Issue,
+			)
+			.await?;
 	} else {
 		// TODO warn that the project lacks a backlog column
 	}
 	Ok(())
 }
 
-fn author_core_no_project(
+async fn author_core_no_project(
 	db: &DB,
 	local_state: &mut LocalState,
 	github_bot: &GithubBot,
@@ -111,12 +106,14 @@ fn author_core_no_project(
 				// If after 3 days there is still no project
 				// attached, move the issue to Core Sorting
 				// repository
-				github_bot.close_issue(&issue.repository.name, issue_id)?;
+				github_bot
+					.close_issue(&issue.repository.name, issue_id)
+					.await?;
 				let params = serde_json::json!({
 						"title": issue.title,
 						"body": issue.body.as_ref().unwrap_or(&"".to_owned())
 				});
-				github_bot.create_issue(CORE_SORTING_REPO, &params)?;
+				github_bot.create_issue(CORE_SORTING_REPO, &params).await?;
 				local_state.delete(db)?;
 			} else if (local_state.issue_no_project_npings()) < i {
 				local_state.update_issue_no_project_npings(i, db)?;
@@ -131,7 +128,7 @@ fn author_core_no_project(
 	Ok(())
 }
 
-fn author_unknown_no_project(
+async fn author_unknown_no_project(
 	db: &DB,
 	local_state: &mut LocalState,
 	github_bot: &GithubBot,
@@ -161,12 +158,14 @@ fn author_unknown_no_project(
 			// If after 15 minutes there is still no project
 			// attached, move the issue to Core Sorting
 			// repository.
-			github_bot.close_issue(&issue.repository.name, issue_id)?;
+			github_bot
+				.close_issue(&issue.repository.name, issue_id)
+				.await?;
 			let params = serde_json::json!({
 					"title": issue.title,
 					"body": issue.body.as_ref().unwrap_or(&"".to_owned())
 			});
-			github_bot.create_issue(CORE_SORTING_REPO, &params)?;
+			github_bot.create_issue(CORE_SORTING_REPO, &params).await?;
 			local_state.delete(db)?;
 		}
 	}
@@ -223,7 +222,7 @@ fn author_non_special_project_state_none(
 	Ok(())
 }
 
-fn author_non_special_project_state_unconfirmed(
+async fn author_non_special_project_state_unconfirmed(
 	db: &DB,
 	local_state: &mut LocalState,
 	github_bot: &GithubBot,
@@ -289,7 +288,7 @@ fn author_non_special_project_state_unconfirmed(
 					local_state.last_confirmed_issue_project().cloned(),
 					db,
 				)?;
-				github_bot.delete_project_card(unconfirmed_id)?;
+				github_bot.delete_project_card(unconfirmed_id).await?;
 				if let Some(prev_column_id) =
 					local_state.issue_project().map(|p| p.project_column_id)
 				{
@@ -298,7 +297,7 @@ fn author_non_special_project_state_unconfirmed(
 						prev_column_id,
 						issue_id,
 						github::ProjectCardContentType::Issue,
-					)?;
+					).await?;
 				}
 				if let Some(matrix_id) = github_to_matrix
 					.get(&actor.login)
@@ -318,7 +317,7 @@ fn author_non_special_project_state_unconfirmed(
 	Ok(())
 }
 
-fn author_non_special_project_state_denied(
+async fn author_non_special_project_state_denied(
 	db: &DB,
 	local_state: &mut LocalState,
 	github_bot: &GithubBot,
@@ -375,11 +374,13 @@ fn author_non_special_project_state_denied(
 			local_state.issue_project().map(|p| p.project_column_id)
 		{
 			// reattach the last confirmed project
-			github_bot.create_project_card(
-				prev_column_id,
-				issue_id,
-				github::ProjectCardContentType::Issue,
-			)?;
+			github_bot
+				.create_project_card(
+					prev_column_id,
+					issue_id,
+					github::ProjectCardContentType::Issue,
+				)
+				.await?;
 		}
 	}
 	if let Some(matrix_id) = github_to_matrix
@@ -463,7 +464,7 @@ fn author_non_special_project_state_confirmed(
 	Ok(())
 }
 
-pub fn handle_issue(
+pub async fn handle_issue(
 	db: &DB,
 	github_bot: &GithubBot,
 	matrix_bot: &MatrixBot,
@@ -486,7 +487,7 @@ pub fn handle_issue(
 		// there are no projects matching those listed in Projects.toml so do nothing
 	} else {
 		let projects = projects.expect("just confirmed above");
-		match issue_actor_and_project_card(issue, github_bot)? {
+		match issue_actor_and_project_card(issue, github_bot).await? {
 			None => {
 				let since = local_state
 					.issue_no_project_ping()
@@ -506,7 +507,8 @@ pub fn handle_issue(
 						issue,
 						&project,
 						&issue.user,
-					)?;
+					)
+					.await?;
 				} else if author_is_core
 					|| projects
 						.iter()
@@ -523,7 +525,8 @@ pub fn handle_issue(
 						issue,
 						default_channel_id,
 						since,
-					)?;
+					)
+					.await?;
 				} else {
 					// author is neither core developer nor special
 					author_unknown_no_project(
@@ -534,20 +537,15 @@ pub fn handle_issue(
 						issue,
 						default_channel_id,
 						since,
-					)?;
+					)
+					.await?;
 				}
 			}
 			Some((actor, card)) => {
-				let project: github::Project = card
-					.project_url
-					.as_ref()
-					.and_then(|url| github_bot.get(url).ok())
-					.context(error::MissingData)?;
-				let project_column: github::ProjectColumn = card
-					.column_url
-					.as_ref()
-					.and_then(|url| github_bot.get(url).ok())
-					.context(error::MissingData)?;
+				let project: github::Project =
+					github_bot.project(&card).await?;
+				let project_column: github::ProjectColumn =
+					github_bot.project_column(&card).await?;
 
 				if let Some(project_info) = projects
 					.iter()
@@ -583,7 +581,8 @@ pub fn handle_issue(
 									&project_column,
 									&project_info,
 									&actor,
-								)?
+								)
+								.await?
 							}
 							Some(IssueProjectState::Denied) => {
 								author_non_special_project_state_denied(
@@ -598,7 +597,8 @@ pub fn handle_issue(
 									&project_column,
 									&project_info,
 									&actor,
-								)?
+								)
+								.await?
 							}
 							Some(IssueProjectState::Confirmed) => {
 								author_non_special_project_state_confirmed(
@@ -624,6 +624,5 @@ pub fn handle_issue(
 			}
 		}
 	}
-
 	Ok(())
 }
