@@ -34,15 +34,15 @@ pub async fn update(
 			.await
 			.ok()
 			.and_then(projects_from_contents)
-			.map(|p| {
-				p.filter_map(|(key, project_info)| {
-					repo_projects
-						.iter()
-						.find(|rp| rp.name == key)
-						.map(|rp| (rp.clone(), project_info))
-				})
-				.collect::<Vec<(github::Project, project_info::ProjectInfo)>>()
-			});
+			.into_iter()
+			.flat_map(|p| p)
+			.filter_map(|(key, project_info)| {
+				repo_projects
+					.iter()
+					.find(|rp| rp.name == key)
+					.map(|rp| (rp.clone(), project_info))
+			})
+			.collect::<Vec<(github::Project, project_info::ProjectInfo)>>();
 
 		for issue in github_bot.issues(&repo).await? {
 			handle_issue(

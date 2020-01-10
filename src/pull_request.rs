@@ -261,11 +261,11 @@ pub async fn handle_pull_request(
 	matrix_bot: &MatrixBot,
 	core_devs: &[github::User],
 	github_to_matrix: &HashMap<String, String>,
-	projects: Option<&Vec<(github::Project, project_info::ProjectInfo)>>,
+	projects: &[(github::Project, project_info::ProjectInfo)],
 	pull_request: &github::PullRequest,
 ) -> Result<()> {
 	// TODO: handle multiple projects in a single repo
-	let project_info = projects.and_then(|p| p.last().map(|p| p.1.clone()));
+	let project_info = projects.last().map(|p| p.1.clone());
 
 	let pr_id = pull_request.id.context(error::MissingData)?;
 	let pr_number = pull_request.number.context(error::MissingData)?;
@@ -293,14 +293,29 @@ pub async fn handle_pull_request(
 
 	let author_is_core = core_devs.iter().any(|u| u.id == author.id);
 
-	if !(author_info.is_owner || author_info.is_whitelisted) {
-		match issue {
-			Some(issue) => {
-				let author_is_assignee =
-					issue.assignee.as_ref().map_or(false, |issue_assignee| {
-						issue_assignee.id == author.id
-					});
-				if author_is_assignee {
+	match issue {
+		Some(issue) => {
+			let author_is_assignee = issue
+				.assignee
+				.as_ref()
+				.map_or(false, |issue_assignee| issue_assignee.id == author.id);
+			if author_is_assignee {
+				require_reviewer(
+					&pull_request,
+					&repo,
+					github_bot,
+					matrix_bot,
+					github_to_matrix,
+					project_info.as_ref(),
+				)
+				.await?;
+			} else {
+				let issue_id = issue.id.context(error::MissingData)?;
+				if author_info.is_owner || author_info.is_whitelisted {
+					// assign the issue to the author
+					github_bot
+						.assign_author(&repo.name, issue_id, &author.login)
+						.await?;
 					require_reviewer(
 						&pull_request,
 						&repo,
@@ -310,47 +325,29 @@ pub async fn handle_pull_request(
 						project_info.as_ref(),
 					)
 					.await?;
-				} else {
-					let issue_id = issue.id.context(error::MissingData)?;
-					if author_info.is_owner || author_info.is_whitelisted {
-						// never true ... ?
-						// assign the issue to the author
-						github_bot
-							.assign_author(&repo.name, issue_id, &author.login)
-							.await?;
-						require_reviewer(
-							&pull_request,
-							&repo,
-							github_bot,
-							matrix_bot,
-							github_to_matrix,
-							project_info.as_ref(),
-						)
-						.await?;
-					} else if author_is_core {
-						author_is_core_unassigned(
-							db,
-							&mut local_state,
-							github_bot,
-							matrix_bot,
-							github_to_matrix,
-							project_info.as_ref(),
-							repo,
-							pull_request,
-							&issue,
-						)
-						.await?;
-					}
+				} else if author_is_core {
+					author_is_core_unassigned(
+						db,
+						&mut local_state,
+						github_bot,
+						matrix_bot,
+						github_to_matrix,
+						project_info.as_ref(),
+						repo,
+						pull_request,
+						&issue,
+					)
+					.await?;
 				}
 			}
-			None => {
-				// leave a message that a corresponding issue must exist for
-				// each PR close the PR
-				github_bot
-					.add_comment(&repo.name, pr_id, &ISSUE_MUST_EXIST_MESSAGE)
-					.await?;
-				github_bot.close_pull_request(&repo.name, pr_number).await?;
-			}
+		}
+		None => {
+			// leave a message that a corresponding issue must exist for
+			// each PR close the PR
+			github_bot
+				.add_comment(&repo.name, pr_id, &ISSUE_MUST_EXIST_MESSAGE)
+				.await?;
+			github_bot.close_pull_request(&repo.name, pr_number).await?;
 		}
 	}
 

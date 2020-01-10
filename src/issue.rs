@@ -9,7 +9,7 @@ use snafu::OptionExt;
 use std::collections::HashMap;
 use std::time::{Duration, SystemTime};
 
-async fn issue_actor_and_project_card(
+pub async fn issue_actor_and_project_card(
 	issue: &github::Issue,
 	github_bot: &GithubBot,
 ) -> Result<Option<(github::User, github::ProjectCard)>> {
@@ -470,7 +470,7 @@ pub async fn handle_issue(
 	matrix_bot: &MatrixBot,
 	core_devs: &[github::User],
 	github_to_matrix: &HashMap<String, String>,
-	projects: Option<&Vec<(github::Project, project_info::ProjectInfo)>>,
+	projects: &[(github::Project, project_info::ProjectInfo)],
 	issue: &github::Issue,
 	default_channel_id: &str,
 ) -> Result<()> {
@@ -483,10 +483,9 @@ pub async fn handle_issue(
 
 	let author_is_core = core_devs.iter().any(|u| u.id == issue.user.id);
 
-	if projects.map_or(true, |p| p.is_empty()) {
+	if projects.is_empty() {
 		// there are no projects matching those listed in Projects.toml so do nothing
 	} else {
-		let projects = projects.expect("just confirmed above");
 		match issue_actor_and_project_card(issue, github_bot).await? {
 			None => {
 				let since = local_state
