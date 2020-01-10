@@ -360,11 +360,13 @@ pub fn handle_pull_request(
 		}
 	}
 
-	let owner_approved = repo.project_owner().map_or(false, |owner| {
-		reviews
-			.iter()
-			.find(|r| r.user.id == owner.id)
-			.map_or(false, |r| r.state.as_deref() == Some("APPROVED"))
+	let owner_approved = project_info.as_ref().map_or(false, |proj| {
+		proj.owner.as_ref().map_or(false, |owner_login| {
+			reviews
+				.iter()
+				.find(|r| &r.user.login == owner_login)
+				.map_or(false, |r| r.state.as_deref() == Some("APPROVED"))
+		})
 	});
 	let status = statuses.as_mut().and_then(|v| {
 		v.sort_by_key(|s| s.updated_at);
@@ -389,10 +391,13 @@ pub fn handle_pull_request(
 						Some(SystemTime::now()),
 						db,
 					)?;
-					if let Some(matrix_id) = github_to_matrix
-						.get(&repo.owner.login)
-						.and_then(|matrix_id| matrix::parse_id(matrix_id))
-					{
+					if let Some(matrix_id) = project_info
+						.and_then(|p| p.owner).as_ref()
+						.and_then(|owner_login| {
+							github_to_matrix.get(owner_login).and_then(
+								|matrix_id| matrix::parse_id(matrix_id),
+							)
+						}) {
 						matrix_bot.send_private_message(
 							&matrix_id,
 							&STATUS_FAILURE_NOTIFICATION
@@ -400,8 +405,7 @@ pub fn handle_pull_request(
 						)?;
 					} else {
 						log::warn!(
-							"Couldn't send a message to {}; either their Github or Matrix handle is not set in Bamboo",
-							&repo.owner.login
+							"Couldn't send a message to the project owner; either their Github or Matrix handle is not set in Bamboo"
 						);
 					}
 				}

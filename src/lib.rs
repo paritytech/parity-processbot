@@ -11,6 +11,5 @@ pub mod matrix;
 pub mod matrix_bot;
 pub mod project_info;
 pub mod pull_request;
-pub mod repository;
 
 pub type Result<T> = std::result::Result<T, error::Error>;
