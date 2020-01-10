@@ -83,6 +83,185 @@ fn require_reviewer(
 	Ok(())
 }
 
+fn author_is_core_unassigned(
+	db: &DB,
+	local_state: &mut LocalState,
+	github_bot: &GithubBot,
+	matrix_bot: &MatrixBot,
+	github_to_matrix: &HashMap<String, String>,
+	project_info: Option<&project_info::ProjectInfo>,
+	repo: &github::Repository,
+	pull_request: &github::PullRequest,
+	issue: &github::Issue,
+) -> Result<()> {
+	let days = local_state
+		.issue_not_assigned_ping()
+		.and_then(|ping| ping.elapsed().ok())
+		.map(|elapsed| elapsed.as_secs() / ISSUE_NOT_ASSIGNED_PING_PERIOD);
+	match days {
+		// notify the the issue assignee and project
+		// owner through a PM
+		None => author_is_core_unassigned_ticks_none(
+			db,
+			local_state,
+			github_bot,
+			matrix_bot,
+			github_to_matrix,
+			project_info,
+			repo,
+			pull_request,
+			issue,
+		),
+		// do nothing
+		Some(0) => Ok(()),
+		// if after 24 hours there is no change, then
+		// send a message into the project's Riot
+		// channel
+		Some(1) | Some(2) => author_is_core_unassigned_ticks_passed(
+			db,
+			local_state,
+			github_bot,
+			matrix_bot,
+			project_info,
+			repo,
+			pull_request,
+			issue,
+		),
+		// if after a further 48 hours there is still no
+		// change, then close the PR.
+		_ => author_is_core_unassigned_ticks_expired(
+			db,
+			local_state,
+			github_bot,
+			repo,
+			pull_request,
+		),
+	}
+}
+
+fn author_is_core_unassigned_ticks_none(
+	db: &DB,
+	local_state: &mut LocalState,
+	_github_bot: &GithubBot,
+	matrix_bot: &MatrixBot,
+	github_to_matrix: &HashMap<String, String>,
+	project_info: Option<&project_info::ProjectInfo>,
+	_repo: &github::Repository,
+	pull_request: &github::PullRequest,
+	issue: &github::Issue,
+) -> Result<()> {
+	let pr_html_url =
+		pull_request.html_url.as_ref().context(error::MissingData)?;
+	let issue_html_url = issue.html_url.as_ref().context(error::MissingData)?;
+	local_state.update_issue_not_assigned_ping(Some(SystemTime::now()), db)?;
+	if let Some(assignee) = &issue.assignee {
+		if let Some(matrix_id) = github_to_matrix
+			.get(&assignee.login)
+			.and_then(|matrix_id| matrix::parse_id(matrix_id))
+		{
+			matrix_bot.send_private_message(
+				&matrix_id,
+				&ISSUE_ASSIGNEE_NOTIFICATION
+					.replace("{1}", &pr_html_url)
+					.replace("{2}", &issue_html_url)
+					.replace("{3}", &pull_request.user.login),
+			)?;
+		} else {
+			log::warn!(
+                                "Couldn't send a message to {}; either their Github or Matrix handle is not set in Bamboo",
+                                &assignee.login
+                        );
+		}
+	}
+	if let Some(matrix_id) = project_info
+		.and_then(|p| p.owner.as_ref())
+		.and_then(|owner_login| {
+			github_to_matrix
+				.get(owner_login)
+				.and_then(|matrix_id| matrix::parse_id(matrix_id))
+		}) {
+		matrix_bot.send_private_message(
+			&matrix_id,
+			&ISSUE_ASSIGNEE_NOTIFICATION
+				.replace("{1}", &pr_html_url)
+				.replace("{2}", &issue_html_url)
+				.replace("{3}", &pull_request.user.login),
+		)?;
+	} else {
+		log::warn!(
+                        "Couldn't send a message to the project owner; either their Github or Matrix handle is not set in Bamboo"
+                );
+	}
+	Ok(())
+}
+
+fn author_is_core_unassigned_ticks_passed(
+	db: &DB,
+	local_state: &mut LocalState,
+	_github_bot: &GithubBot,
+	matrix_bot: &MatrixBot,
+	project_info: Option<&project_info::ProjectInfo>,
+	_repo: &github::Repository,
+	pull_request: &github::PullRequest,
+	issue: &github::Issue,
+) -> Result<()> {
+	let pr_html_url =
+		pull_request.html_url.as_ref().context(error::MissingData)?;
+	let issue_html_url = issue.html_url.as_ref().context(error::MissingData)?;
+	if local_state.actions_taken() & PullRequestCoreDevAuthorIssueNotAssigned24h
+		== NoAction
+	{
+		local_state.update_actions_taken(
+			local_state.actions_taken()
+				| PullRequestCoreDevAuthorIssueNotAssigned24h,
+			db,
+		)?;
+		if let Some(ref room_id) =
+			project_info.and_then(|p| p.matrix_room_id.as_ref())
+		{
+			matrix_bot.send_public_message(
+				&room_id,
+				&ISSUE_ASSIGNEE_NOTIFICATION
+					.replace("{1}", &pr_html_url)
+					.replace("{2}", &issue_html_url)
+					.replace("{3}", &pull_request.user.login),
+			)?;
+		} else {
+			matrix_bot.send_public_message(
+				&FALLBACK_ROOM_ID,
+				&ISSUE_ASSIGNEE_NOTIFICATION
+					.replace("{1}", &pr_html_url)
+					.replace("{2}", &issue_html_url)
+					.replace("{3}", &pull_request.user.login),
+			)?;
+		}
+	}
+	Ok(())
+}
+
+fn author_is_core_unassigned_ticks_expired(
+	db: &DB,
+	local_state: &mut LocalState,
+	github_bot: &GithubBot,
+	repo: &github::Repository,
+	pull_request: &github::PullRequest,
+) -> Result<()> {
+	if local_state.actions_taken() & PullRequestCoreDevAuthorIssueNotAssigned72h
+		== NoAction
+	{
+		local_state.update_actions_taken(
+			local_state.actions_taken()
+				| PullRequestCoreDevAuthorIssueNotAssigned72h,
+			db,
+		)?;
+		github_bot.close_pull_request(
+			&repo.name,
+			pull_request.number.context(error::MissingData)?,
+		)?;
+	}
+	Ok(())
+}
+
 pub fn handle_pull_request(
 	db: &DB,
 	github_bot: &GithubBot,
@@ -92,7 +271,7 @@ pub fn handle_pull_request(
 	projects: Option<&Vec<(github::Project, project_info::ProjectInfo)>>,
 	pull_request: &github::PullRequest,
 ) -> Result<()> {
-	// TODO: handle multiple projcets in a single repo
+	// TODO: handle multiple projects in a single repo
 	let project_info = projects.and_then(|p| p.last().map(|p| p.1.clone()));
 
 	let pr_id = pull_request.id.context(error::MissingData)?;
@@ -121,14 +300,9 @@ pub fn handle_pull_request(
 
 	if !(author_info.is_owner || author_info.is_whitelisted) {
 		match issue {
-			Some(github::Issue {
-				id: issue_id,
-				html_url: ref issue_html_url,
-				assignee: ref issue_assignee,
-				..
-			}) => {
+			Some(issue) => {
 				let author_is_assignee =
-					issue_assignee.as_ref().map_or(false, |issue_assignee| {
+					issue.assignee.as_ref().map_or(false, |issue_assignee| {
 						issue_assignee.id == author.id
 					});
 				if author_is_assignee {
@@ -141,9 +315,7 @@ pub fn handle_pull_request(
 						project_info.as_ref(),
 					)?;
 				} else {
-					let issue_id = issue_id.context(error::MissingData)?;
-					let issue_html_url =
-						issue_html_url.as_ref().context(error::MissingData)?;
+					let issue_id = issue.id.context(error::MissingData)?;
 					if author_info.is_owner || author_info.is_whitelisted {
 						// never true ... ?
 						// assign the issue to the author
@@ -161,95 +333,17 @@ pub fn handle_pull_request(
 							project_info.as_ref(),
 						)?;
 					} else if author_is_core {
-						let days = local_state
-							.issue_not_assigned_ping()
-							.and_then(|ping| ping.elapsed().ok())
-							.map(|elapsed| {
-								elapsed.as_secs()
-									/ ISSUE_NOT_ASSIGNED_PING_PERIOD
-							});
-						match days {
-							None => {
-								// notify the the issue assignee and project
-								// owner through a PM
-								local_state.update_issue_not_assigned_ping(
-									Some(SystemTime::now()),
-									db,
-								)?;
-								if let Some(assignee) = issue_assignee {
-									if let Some(matrix_id) = github_to_matrix
-										.get(&assignee.login)
-										.and_then(|matrix_id| {
-											matrix::parse_id(matrix_id)
-										}) {
-										matrix_bot.send_private_message(
-											&matrix_id,
-											&ISSUE_ASSIGNEE_NOTIFICATION
-												.replace("{1}", &pr_html_url)
-												.replace("{2}", &issue_html_url)
-												.replace("{3}", &author.login),
-										)?;
-									} else {
-										log::warn!(
-											"Couldn't send a message to {}; either their Github or Matrix handle is not set in Bamboo",
-											&assignee.login
-										);
-									}
-								}
-								if let Some(matrix_id) = github_to_matrix
-									.get(&repo.owner.login)
-									.and_then(|matrix_id| {
-										matrix::parse_id(matrix_id)
-									}) {
-									matrix_bot.send_private_message(
-										&matrix_id,
-										&ISSUE_ASSIGNEE_NOTIFICATION
-											.replace("{1}", &pr_html_url)
-											.replace("{2}", &issue_html_url)
-											.replace("{3}", &author.login),
-									)?;
-								} else {
-									log::warn!(
-										"Couldn't send a message to {}; either their Github or Matrix handle is not set in Bamboo",
-										&repo.owner.login
-									);
-								}
-							}
-							Some(0) => { /* do nothing */ }
-							Some(1) | Some(2) => {
-								// if after 24 hours there is no change, then
-								// send a message into the project's Riot
-								// channel
-								if local_state.actions_taken() & PullRequestCoreDevAuthorIssueNotAssigned24h == NoAction {
-									local_state.update_actions_taken(local_state.actions_taken() | PullRequestCoreDevAuthorIssueNotAssigned24h, db)?;
-									if let Some(ref room_id) = project_info.and_then(|p| p.matrix_room_id) {
-										matrix_bot.send_public_message(
-											&room_id,
-											&ISSUE_ASSIGNEE_NOTIFICATION
-												.replace("{1}", &pr_html_url)
-												.replace("{2}", &issue_html_url)
-												.replace("{3}", &author.login),
-										)?;
-									} else {
-										matrix_bot.send_public_message(
-											&FALLBACK_ROOM_ID,
-											&ISSUE_ASSIGNEE_NOTIFICATION
-												.replace("{1}", &pr_html_url)
-												.replace("{2}", &issue_html_url)
-												.replace("{3}", &author.login),
-										)?;
-									}
-								}
-							}
-							_ => {
-								// if after a further 48 hours there is still no
-								// change, then close the PR.
-								if local_state.actions_taken() & PullRequestCoreDevAuthorIssueNotAssigned72h == NoAction {
-									local_state.update_actions_taken(local_state.actions_taken() | PullRequestCoreDevAuthorIssueNotAssigned72h, db)?;
-									github_bot.close_pull_request(&repo.name, pr_number)?;
-								}
-							}
-						}
+						author_is_core_unassigned(
+							db,
+							&mut local_state,
+							github_bot,
+							matrix_bot,
+							github_to_matrix,
+							project_info.as_ref(),
+							repo,
+							pull_request,
+							&issue,
+						)?;
 					}
 				}
 			}
