@@ -9,6 +9,7 @@ use snafu::OptionExt;
 use std::collections::HashMap;
 use std::time::{Duration, SystemTime};
 
+/// Return the project card attached to an issue, if there is one, and the user who attached it
 pub async fn issue_actor_and_project_card(
 	issue: &github::Issue,
 	github_bot: &GithubBot,
