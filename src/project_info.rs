@@ -1,5 +1,4 @@
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
-pub struct Projects(pub std::collections::HashMap<String, ProjectInfo>);
+pub type ProjectInfoMap = std::collections::HashMap<String, ProjectInfo>;
 
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
 pub struct ProjectInfo {
@@ -33,7 +32,7 @@ impl ProjectInfo {
 		self.owner.as_deref().map_or(false, |owner| owner == login)
 	}
 
-	/// Checks if the reviewer matches the login given.
+	/// Checks if the delegated reviewer matches the login given.
 	pub fn is_delegated_reviewer(&self, login: &str) -> bool {
 		self.delegated_reviewer
 			.as_deref()
@@ -46,42 +45,44 @@ impl ProjectInfo {
 			whitelist.iter().any(|user| user == login)
 		})
 	}
+
+	pub fn is_special(&self, login: &str) -> bool {
+		self.is_owner(login)
+			|| self.is_delegated_reviewer(login)
+			|| self.is_whitelisted(login)
+	}
 }
 
-impl From<toml::value::Table> for Projects {
-	fn from(tab: toml::value::Table) -> Projects {
-		Projects(
-			tab.into_iter()
-				.filter_map(|(key, val)| match val {
-					toml::value::Value::Table(ref tab) => Some((
-						key,
-						ProjectInfo {
-							owner: val
-								.get("owner")
-								.and_then(toml::value::Value::as_str)
-								.map(str::to_owned),
-							delegated_reviewer: tab
-								.get("delegated_reviewer")
-								.and_then(toml::value::Value::as_str)
-								.map(str::to_owned),
-							whitelist: tab
-								.get("whitelist")
-								.and_then(toml::value::Value::as_array)
-								.map(|a| {
-									a.iter()
-										.filter_map(toml::value::Value::as_str)
-										.map(str::to_owned)
-										.collect::<Vec<String>>()
-								}),
-							matrix_room_id: tab
-								.get("matrix_room_id")
-								.and_then(toml::value::Value::as_str)
-								.map(str::to_owned),
-						},
-					)),
-					_ => None,
-				})
-				.collect(),
-		)
-	}
+pub fn projects_from_table(tab: toml::value::Table) -> ProjectInfoMap {
+	tab.into_iter()
+		.filter_map(|(key, val)| match val {
+			toml::value::Value::Table(ref tab) => Some((
+				key,
+				ProjectInfo {
+					owner: val
+						.get("owner")
+						.and_then(toml::value::Value::as_str)
+						.map(str::to_owned),
+					delegated_reviewer: tab
+						.get("delegated_reviewer")
+						.and_then(toml::value::Value::as_str)
+						.map(str::to_owned),
+					whitelist: tab
+						.get("whitelist")
+						.and_then(toml::value::Value::as_array)
+						.map(|a| {
+							a.iter()
+								.filter_map(toml::value::Value::as_str)
+								.map(str::to_owned)
+								.collect::<Vec<String>>()
+						}),
+					matrix_room_id: tab
+						.get("matrix_room_id")
+						.and_then(toml::value::Value::as_str)
+						.map(str::to_owned),
+				},
+			)),
+			_ => None,
+		})
+		.collect()
 }

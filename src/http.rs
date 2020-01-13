@@ -61,7 +61,8 @@ impl Client {
 	impl_methods_with_body! {
 		post: post_response,
 		put: put_response,
-		patch: patch_response
+		patch: patch_response,
+				delete: delete_response
 	}
 
 	pub async fn request(

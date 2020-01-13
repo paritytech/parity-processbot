@@ -2,6 +2,8 @@ use crate::{error, github, Result};
 
 use snafu::OptionExt;
 
+use serde::Serialize;
+
 pub struct GithubBot {
 	client: crate::http::Client,
 	organization: github::Organization,
@@ -43,6 +45,16 @@ impl GithubBot {
 	) -> Result<Vec<github::PullRequest>> {
 		self.client
 			.get_all(repo.pulls_url.replace("{/number}", ""))
+			.await
+	}
+
+	/// Returns all of the issues in a single repository.
+	pub async fn issues(
+		&self,
+		repo: &github::Repository,
+	) -> Result<Vec<github::Issue>> {
+		self.client
+			.get_all(repo.issues_url.replace("{/number}", ""))
 			.await
 	}
 
@@ -91,12 +103,27 @@ impl GithubBot {
 	pub async fn project(
 		&self,
 		card: &github::ProjectCard,
-	) -> Result<Option<github::Project>> {
-		if let Some(url) = &card.project_url {
-			self.client.get(url).await.map(Some)
-		} else {
-			Ok(None)
-		}
+	) -> Result<github::Project> {
+		let url = card.project_url.as_ref().context(error::MissingData)?;
+		self.client.get(url).await
+	}
+
+	pub async fn project_column(
+		&self,
+		card: &github::ProjectCard,
+	) -> Result<github::ProjectColumn> {
+		self.client
+			.get(card.column_url.as_ref().context(error::MissingData)?)
+			.await
+	}
+
+	pub async fn project_columns(
+		&self,
+		project: &github::Project,
+	) -> Result<Vec<github::ProjectColumn>> {
+		self.client
+			.get(project.columns_url.as_ref().context(error::MissingData)?)
+			.await
 	}
 
 	/// Returns events associated with an issue.
@@ -113,6 +140,21 @@ impl GithubBot {
 			repo_name = repo_name,
 			issue_number = issue_number
 		))
+			.await
+	}
+
+	/// Returns events associated with an issue.
+	pub async fn projects(
+		&self,
+		repo_name: &str,
+	) -> Result<Vec<github::Project>> {
+		self.client
+			.get(&format!(
+				"{base_url}/repos/{owner}/{repo_name}/projects",
+				base_url = Self::BASE_URL,
+				owner = self.organization.login,
+				repo_name = repo_name,
+			))
 			.await
 	}
 
@@ -284,6 +326,65 @@ impl GithubBot {
 		);
 		self.client
 			.patch_response(&url, &serde_json::json!({ "state": "closed" }))
+			.await
+			.map(|_| ())
+	}
+
+	pub async fn create_issue<A, B>(
+		&self,
+		repo_name: A,
+		parameters: &B,
+	) -> Result<()>
+	where
+		A: AsRef<str>,
+		B: Serialize,
+	{
+		let repo = repo_name.as_ref();
+		let base = &self.organization.repos_url;
+		let url = format!(
+			"{base}/repos/{owner}/{repo}/issues",
+			base = base,
+			owner = self.organization.login,
+			repo = repo,
+		);
+		self.client
+			.post_response(&url, parameters)
+			.await
+			.map(|_| ())
+	}
+
+	pub async fn create_project_card<A>(
+		&self,
+		column_id: A,
+		content_id: i64,
+		content_type: github::ProjectCardContentType,
+	) -> Result<()>
+	where
+		A: std::fmt::Display,
+	{
+		let url = format!(
+			"{base}/projects/columns/{column_id}/cards",
+			base = Self::BASE_URL,
+			column_id = column_id,
+		);
+		let parameters = serde_json::json!({ "content_id": content_id, "content_type": content_type });
+		self.client
+			.post_response(&url, &parameters)
+			.await
+			.map(|_| ())
+	}
+
+	pub async fn delete_project_card<A>(&self, column_id: A) -> Result<()>
+	where
+		A: std::fmt::Display,
+	{
+		let url = format!(
+			"{base}/projects/columns/{column_id}",
+			base = Self::BASE_URL,
+			column_id = column_id,
+		);
+		self.client
+			.delete_response(&url, &serde_json::json!({}))
 			.await
 			.map(|_| ())
 	}

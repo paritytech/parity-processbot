@@ -27,6 +27,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 	let matrix_user = dotenv::var("MATRIX_USER").expect("MATRIX_USER");
 	let matrix_password =
 		dotenv::var("MATRIX_PASSWORD").expect("MATRIX_PASSWORD");
+	let matrix_default_channel_id = dotenv::var("MATRIX_DEFAULT_CHANNEL_ID")
+		.expect("MATRIX_DEFAULT_CHANNEL_ID");
 	let tick_secs = dotenv::var("TICK_SECS")
 		.expect("TICK_SECS")
 		.parse::<u64>()
@@ -73,6 +75,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 			&matrix_bot,
 			&core_devs,
 			&github_to_matrix,
+			&matrix_default_channel_id,
 		)
 		.await?;
 	}

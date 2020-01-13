@@ -118,10 +118,8 @@ pub struct IssueEvent {
 pub struct ProjectCard {
 	pub id: Option<i64>,
 	pub url: Option<String>,
-	pub project_id: Option<i64>,
+	pub column_url: Option<String>,
 	pub project_url: Option<String>,
-	pub html_url: Option<String>,
-	pub column_name: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -132,11 +130,29 @@ pub struct Project {
 	pub columns_url: Option<String>,
 	pub id: Option<i64>,
 	pub node_id: Option<String>,
-	pub name: Option<String>,
+	pub name: String,
 	pub body: Option<String>,
 	pub number: Option<i64>,
 	pub state: Option<String>,
 	pub creator: Option<User>,
+	pub created_at: Option<chrono::DateTime<chrono::Utc>>,
+	pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ProjectCardContentType {
+	Issue,
+	PullRequest,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProjectColumn {
+	pub url: Option<String>,
+	pub project_url: Option<String>,
+	pub cards_url: Option<String>,
+	pub id: i64,
+	pub node_id: Option<String>,
+	pub name: Option<String>,
 	pub created_at: Option<chrono::DateTime<chrono::Utc>>,
 	pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
 }
@@ -435,8 +451,16 @@ pub struct Status {
 	pub url: Option<String>,
 	pub created_at: chrono::DateTime<chrono::Utc>,
 	pub updated_at: chrono::DateTime<chrono::Utc>,
-	pub state: Option<String>,
+	pub state: StatusState,
 	pub creator: Option<User>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StatusState {
+	Failure,
+	Pending,
+	Success,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
