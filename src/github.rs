@@ -241,6 +241,12 @@ pub struct Review {
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RequestedReviewers {
+	pub users: Vec<User>,
+	pub teams: Vec<Team>,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Issue {
 	pub id: Option<i64>,
 	pub node_id: Option<String>,

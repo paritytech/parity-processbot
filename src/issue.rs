@@ -215,7 +215,7 @@ fn author_non_special_project_state_none(
 					&format!("{}", project_column.id),
 				),
 		)?;
-	} else if let Some(_owner) = &project_info.owner {
+	} else if let Some(_owner) = &project_info.owner_or_delegate() {
 		// TODO notify project owner
 	} else {
 		// TODO notify default matrix room
@@ -268,7 +268,7 @@ async fn author_non_special_project_state_unconfirmed(
 						&format!("{}", project_column.id),
 					),
 			)?;
-		} else if let Some(_owner) = &project_info.owner {
+		} else if let Some(_owner) = &project_info.owner_or_delegate() {
 			// TODO notify project owner
 		} else {
 			// TODO notify default matrix room
@@ -360,7 +360,7 @@ async fn author_non_special_project_state_denied(
 						&format!("{}", project_column.id),
 					),
 			)?;
-		} else if let Some(_owner) = &project_info.owner {
+		} else if let Some(_owner) = &project_info.owner_or_delegate() {
 			// TODO notify project owner
 		} else {
 			// TODO notify default matrix room
@@ -392,7 +392,7 @@ async fn author_non_special_project_state_denied(
 			&matrix_id,
 			&ISSUE_REVERT_PROJECT_NOTIFICATION.replace("{1}", &issue_html_url),
 		)?;
-	} else if let Some(_owner) = &project_info.owner {
+	} else if let Some(_owner) = &project_info.owner_or_delegate() {
 		// TODO notify project owner
 	} else {
 		// TODO notify default matrix room
@@ -456,7 +456,7 @@ fn author_non_special_project_state_confirmed(
 						&format!("{}", project_column.id),
 					),
 			)?;
-		} else if let Some(_owner) = &project_info.owner {
+		} else if let Some(_owner) = &project_info.owner_or_delegate() {
 			// TODO notify project owner
 		} else {
 			// TODO notify default matrix room
