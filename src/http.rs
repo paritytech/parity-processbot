@@ -142,22 +142,16 @@ impl Client {
 				.headers()
 				.decode::<hyperx::header::Link>()
 				.ok()
-				.and_then(|v| {
-					v.values()
-						.iter()
-						.find(|link| {
-							link.rel()
-								.map(|rel| {
-									rel.contains(
-										&hyperx::header::RelationType::Next,
-									)
-								})
-								.unwrap_or(false)
-						})
-						.map(|l| l.link())
-						.map(str::to_owned)
-						.map(Cow::Owned)
-				});
+				.iter()
+				.flat_map(|v| v.values())
+				.find(|link| {
+					link.rel().map_or(false, |rel| {
+						rel.contains(&hyperx::header::RelationType::Next)
+					})
+				})
+				.map(|l| l.link())
+				.map(str::to_owned)
+				.map(Cow::Owned);
 
 			let mut body =
 				response.json::<Vec<T>>().await.context(error::Http)?;
