@@ -64,8 +64,18 @@ impl GithubBot {
 		pull_request: &github::PullRequest,
 	) -> Result<Vec<github::Review>> {
 		let url = pull_request.html_url.as_ref().context(error::MissingData)?;
-
 		self.client.get_all(format!("{}/reviews", url)).await
+	}
+
+	/// Returns all review requests associated with a pull request.
+	pub async fn requested_reviewers(
+		&self,
+		pull_request: &github::PullRequest,
+	) -> Result<github::RequestedReviewers> {
+		let url = pull_request.html_url.as_ref().context(error::MissingData)?;
+		self.client
+			.get(format!("{}/requested_reviewers", url))
+			.await
 	}
 
 	/// Requests a review from a user.
