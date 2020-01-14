@@ -39,7 +39,6 @@ macro_rules! impl_methods_with_body {
                 self.request(
                     self.client
                     .$method(&*url.into())
-                    .bearer_auth(&self.auth_key)
                     .json(body),
                 )
                     .await
@@ -62,7 +61,7 @@ impl Client {
 		post: post_response,
 		put: put_response,
 		patch: patch_response,
-				delete: delete_response
+                delete: delete_response
 	}
 
 	pub async fn request(
@@ -78,6 +77,8 @@ impl Client {
 			.header(reqwest::header::USER_AGENT, "parity-processbot/0.0.1")
 			.build()
 			.context(error::Http)?;
+
+                dbg!(&request);
 
 		let response =
 			self.client.execute(request).await.context(error::Http)?;

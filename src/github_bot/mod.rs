@@ -4,6 +4,8 @@ use snafu::OptionExt;
 
 use serde::Serialize;
 
+pub mod pull_request;
+
 pub struct GithubBot {
 	client: crate::http::Client,
 	organization: github::Organization,
@@ -36,6 +38,23 @@ impl GithubBot {
 	/// Returns all of the repositories managed by the organization.
 	pub async fn repositories(&self) -> Result<Vec<github::Repository>> {
 		self.client.get_all(&self.organization.repos_url).await
+	}
+
+	/// Returns a repository with the given name.
+	pub async fn repository<A>(
+		&self,
+		repo_name: A,
+	) -> Result<github::Repository>
+	where
+		A: std::fmt::Display,
+	{
+		let url = format!(
+			"{base_url}/repos/{owner}/{repo_name}",
+			base_url = Self::BASE_URL,
+			owner = self.organization.login,
+			repo_name = repo_name
+		);
+		self.client.get(url).await
 	}
 
 	/// Returns all of the pull requests in a single repository.
@@ -271,52 +290,6 @@ impl GithubBot {
 			.map(|_| ())
 	}
 
-	pub async fn merge_pull_request<A>(
-		&self,
-		repo_name: A,
-		pull_number: i64,
-	) -> Result<()>
-	where
-		A: AsRef<str>,
-	{
-		let repo = repo_name.as_ref();
-		let base = &self.organization.repos_url;
-		let url = format!(
-			"{base}/repos/{owner}/{repo}/pulls/{pull_number}/merge",
-			base = base,
-			owner = self.organization.login,
-			repo = repo,
-			pull_number = pull_number
-		);
-		self.client
-			.put_response(&url, &serde_json::json!({}))
-			.await
-			.map(|_| ())
-	}
-
-	pub async fn close_pull_request<A>(
-		&self,
-		repo_name: A,
-		pull_number: i64,
-	) -> Result<()>
-	where
-		A: AsRef<str>,
-	{
-		let repo = repo_name.as_ref();
-		let base = &self.organization.repos_url;
-		let url = format!(
-			"{base}/repos/{owner}/{repo}/pulls/{pull_number}",
-			base = base,
-			owner = self.organization.login,
-			repo = repo,
-			pull_number = pull_number
-		);
-		self.client
-			.patch_response(&url, &serde_json::json!({ "state": "closed" }))
-			.await
-			.map(|_| ())
-	}
-
 	pub async fn close_issue<A>(
 		&self,
 		repo_name: A,
@@ -399,3 +372,4 @@ impl GithubBot {
 			.map(|_| ())
 	}
 }
+
