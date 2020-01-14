@@ -83,6 +83,7 @@ impl GithubBot {
 mod tests {
 	use super::*;
 
+	#[ignore]
 	#[test]
 	fn test_pull_requests() {
 		dotenv::dotenv().ok();
