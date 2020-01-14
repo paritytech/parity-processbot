@@ -61,7 +61,7 @@ impl Client {
 		post: post_response,
 		put: put_response,
 		patch: patch_response,
-                delete: delete_response
+				delete: delete_response
 	}
 
 	pub async fn request(
@@ -78,7 +78,7 @@ impl Client {
 			.build()
 			.context(error::Http)?;
 
-                dbg!(&request);
+		dbg!(&request);
 
 		let response =
 			self.client.execute(request).await.context(error::Http)?;

@@ -22,16 +22,18 @@ impl GithubBot {
 			owner = self.organization.login,
 			repo = repo_name.as_ref(),
 		);
-                let params = serde_json::json!({ 
-                        "title": title.as_ref(), 
-                        "body": body.as_ref(),
-                        "head": head.as_ref(),
-                        "base": base.as_ref(),
-                });
+		let params = serde_json::json!({
+				"title": title.as_ref(),
+				"body": body.as_ref(),
+				"head": head.as_ref(),
+				"base": base.as_ref(),
+		});
 		self.client
 			.post_response(&url, &params)
 			.await?
-                        .json().await.context(error::Http)
+			.json()
+			.await
+			.context(error::Http)
 	}
 
 	pub async fn merge_pull_request<A>(
@@ -75,7 +77,6 @@ impl GithubBot {
 			.await
 			.map(|_| ())
 	}
-
 }
 
 #[cfg(test)]

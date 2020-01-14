@@ -372,4 +372,3 @@ impl GithubBot {
 			.map(|_| ())
 	}
 }
-
