@@ -51,9 +51,7 @@ mod tests {
 				.await
 				.expect("repositories")
 				.iter()
-				.any(|repo| repo
-					.name == 
-					"parity-processbot"));
+				.any(|repo| repo.name == "parity-processbot"));
 		});
 	}
 }
