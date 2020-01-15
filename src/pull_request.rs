@@ -11,7 +11,6 @@ use std::time::SystemTime;
 
 async fn require_reviewers(
 	pull_request: &github::PullRequest,
-	repo: &github::Repository,
 	github_bot: &GithubBot,
 	matrix_bot: &MatrixBot,
 	github_to_matrix: &HashMap<String, String>,
@@ -48,7 +47,6 @@ async fn require_reviewers(
 	);
 	let pr_html_url =
 		pull_request.html_url.as_ref().context(error::MissingData)?;
-	let pr_number = pull_request.number.context(error::MissingData)?;
 
 	if !author_info.is_owner_or_delegate && !owner_or_delegate_requested {
 		if let Some((github_id, matrix_id)) = project_info
@@ -60,7 +58,7 @@ async fn require_reviewers(
 				&REQUEST_DELEGATED_REVIEW_MESSAGE.replace("{1}", &pr_html_url),
 			)?;
 			github_bot
-				.request_reviews(&repo.name, pr_number, &[github_id.as_ref()])
+				.request_reviews(&pull_request, &[github_id.as_ref()])
 				.await?;
 		}
 	} else if reviewer_count < MIN_REVIEWERS {
@@ -396,7 +394,6 @@ async fn handle_pull_request_with_issue_and_project(
 	if author_is_assignee {
 		require_reviewers(
 			&pull_request,
-			&repo,
 			github_bot,
 			matrix_bot,
 			github_to_matrix,
@@ -414,7 +411,6 @@ async fn handle_pull_request_with_issue_and_project(
 				.await?;
 			require_reviewers(
 				&pull_request,
-				&repo,
 				github_bot,
 				matrix_bot,
 				github_to_matrix,
@@ -467,11 +463,6 @@ pub async fn handle_pull_request(
 	projects: &[(github::Project, project_info::ProjectInfo)],
 	pull_request: &github::PullRequest,
 ) -> Result<()> {
-	let (_reviews, requested_reviewers) = futures::try_join!(
-		github_bot.reviews(pull_request),
-		github_bot.requested_reviewers(pull_request)
-	)?;
-
 	let pr_id = pull_request.id.context(error::MissingData)?;
 	let pr_number = pull_request.number.context(error::MissingData)?;
 	let db_key = format!("{}", pr_id).into_bytes();
@@ -483,10 +474,11 @@ pub async fn handle_pull_request(
 		.as_ref()
 		.context(error::MissingData)?;
 
-	let (reviews, issue, mut statuses) = futures::try_join!(
+	let (reviews, issue, mut statuses, requested_reviewers) = futures::try_join!(
 		github_bot.reviews(pull_request),
 		github_bot.issue(pull_request),
-		github_bot.statuses(pull_request)
+		github_bot.statuses(pull_request),
+		github_bot.requested_reviewers(pull_request)
 	)?;
 
 	match projects.len() {
@@ -515,7 +507,6 @@ pub async fn handle_pull_request(
 				if author_info.is_special() {
 					require_reviewers(
 						&pull_request,
-						&repo,
 						github_bot,
 						matrix_bot,
 						github_to_matrix,

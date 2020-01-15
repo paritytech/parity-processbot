@@ -5,6 +5,7 @@ use snafu::OptionExt;
 pub mod issue;
 pub mod pull_request;
 pub mod repository;
+pub mod review;
 
 pub struct GithubBot {
 	client: crate::http::Client,
@@ -33,45 +34,6 @@ impl GithubBot {
 			client,
 			organization,
 		})
-	}
-
-	/// Returns all reviews associated with a pull request.
-	pub async fn reviews(
-		&self,
-		pull_request: &github::PullRequest,
-	) -> Result<Vec<github::Review>> {
-		let url = pull_request.html_url.as_ref().context(error::MissingData)?;
-		self.client.get_all(format!("{}/reviews", url)).await
-	}
-
-	/// Returns all review requests associated with a pull request.
-	pub async fn requested_reviewers(
-		&self,
-		pull_request: &github::PullRequest,
-	) -> Result<github::RequestedReviewers> {
-		let url = pull_request.html_url.as_ref().context(error::MissingData)?;
-		self.client
-			.get(format!("{}/requested_reviewers", url))
-			.await
-	}
-
-	/// Requests a review from a user.
-	pub async fn request_reviews(
-		&self,
-		repo_name: &str,
-		pull_number: i64,
-		reviewers: &[&str],
-	) -> Result<github::PullRequest> {
-		let url = format!(
-			"{base_url}/repos/{owner}/{repo_name}/pulls/{pull_number}/requested_reviewers",
-			base_url = Self::BASE_URL,
-			owner = self.organization.login,
-			repo_name = repo_name,
-			pull_number = pull_number
-		);
-		let body = &serde_json::json!({ "reviewers": reviewers });
-
-		self.client.post(url, body).await
 	}
 
 	pub async fn project(

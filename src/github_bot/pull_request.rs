@@ -136,7 +136,7 @@ mod tests {
 			github_bot
 				.close_pull_request(
 					"parity-processbot",
-					created.number.expect("created pr id"),
+					created.number.expect("created pr number"),
 				)
 				.await
 				.expect("close_pull_request");
