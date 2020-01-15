@@ -461,6 +461,7 @@ pub async fn handle_pull_request(
 	core_devs: &[github::User],
 	github_to_matrix: &HashMap<String, String>,
 	projects: &[(github::Project, project_info::ProjectInfo)],
+	repo: &github::Repository,
 	pull_request: &github::PullRequest,
 ) -> Result<()> {
 	let pr_id = pull_request.id.context(error::MissingData)?;
@@ -469,10 +470,6 @@ pub async fn handle_pull_request(
 	let mut local_state = LocalState::get_or_new(db, db_key)?;
 
 	let author = pull_request.user.as_ref().context(error::MissingData)?;
-	let repo = pull_request
-		.repository
-		.as_ref()
-		.context(error::MissingData)?;
 
 	let (reviews, issues, mut statuses, requested_reviewers) = futures::try_join!(
 		github_bot.reviews(pull_request),
@@ -549,7 +546,8 @@ pub async fn handle_pull_request(
 			if issues.len() > 0 {
 				let issue = issues.first().unwrap();
 				if let Some((_, card)) =
-					issue_actor_and_project_card(&issue, github_bot).await?
+					issue_actor_and_project_card(&repo.name, &issue, github_bot)
+						.await?
 				{
 					let project: github::Project =
 						github_bot.project(&card).await?;

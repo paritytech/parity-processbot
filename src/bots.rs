@@ -52,6 +52,7 @@ pub async fn update(
 				core_devs,
 				github_to_matrix,
 				projects.as_ref(),
+				&repo,
 				&issue,
 				default_channel_id,
 			)
@@ -66,6 +67,7 @@ pub async fn update(
 				core_devs,
 				github_to_matrix,
 				projects.as_ref(),
+				&repo,
 				&pr,
 			)
 			.await?;

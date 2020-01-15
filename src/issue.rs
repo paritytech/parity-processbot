@@ -3,7 +3,6 @@ use crate::{
 	constants::*, duration_ticks::DurationTicks, error, github,
 	github_bot::GithubBot, matrix, matrix_bot::MatrixBot, project_info, Result,
 };
-use itertools::Itertools;
 use rocksdb::DB;
 use snafu::OptionExt;
 use std::collections::HashMap;
@@ -11,23 +10,13 @@ use std::time::{Duration, SystemTime};
 
 /// Return the project card attached to an issue, if there is one, and the user who attached it
 pub async fn issue_actor_and_project_card(
+	repo_name: &str,
 	issue: &github::Issue,
 	github_bot: &GithubBot,
 ) -> Result<Option<(github::User, github::ProjectCard)>> {
-	let repo = issue.repository.as_ref().context(error::MissingData)?;
-	let issue_number = issue.number.context(error::MissingData)?;
 	Ok(github_bot
-		.issue_events(&repo.name, issue_number)
+		.active_project_event(repo_name, &issue)
 		.await?
-		.into_iter()
-		.sorted_by_key(|ie| ie.created_at)
-		.rev()
-		.take_while(|issue_event| {
-			issue_event.event != Some(github::Event::RemovedFromProject)
-		})
-		.find(|issue_event| {
-			issue_event.event == Some(github::Event::AddedToProject)
-		})
 		.and_then(|mut issue_event| {
 			issue_event
 				.project_card
@@ -45,18 +34,9 @@ async fn author_special_attach_only_project(
 	actor: &github::User,
 ) -> Result<()> {
 	if let Some(backlog_column) = github_bot
-		.project_columns(project)
+		.project_column_by_name(project, PROJECT_BACKLOG_COLUMN_NAME)
 		.await?
-		.into_iter()
-		.find(|c| {
-			c.name
-				.as_ref()
-				.map(|name| {
-					name.to_lowercase()
-						== PROJECT_BACKLOG_COLUMN_NAME.to_lowercase()
-				})
-				.unwrap_or(false)
-		}) {
+	{
 		local_state.update_issue_project(
 			Some(IssueProject {
 				state: IssueProjectState::Confirmed,
@@ -498,6 +478,7 @@ pub async fn handle_issue(
 	core_devs: &[github::User],
 	github_to_matrix: &HashMap<String, String>,
 	projects: &[(github::Project, project_info::ProjectInfo)],
+	repo: &github::Repository,
 	issue: &github::Issue,
 	default_channel_id: &str,
 ) -> Result<()> {
@@ -513,7 +494,9 @@ pub async fn handle_issue(
 	if projects.is_empty() {
 		// there are no projects matching those listed in Projects.toml so do nothing
 	} else {
-		match issue_actor_and_project_card(issue, github_bot).await? {
+		match issue_actor_and_project_card(&repo.name, issue, github_bot)
+			.await?
+		{
 			None => {
 				let since = local_state
 					.issue_no_project_ping()

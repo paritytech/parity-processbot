@@ -3,6 +3,7 @@ use crate::{error, github, Result};
 use snafu::OptionExt;
 
 pub mod issue;
+pub mod project;
 pub mod pull_request;
 pub mod repository;
 pub mod review;
@@ -34,47 +35,6 @@ impl GithubBot {
 			client,
 			organization,
 		})
-	}
-
-	pub async fn project(
-		&self,
-		card: &github::ProjectCard,
-	) -> Result<github::Project> {
-		let url = card.project_url.as_ref().context(error::MissingData)?;
-		self.client.get(url).await
-	}
-
-	pub async fn project_column(
-		&self,
-		card: &github::ProjectCard,
-	) -> Result<github::ProjectColumn> {
-		self.client
-			.get(card.column_url.as_ref().context(error::MissingData)?)
-			.await
-	}
-
-	pub async fn project_columns(
-		&self,
-		project: &github::Project,
-	) -> Result<Vec<github::ProjectColumn>> {
-		self.client
-			.get(project.columns_url.as_ref().context(error::MissingData)?)
-			.await
-	}
-
-	/// Returns events associated with an issue.
-	pub async fn projects(
-		&self,
-		repo_name: &str,
-	) -> Result<Vec<github::Project>> {
-		self.client
-			.get(&format!(
-				"{base_url}/repos/{owner}/{repo_name}/projects",
-				base_url = Self::BASE_URL,
-				owner = self.organization.login,
-				repo_name = repo_name,
-			))
-			.await
 	}
 
 	/// Returns statuses associated with a pull request.
@@ -152,42 +112,6 @@ impl GithubBot {
 
 		self.client
 			.post_response(&url, &serde_json::json!({ "body": comment }))
-			.await
-			.map(|_| ())
-	}
-
-	pub async fn create_project_card<A>(
-		&self,
-		column_id: A,
-		content_id: i64,
-		content_type: github::ProjectCardContentType,
-	) -> Result<()>
-	where
-		A: std::fmt::Display,
-	{
-		let url = format!(
-			"{base}/projects/columns/{column_id}/cards",
-			base = Self::BASE_URL,
-			column_id = column_id,
-		);
-		let parameters = serde_json::json!({ "content_id": content_id, "content_type": content_type });
-		self.client
-			.post_response(&url, &parameters)
-			.await
-			.map(|_| ())
-	}
-
-	pub async fn delete_project_card<A>(&self, column_id: A) -> Result<()>
-	where
-		A: std::fmt::Display,
-	{
-		let url = format!(
-			"{base}/projects/columns/{column_id}",
-			base = Self::BASE_URL,
-			column_id = column_id,
-		);
-		self.client
-			.delete_response(&url, &serde_json::json!({}))
 			.await
 			.map(|_| ())
 	}

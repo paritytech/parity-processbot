@@ -74,6 +74,10 @@ impl Client {
 				reqwest::header::ACCEPT,
 				"application/vnd.github.starfox-preview+json",
 			)
+			.header(
+				reqwest::header::ACCEPT,
+				"application/vnd.github.inertia-preview+json",
+			)
 			.header(reqwest::header::USER_AGENT, "parity-processbot/0.0.1")
 			.build()
 			.context(error::Http)?;

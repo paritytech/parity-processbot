@@ -20,7 +20,7 @@ impl GithubBot {
 	/// Returns the issue associated with a pull request.
 	pub async fn pull_request_issues(
 		&self,
-                repo: &github::Repository,
+		repo: &github::Repository,
 		pull_request: &github::PullRequest,
 	) -> Result<Vec<github::Issue>> {
 		let body = pull_request.body.as_ref().context(error::MissingData)?;
@@ -28,7 +28,8 @@ impl GithubBot {
 		Ok(futures::future::join_all(
 			re.captures_iter(body)
 				.filter_map(|cap| {
-					cap.get(1).and_then(|x| dbg!(x.as_str()).parse::<i64>().ok())
+					cap.get(1)
+						.and_then(|x| dbg!(x.as_str()).parse::<i64>().ok())
 				})
 				.map(|num| {
 					self.client.get(format!(
