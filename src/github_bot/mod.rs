@@ -1,12 +1,11 @@
-use crate::{error, github, Result};
-
-use snafu::OptionExt;
+use crate::{github, Result};
 
 pub mod issue;
 pub mod project;
 pub mod pull_request;
 pub mod repository;
 pub mod review;
+pub mod team;
 
 pub struct GithubBot {
 	client: crate::http::Client,
@@ -67,23 +66,6 @@ impl GithubBot {
 				repo_name = repo_name,
 				path = path
 			))
-			.await
-	}
-
-	/// Returns the team with a given team slug (eg. 'core-devs').
-	pub async fn team(&self, slug: &str) -> Result<github::Team> {
-		let url = self.organization.url.as_ref().context(error::MissingData)?;
-
-		self.client.get(format!("{}/teams/{}", url, slug)).await
-	}
-
-	/// Returns members of the team with a id.
-	pub async fn team_members(
-		&self,
-		team_id: i64,
-	) -> Result<Vec<github::User>> {
-		self.client
-			.get(format!("{}/teams/{}/members", Self::BASE_URL, team_id))
 			.await
 	}
 }
