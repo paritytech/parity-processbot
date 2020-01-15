@@ -74,7 +74,7 @@ mod tests {
 				.await
 				.expect("create_pull_request");
 			github_bot
-				.request_reviews(&created, &["sjeohp"])
+				.request_reviews(&created, &["folsen"])
 				.await
 				.expect("request_reviews");
 			let requested_reviewers = github_bot
@@ -84,7 +84,7 @@ mod tests {
 			assert!(requested_reviewers
 				.users
 				.iter()
-				.any(|x| x.login == "sjeohp"));
+				.any(|x| x.login == "folsen"));
 			github_bot.reviews(&created).await.expect("reviews");
 			github_bot
 				.close_pull_request(
