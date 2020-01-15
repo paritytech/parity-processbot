@@ -2,8 +2,7 @@ use crate::{error, github, Result};
 
 use snafu::OptionExt;
 
-use serde::Serialize;
-
+pub mod issue;
 pub mod pull_request;
 
 pub struct GithubBot {
@@ -57,26 +56,6 @@ impl GithubBot {
 		self.client.get(url).await
 	}
 
-	/// Returns all of the pull requests in a single repository.
-	pub async fn pull_requests(
-		&self,
-		repo: &github::Repository,
-	) -> Result<Vec<github::PullRequest>> {
-		self.client
-			.get_all(repo.pulls_url.replace("{/number}", ""))
-			.await
-	}
-
-	/// Returns all of the issues in a single repository.
-	pub async fn issues(
-		&self,
-		repo: &github::Repository,
-	) -> Result<Vec<github::Issue>> {
-		self.client
-			.get_all(repo.issues_url.replace("{/number}", ""))
-			.await
-	}
-
 	/// Returns all reviews associated with a pull request.
 	pub async fn reviews(
 		&self,
@@ -116,19 +95,6 @@ impl GithubBot {
 		self.client.post(url, body).await
 	}
 
-	/// Returns the issue associated with a pull request.
-	pub async fn issue(
-		&self,
-		pull_request: &github::PullRequest,
-	) -> Result<Option<github::Issue>> {
-		if let Some(github::IssueLink { href }) = &pull_request.links.issue_link
-		{
-			self.client.get(href).await.map(Some)
-		} else {
-			Ok(None)
-		}
-	}
-
 	pub async fn project(
 		&self,
 		card: &github::ProjectCard,
@@ -156,23 +122,6 @@ impl GithubBot {
 	}
 
 	/// Returns events associated with an issue.
-	pub async fn issue_events(
-		&self,
-		repo_name: &str,
-		issue_number: i64,
-	) -> Result<Vec<github::IssueEvent>> {
-		self.client
-			.get(format!(
-			"{base_url}/repos/{owner}/{repo_name}/issues/{issue_number}/events",
-			base_url = Self::BASE_URL,
-			owner = self.organization.login,
-			repo_name = repo_name,
-			issue_number = issue_number
-		))
-			.await
-	}
-
-	/// Returns events associated with an issue.
 	pub async fn projects(
 		&self,
 		repo_name: &str,
@@ -192,8 +141,10 @@ impl GithubBot {
 		&self,
 		pull_request: &github::PullRequest,
 	) -> Result<Option<Vec<github::Status>>> {
-		if let Some(github::StatusesLink { href }) =
-			&pull_request.links.statuses_link
+		if let Some(github::StatusesLink { href }) = pull_request
+			.links
+			.as_ref()
+			.and_then(|links| links.statuses_link.as_ref())
 		{
 			self.client.get(href).await.map(Some)
 		} else {
@@ -260,78 +211,6 @@ impl GithubBot {
 
 		self.client
 			.post_response(&url, &serde_json::json!({ "body": comment }))
-			.await
-			.map(|_| ())
-	}
-
-	pub async fn assign_author<A, B>(
-		&self,
-		repo_name: A,
-		issue_id: i64,
-		author_login: B,
-	) -> Result<()>
-	where
-		A: AsRef<str>,
-		B: AsRef<str>,
-	{
-		let repo = repo_name.as_ref();
-		let author = author_login.as_ref();
-		let base = &self.organization.repos_url;
-		let url = format!(
-			"{base}/{repo}/issues/{issue_id}/assignees",
-			base = base,
-			repo = repo,
-			issue_id = issue_id
-		);
-
-		self.client
-			.post_response(&url, &serde_json::json!({ "assignees": [author] }))
-			.await
-			.map(|_| ())
-	}
-
-	pub async fn close_issue<A>(
-		&self,
-		repo_name: A,
-		issue_id: i64,
-	) -> Result<()>
-	where
-		A: AsRef<str>,
-	{
-		let repo = repo_name.as_ref();
-		let base = &self.organization.repos_url;
-		let url = format!(
-			"{base}/repos/{owner}/{repo}/issues/{issue_id}",
-			base = base,
-			owner = self.organization.login,
-			repo = repo,
-			issue_id = issue_id
-		);
-		self.client
-			.patch_response(&url, &serde_json::json!({ "state": "closed" }))
-			.await
-			.map(|_| ())
-	}
-
-	pub async fn create_issue<A, B>(
-		&self,
-		repo_name: A,
-		parameters: &B,
-	) -> Result<()>
-	where
-		A: AsRef<str>,
-		B: Serialize,
-	{
-		let repo = repo_name.as_ref();
-		let base = &self.organization.repos_url;
-		let url = format!(
-			"{base}/repos/{owner}/{repo}/issues",
-			base = base,
-			owner = self.organization.login,
-			repo = repo,
-		);
-		self.client
-			.post_response(&url, parameters)
 			.await
 			.map(|_| ())
 	}

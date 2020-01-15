@@ -5,6 +5,17 @@ use snafu::ResultExt;
 use super::GithubBot;
 
 impl GithubBot {
+	/// Returns all of the pull requests in a single repository.
+	pub async fn pull_requests(
+		&self,
+		repo: &github::Repository,
+	) -> Result<Vec<github::PullRequest>> {
+		self.client
+			.get_all(repo.pulls_url.replace("{/number}", ""))
+			.await
+	}
+
+	/// Creates a new pull request to merge `head` into `base`.
 	pub async fn create_pull_request<A>(
 		&self,
 		repo_name: A,
@@ -36,6 +47,7 @@ impl GithubBot {
 			.context(error::Http)
 	}
 
+	/// Merges a pull request.
 	pub async fn merge_pull_request<A>(
 		&self,
 		repo_name: A,
@@ -57,6 +69,7 @@ impl GithubBot {
 			.map(|_| ())
 	}
 
+	/// Closes a pull request.
 	pub async fn close_pull_request<A>(
 		&self,
 		repo_name: A,
@@ -116,7 +129,10 @@ mod tests {
 				.pull_requests(&repo)
 				.await
 				.expect("pull_requests");
-			assert!(prs.iter().any(|pr| pr.title == "testing pr"));
+			assert!(prs.iter().any(|pr| pr
+				.title
+				.as_ref()
+				.map_or(false, |x| x == "testing pr")));
 			github_bot
 				.close_pull_request(
 					"parity-processbot",
@@ -128,7 +144,10 @@ mod tests {
 				.pull_requests(&repo)
 				.await
 				.expect("pull_requests");
-			assert!(!prs.iter().any(|pr| pr.title == "testing pr"));
+			assert!(!prs.iter().any(|pr| pr
+				.title
+				.as_ref()
+				.map_or(false, |x| x == "testing pr")));
 		});
 	}
 }

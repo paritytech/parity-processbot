@@ -39,7 +39,13 @@ async fn require_reviewers(
 				.map_or(false, |x| &u.login == x)
 		});
 
-	let author_info = project_info.author_info(&pull_request.user.login);
+	let author_info = project_info.author_info(
+		&pull_request
+			.user
+			.as_ref()
+			.context(error::MissingData)?
+			.login,
+	);
 	let pr_html_url =
 		pull_request.html_url.as_ref().context(error::MissingData)?;
 	let pr_number = pull_request.number.context(error::MissingData)?;
@@ -156,7 +162,14 @@ fn author_is_core_unassigned_ticks_none(
 				&ISSUE_ASSIGNEE_NOTIFICATION
 					.replace("{1}", &pr_html_url)
 					.replace("{2}", &issue_html_url)
-					.replace("{3}", &pull_request.user.login),
+					.replace(
+						"{3}",
+						&pull_request
+							.user
+							.as_ref()
+							.context(error::MissingData)?
+							.login,
+					),
 			)?;
 		} else {
 			log::warn!(
@@ -176,7 +189,14 @@ fn author_is_core_unassigned_ticks_none(
 			&ISSUE_ASSIGNEE_NOTIFICATION
 				.replace("{1}", &pr_html_url)
 				.replace("{2}", &issue_html_url)
-				.replace("{3}", &pull_request.user.login),
+				.replace(
+					"{3}",
+					&pull_request
+						.user
+						.as_ref()
+						.context(error::MissingData)?
+						.login,
+				),
 		)?;
 	} else {
 		log::warn!(
@@ -211,7 +231,14 @@ fn author_is_core_unassigned_ticks_passed(
 				&ISSUE_ASSIGNEE_NOTIFICATION
 					.replace("{1}", &pr_html_url)
 					.replace("{2}", &issue_html_url)
-					.replace("{3}", &pull_request.user.login),
+					.replace(
+						"{3}",
+						&pull_request
+							.user
+							.as_ref()
+							.context(error::MissingData)?
+							.login,
+					),
 			)?;
 		} else {
 			matrix_bot.send_public_message(
@@ -219,7 +246,14 @@ fn author_is_core_unassigned_ticks_passed(
 				&ISSUE_ASSIGNEE_NOTIFICATION
 					.replace("{1}", &pr_html_url)
 					.replace("{2}", &issue_html_url)
-					.replace("{3}", &pull_request.user.login),
+					.replace(
+						"{3}",
+						&pull_request
+							.user
+							.as_ref()
+							.context(error::MissingData)?
+							.login,
+					),
 			)?;
 		}
 	}
@@ -352,7 +386,7 @@ async fn handle_pull_request_with_issue_and_project(
 	reviews: &[github::Review],
 	requested_reviewers: &github::RequestedReviewers,
 ) -> Result<()> {
-	let author = &pull_request.user;
+	let author = pull_request.user.as_ref().context(error::MissingData)?;
 	let author_info = project_info.author_info(&author.login);
 	let author_is_core = core_devs.iter().any(|u| u.id == author.id);
 	let author_is_assignee = issue
@@ -376,7 +410,7 @@ async fn handle_pull_request_with_issue_and_project(
 		if author_info.is_special() {
 			// assign the issue to the author
 			github_bot
-				.assign_author(&repo.name, issue_id, &author.login)
+				.assign_issue(&repo.name, issue_id, &author.login)
 				.await?;
 			require_reviewers(
 				&pull_request,
@@ -443,7 +477,7 @@ pub async fn handle_pull_request(
 	let db_key = format!("{}", pr_id).into_bytes();
 	let mut local_state = LocalState::get_or_new(db, db_key)?;
 
-	let author = &pull_request.user;
+	let author = pull_request.user.as_ref().context(error::MissingData)?;
 	let repo = pull_request
 		.repository
 		.as_ref()

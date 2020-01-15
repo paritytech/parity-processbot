@@ -14,7 +14,7 @@ pub async fn issue_actor_and_project_card(
 	issue: &github::Issue,
 	github_bot: &GithubBot,
 ) -> Result<Option<(github::User, github::ProjectCard)>> {
-	let repo = &issue.repository;
+	let repo = issue.repository.as_ref().context(error::MissingData)?;
 	let issue_number = issue.number.context(error::MissingData)?;
 	Ok(github_bot
 		.issue_events(&repo.name, issue_number)
@@ -87,7 +87,6 @@ async fn author_core_no_project(
 	default_channel_id: &str,
 	since: Option<Duration>,
 ) -> Result<()> {
-	let issue_id = issue.id.context(error::MissingData)?;
 	let issue_html_url = issue.html_url.as_ref().context(error::MissingData)?;
 
 	let ticks = since.ticks(ISSUE_NO_PROJECT_CORE_PING_PERIOD);
@@ -108,13 +107,27 @@ async fn author_core_no_project(
 				// attached, move the issue to Core Sorting
 				// repository
 				github_bot
-					.close_issue(&issue.repository.name, issue_id)
+					.close_issue(
+						&issue
+							.repository
+							.as_ref()
+							.context(error::MissingData)?
+							.name,
+						issue.number.context(error::MissingData)?,
+					)
 					.await?;
-				let params = serde_json::json!({
-						"title": issue.title,
-						"body": issue.body.as_ref().unwrap_or(&"".to_owned())
-				});
-				github_bot.create_issue(CORE_SORTING_REPO, &params).await?;
+				github_bot
+					.create_issue(
+						CORE_SORTING_REPO,
+						issue.title.as_ref(),
+						issue.body.as_ref().unwrap_or(&"".to_owned()),
+						&issue
+							.assignee
+							.as_ref()
+							.map(|a| a.login.as_ref())
+							.unwrap_or(String::new().as_ref()),
+					)
+					.await?;
 				local_state.delete(db)?;
 			} else if (local_state.issue_no_project_npings()) < i {
 				local_state.update_issue_no_project_npings(i, db)?;
@@ -138,7 +151,6 @@ async fn author_unknown_no_project(
 	default_channel_id: &str,
 	since: Option<Duration>,
 ) -> Result<()> {
-	let issue_id = issue.id.context(error::MissingData)?;
 	let issue_html_url = issue.html_url.as_ref().context(error::MissingData)?;
 
 	let ticks = since.ticks(ISSUE_NO_PROJECT_NON_CORE_PING_PERIOD);
@@ -160,13 +172,27 @@ async fn author_unknown_no_project(
 			// attached, move the issue to Core Sorting
 			// repository.
 			github_bot
-				.close_issue(&issue.repository.name, issue_id)
+				.close_issue(
+					&issue
+						.repository
+						.as_ref()
+						.context(error::MissingData)?
+						.name,
+					issue.number.context(error::MissingData)?,
+				)
 				.await?;
-			let params = serde_json::json!({
-					"title": issue.title,
-					"body": issue.body.as_ref().unwrap_or(&"".to_owned())
-			});
-			github_bot.create_issue(CORE_SORTING_REPO, &params).await?;
+			github_bot
+				.create_issue(
+					CORE_SORTING_REPO,
+					issue.title.as_ref(),
+					issue.body.as_ref().unwrap_or(&"".to_owned()),
+					&issue
+						.assignee
+						.as_ref()
+						.map(|a| a.login.as_ref())
+						.unwrap_or(String::new().as_ref()),
+				)
+				.await?;
 			local_state.delete(db)?;
 		}
 	}
