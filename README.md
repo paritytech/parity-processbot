@@ -24,3 +24,10 @@ cargo build
 ```
 cargo test
 ```
+
+To test the GithubBot: 
+```
+cargo test -- --ignored --test-threads=1
+```
+make sure `GITHUB_ORGANIZATION` and `GITHUB_TOKEN` are set correctly in `.env`.
+

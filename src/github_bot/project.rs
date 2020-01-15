@@ -171,7 +171,7 @@ mod tests {
 				.expect("project_column_by_name")
 				.expect("project_column_by_name is some");
 
-			let _created_card = github_bot
+			let created_card = github_bot
 				.create_project_card(
 					backlog_column.id,
 					created_issue.id.expect("created issue id"),
@@ -179,6 +179,14 @@ mod tests {
 				)
 				.await
 				.expect("create_project_card");
+			assert_eq!(
+				project.id,
+				github_bot
+					.project(&created_card)
+					.await
+					.expect("project with card")
+					.id
+			);
 
 			let project_card = github_bot
 				.active_project_event("parity-processbot", &created_issue)
@@ -187,6 +195,14 @@ mod tests {
 				.expect("active_project_event option")
 				.project_card
 				.expect("project card");
+			assert_eq!(
+				project.id,
+				github_bot
+					.project(&project_card)
+					.await
+					.expect("project with card")
+					.id
+			);
 
 			github_bot
 				.delete_project_card(project_card.id.expect("project card id"))
