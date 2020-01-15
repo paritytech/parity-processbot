@@ -1,12 +1,14 @@
 use crate::{error, github, Result};
 
-use snafu::ResultExt;
+use snafu::{OptionExt, ResultExt};
 
 use super::GithubBot;
 
+use regex::Regex;
+
 impl GithubBot {
 	/// Returns all of the issues in a single repository.
-	pub async fn issues(
+	pub async fn repository_issues(
 		&self,
 		repo: &github::Repository,
 	) -> Result<Vec<github::Issue>> {
@@ -16,19 +18,32 @@ impl GithubBot {
 	}
 
 	/// Returns the issue associated with a pull request.
-	pub async fn issue(
+	pub async fn pull_request_issues(
 		&self,
+                repo: &github::Repository,
 		pull_request: &github::PullRequest,
-	) -> Result<Option<github::Issue>> {
-		if let Some(github::IssueLink { href }) = pull_request
-			.links
-			.as_ref()
-			.and_then(|links| links.issue_link.as_ref())
-		{
-			self.client.get(href).await.map(Some)
-		} else {
-			Ok(None)
-		}
+	) -> Result<Vec<github::Issue>> {
+		let body = pull_request.body.as_ref().context(error::MissingData)?;
+		let re = Regex::new(r"#([0-9]+)").unwrap();
+		Ok(futures::future::join_all(
+			re.captures_iter(body)
+				.filter_map(|cap| {
+					cap.get(1).and_then(|x| dbg!(x.as_str()).parse::<i64>().ok())
+				})
+				.map(|num| {
+					self.client.get(format!(
+						"{base_url}/repos/{owner}/{repo}/issues/{issue_number}",
+						base_url = Self::BASE_URL,
+						owner = self.organization.login,
+						repo = &repo.name,
+						issue_number = num
+					))
+				}),
+		)
+		.await
+		.into_iter()
+		.filter_map(|res| res.ok())
+		.collect::<Vec<github::Issue>>())
 	}
 
 	/// Returns events associated with an issue.
@@ -147,7 +162,7 @@ mod tests {
 				.repository("parity-processbot")
 				.await
 				.expect("repository");
-			let created = github_bot
+			let created_issue = github_bot
 				.create_issue(
 					"parity-processbot",
 					"testing issue",
@@ -155,18 +170,47 @@ mod tests {
 					"sjeohp",
 				)
 				.await
-				.expect("create_pull_request");
-			let issues = github_bot.issues(&repo).await.expect("issues");
+				.expect("create_issue");
+			let issues =
+				github_bot.repository_issues(&repo).await.expect("issues");
 			assert!(issues.iter().any(|is| is.title == "testing issue"));
+			let created_pr = dbg!(github_bot
+				.create_pull_request(
+					"parity-processbot",
+					"testing pr",
+					&format!(
+						"Fixes #{}",
+						created_issue.number.expect("created issue number")
+					),
+					"testing_branch",
+					"other_testing_branch",
+				)
+				.await
+				.expect("create_pull_request"));
+			let pr_issues = github_bot
+				.pull_request_issues(&repo, &created_pr)
+				.await
+				.expect("issue");
+			assert!(pr_issues.iter().any(|x| x.number == created_issue.number));
 			github_bot
 				.close_issue(
 					"parity-processbot",
-					created.number.expect("created issue number"),
+					created_issue.number.expect("created issue number"),
 				)
 				.await
 				.expect("close_pull_request");
-			let issues = github_bot.issues(&repo).await.expect("pull_requests");
+			let issues = github_bot
+				.repository_issues(&repo)
+				.await
+				.expect("pull_requests");
 			assert!(!issues.iter().any(|pr| pr.title == "testing issue"));
+			github_bot
+				.close_pull_request(
+					"parity-processbot",
+					created_pr.number.expect("created pr number"),
+				)
+				.await
+				.expect("close_pull_request");
 		});
 	}
 }

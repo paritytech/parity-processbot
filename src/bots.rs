@@ -44,7 +44,7 @@ pub async fn update(
 			})
 			.collect::<Vec<(github::Project, project_info::ProjectInfo)>>();
 
-		for issue in github_bot.issues(&repo).await? {
+		for issue in github_bot.repository_issues(&repo).await? {
 			handle_issue(
 				db,
 				github_bot,

@@ -474,9 +474,9 @@ pub async fn handle_pull_request(
 		.as_ref()
 		.context(error::MissingData)?;
 
-	let (reviews, issue, mut statuses, requested_reviewers) = futures::try_join!(
+	let (reviews, issues, mut statuses, requested_reviewers) = futures::try_join!(
 		github_bot.reviews(pull_request),
-		github_bot.issue(pull_request),
+		github_bot.pull_request_issues(repo, pull_request),
 		github_bot.statuses(pull_request),
 		github_bot.requested_reviewers(pull_request)
 	)?;
@@ -486,7 +486,8 @@ pub async fn handle_pull_request(
 		1 => {
 			let (_project, project_info) = projects.last().unwrap();
 			let author_info = project_info.author_info(&author.login);
-			if let Some(issue) = issue {
+			if issues.len() > 0 {
+				let issue = issues.first().unwrap();
 				handle_pull_request_with_issue_and_project(
 					db,
 					&mut local_state,
@@ -545,7 +546,8 @@ pub async fn handle_pull_request(
 			}
 		}
 		_ => {
-			if let Some(issue) = issue {
+			if issues.len() > 0 {
+				let issue = issues.first().unwrap();
 				if let Some((_, card)) =
 					issue_actor_and_project_card(&issue, github_bot).await?
 				{
