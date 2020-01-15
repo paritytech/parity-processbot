@@ -530,9 +530,9 @@ pub async fn handle_pull_request(
 					// leave a message that a corresponding issue must exist for
 					// each PR close the PR
 					github_bot
-						.add_comment(
+						.create_issue_comment(
 							&repo.name,
-							pr_id,
+							pr_number,
 							&ISSUE_MUST_EXIST_MESSAGE,
 						)
 						.await?;
@@ -575,9 +575,9 @@ pub async fn handle_pull_request(
 						.await?;
 					} else {
 						github_bot
-							.add_comment(
+							.create_issue_comment(
 								&repo.name,
-								pr_id,
+								pr_number,
 								&ISSUE_MUST_BE_VALID_MESSAGE,
 							)
 							.await?;
@@ -587,9 +587,9 @@ pub async fn handle_pull_request(
 					}
 				} else {
 					github_bot
-						.add_comment(
+						.create_issue_comment(
 							&repo.name,
-							pr_id,
+							pr_number,
 							&ISSUE_MUST_BE_VALID_MESSAGE,
 						)
 						.await?;
@@ -599,9 +599,9 @@ pub async fn handle_pull_request(
 				}
 			} else {
 				github_bot
-					.add_comment(
+					.create_issue_comment(
 						&repo.name,
-						pr_id,
+						pr_number,
 						&ISSUE_MUST_BE_VALID_MESSAGE,
 					)
 					.await?;

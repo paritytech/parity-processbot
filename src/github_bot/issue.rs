@@ -93,6 +93,35 @@ impl GithubBot {
 			.context(error::Http)
 	}
 
+	/// Adds a comment to an issue.
+	pub async fn create_issue_comment<A, B>(
+		&self,
+		repo_name: A,
+		issue_number: i64,
+		comment: B,
+	) -> Result<()>
+	where
+		A: AsRef<str>,
+		B: AsRef<str>,
+	{
+		log::info!("Adding comment");
+		let url = format!(
+			"{base}/repos/{org}/{repo}/issues/{issue_number}/comments",
+			base = Self::BASE_URL,
+			org = self.organization.login,
+			repo = repo_name.as_ref(),
+			issue_number = issue_number
+		);
+		log::info!("POST {}", url);
+		self.client
+			.post_response(
+				&url,
+				&serde_json::json!({ "body": comment.as_ref() }),
+			)
+			.await
+			.map(|_| ())
+	}
+
 	pub async fn assign_issue<A, B>(
 		&self,
 		repo_name: A,
@@ -175,7 +204,15 @@ mod tests {
 			let issues =
 				github_bot.repository_issues(&repo).await.expect("issues");
 			assert!(issues.iter().any(|is| is.title == "testing issue"));
-			let created_pr = dbg!(github_bot
+			github_bot
+				.create_issue_comment(
+					"parity-processbot",
+					created_issue.number.expect("created issue id"),
+					"testing comment",
+				)
+				.await
+				.expect("create_issue_comment");
+			let created_pr = github_bot
 				.create_pull_request(
 					"parity-processbot",
 					"testing pr",
@@ -187,7 +224,7 @@ mod tests {
 					"other_testing_branch",
 				)
 				.await
-				.expect("create_pull_request"));
+				.expect("create_pull_request");
 			let pr_issues = github_bot
 				.pull_request_issues(&repo, &created_pr)
 				.await

@@ -86,33 +86,4 @@ impl GithubBot {
 			.get(format!("{}/teams/{}/members", Self::BASE_URL, team_id))
 			.await
 	}
-
-	/// Creates a comment in the repo
-	pub async fn add_comment<A, B>(
-		&self,
-		repo_name: A,
-		issue_id: i64,
-		comment: B,
-	) -> Result<()>
-	where
-		A: AsRef<str>,
-		B: AsRef<str>,
-	{
-		log::info!("Adding comment");
-		let repo = repo_name.as_ref();
-		let comment = comment.as_ref();
-		let url = format!(
-			"{base}/repos/{org}/{repo}/issues/{issue_id}/comments",
-			base = Self::BASE_URL,
-			org = self.organization.login,
-			repo = repo,
-			issue_id = issue_id
-		);
-		log::info!("POST {}", url);
-
-		self.client
-			.post_response(&url, &serde_json::json!({ "body": comment }))
-			.await
-			.map(|_| ())
-	}
 }
