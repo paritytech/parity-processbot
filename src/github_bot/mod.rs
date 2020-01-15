@@ -4,6 +4,7 @@ use snafu::OptionExt;
 
 pub mod issue;
 pub mod pull_request;
+pub mod repository;
 
 pub struct GithubBot {
 	client: crate::http::Client,
@@ -32,28 +33,6 @@ impl GithubBot {
 			client,
 			organization,
 		})
-	}
-
-	/// Returns all of the repositories managed by the organization.
-	pub async fn repositories(&self) -> Result<Vec<github::Repository>> {
-		self.client.get_all(&self.organization.repos_url).await
-	}
-
-	/// Returns a repository with the given name.
-	pub async fn repository<A>(
-		&self,
-		repo_name: A,
-	) -> Result<github::Repository>
-	where
-		A: std::fmt::Display,
-	{
-		let url = format!(
-			"{base_url}/repos/{owner}/{repo_name}",
-			base_url = Self::BASE_URL,
-			owner = self.organization.login,
-			repo_name = repo_name
-		);
-		self.client.get(url).await
 	}
 
 	/// Returns all reviews associated with a pull request.
