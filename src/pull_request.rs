@@ -463,7 +463,14 @@ pub async fn handle_pull_request(
 	match projects.len() {
 		0 => { /* no process info so do nothing */ }
 		1 => {
-			let (_project, project_info) = projects.last().unwrap();
+			let (project, project_info) = projects.last().unwrap();
+			log::info!(
+                                "Handling pull request '{issue_title:?}' in project '{project_name}' in repo '{repo_name}'",
+                                issue_title = pull_request.title,
+                                project_name = project.name,
+                                repo_name = repo.name
+                        );
+
 			let author_info = project_info.author_info(&author.login);
 			if issues.len() > 0 {
 				let issue = issues.first().unwrap();
@@ -534,6 +541,13 @@ pub async fn handle_pull_request(
 					let project: github::Project =
 						github_bot.project(&card).await?;
 
+					log::info!(
+                        "Handling pull request '{issue_title:?}' in project '{project_name}' in repo '{repo_name}'",
+                        issue_title = pull_request.title,
+                        project_name = project.name,
+                        repo_name = repo.name
+                );
+
 					if let Some(project_info) = projects
 						.iter()
 						.find(|(p, _)| &p.name == &project.name)
@@ -568,6 +582,12 @@ pub async fn handle_pull_request(
 							.await?;
 					}
 				} else {
+					log::info!(
+                        "Pull request '{issue_title:?}' addresses an issue with project in repo '{repo_name}'",
+                        issue_title = pull_request.title,
+                        repo_name = repo.name
+                );
+
 					github_bot
 						.create_issue_comment(
 							&repo.name,
@@ -580,6 +600,11 @@ pub async fn handle_pull_request(
 						.await?;
 				}
 			} else {
+				log::info!(
+                        "Pull request '{issue_title:?}' addresses no issue in repo '{repo_name}'",
+                        issue_title = pull_request.title,
+                        repo_name = repo.name
+                );
 				github_bot
 					.create_issue_comment(
 						&repo.name,

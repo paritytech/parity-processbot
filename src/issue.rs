@@ -498,6 +498,12 @@ pub async fn handle_issue(
 			.await?
 		{
 			None => {
+				log::info!(
+                        "Handling issue '{issue_title}' with no project in repo '{repo_name}'",
+                        issue_title = issue.title,
+                        repo_name = repo.name
+                );
+
 				let since = local_state
 					.issue_no_project_ping()
 					.and_then(|ping| ping.elapsed().ok());
@@ -555,6 +561,13 @@ pub async fn handle_issue(
 					github_bot.project(&card).await?;
 				let project_column: github::ProjectColumn =
 					github_bot.project_column(&card).await?;
+
+				log::info!(
+                        "Handling issue '{issue_title}' in project '{project_name}' in repo '{repo_name}'",
+                        issue_title = issue.title,
+                        project_name = project.name,
+                        repo_name = repo.name
+                );
 
 				if let Some(project_info) = projects
 					.iter()

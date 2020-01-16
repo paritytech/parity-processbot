@@ -25,52 +25,57 @@ pub async fn update(
 	default_channel_id: &str,
 ) -> Result<()> {
 	for repo in github_bot.repositories().await? {
-		let repo_projects = github_bot.projects(&repo.name).await?;
+		if let Ok(repo_projects) = github_bot.projects(&repo.name).await {
+			// projects in Projects.toml are useless if they do not match a project
+			// in the repo
+			let projects = github_bot
+				.contents(&repo.name, "Projects.toml")
+				.await
+				.ok()
+				.and_then(projects_from_contents)
+				.into_iter()
+				.flat_map(|p| p)
+				.filter_map(|(key, project_info)| {
+					repo_projects
+						.iter()
+						.find(|rp| rp.name == key)
+						.map(|rp| (rp.clone(), project_info))
+				})
+				.collect::<Vec<(github::Project, project_info::ProjectInfo)>>();
 
-		// projects in Projects.toml are useless if they do not match a project
-		// in the repo
-		let projects = github_bot
-			.contents(&repo.name, "Projects.toml")
-			.await
-			.ok()
-			.and_then(projects_from_contents)
-			.into_iter()
-			.flat_map(|p| p)
-			.filter_map(|(key, project_info)| {
-				repo_projects
-					.iter()
-					.find(|rp| rp.name == key)
-					.map(|rp| (rp.clone(), project_info))
-			})
-			.collect::<Vec<(github::Project, project_info::ProjectInfo)>>();
+			for issue in github_bot.repository_issues(&repo).await? {
+				handle_issue(
+					db,
+					github_bot,
+					matrix_bot,
+					core_devs,
+					github_to_matrix,
+					projects.as_ref(),
+					&repo,
+					&issue,
+					default_channel_id,
+				)
+				.await?;
+			}
 
-		for issue in github_bot.repository_issues(&repo).await? {
-			handle_issue(
-				db,
-				github_bot,
-				matrix_bot,
-				core_devs,
-				github_to_matrix,
-				projects.as_ref(),
-				&repo,
-				&issue,
-				default_channel_id,
-			)
-			.await?;
-		}
-
-		for pr in github_bot.pull_requests(&repo).await? {
-			handle_pull_request(
-				db,
-				github_bot,
-				matrix_bot,
-				core_devs,
-				github_to_matrix,
-				projects.as_ref(),
-				&repo,
-				&pr,
-			)
-			.await?;
+			for pr in github_bot.pull_requests(&repo).await? {
+				handle_pull_request(
+					db,
+					github_bot,
+					matrix_bot,
+					core_devs,
+					github_to_matrix,
+					projects.as_ref(),
+					&repo,
+					&pr,
+				)
+				.await?;
+			}
+		} else {
+			log::info!(
+				"Projects are disabled for repo '{repo_name}'",
+				repo_name = repo.name
+			);
 		}
 	}
 	Ok(())

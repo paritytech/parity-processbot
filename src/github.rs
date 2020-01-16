@@ -346,7 +346,7 @@ pub struct Head {
 	pub ref_field: String,
 	pub sha: String,
 	pub user: User,
-	pub repo: Repository,
+	pub repo: Option<Repository>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -446,7 +446,7 @@ pub struct Base {
 	pub ref_field: String,
 	pub sha: String,
 	pub user: User,
-	pub repo: Repository,
+	pub repo: Option<Repository>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
