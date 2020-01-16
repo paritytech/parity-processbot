@@ -441,22 +441,22 @@ pub struct Permissions {
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Base {
-	label: String,
+	pub label: String,
 	#[serde(rename = "ref")]
-	ref_field: String,
-	sha: String,
-	user: User,
-	repo: Repository,
+	pub ref_field: String,
+	pub sha: String,
+	pub user: User,
+	pub repo: Repository,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Status {
 	pub id: Option<i64>,
 	pub node_id: Option<String>,
-	pub avatar_url: String,
+	pub avatar_url: Option<String>,
 	pub url: Option<String>,
-	pub created_at: chrono::DateTime<chrono::Utc>,
-	pub updated_at: chrono::DateTime<chrono::Utc>,
+	pub created_at: Option<chrono::DateTime<chrono::Utc>>,
+	pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
 	pub state: StatusState,
 	pub creator: Option<User>,
 }

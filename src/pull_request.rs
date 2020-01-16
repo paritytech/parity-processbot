@@ -292,7 +292,7 @@ async fn handle_status(
 	project_info: &project_info::ProjectInfo,
 	repo: &github::Repository,
 	pull_request: &github::PullRequest,
-	statuses: &mut [github::Status],
+	status: &github::Status,
 	reviews: &[github::Review],
 ) -> Result<()> {
 	let pr_number = pull_request.number.context(error::MissingData)?;
@@ -308,63 +308,45 @@ async fn handle_status(
 					.find(|r| &r.user.login == owner_login)
 					.map_or(false, |r| r.state.as_deref() == Some("APPROVED"))
 			});
-	let status = {
-		statuses.sort_by_key(|s| s.updated_at);
-		statuses.last()
-	};
 
-	if let Some(ref status) = status {
-		match status.state {
-			github::StatusState::Failure => {
-				// notify PR author by PM every 24 hours
-				let should_ping = local_state.status_failure_ping().map_or(
-					true,
-					|ping_time| {
-						ping_time.elapsed().ok().map_or(true, |elapsed| {
-							elapsed.as_secs() > STATUS_FAILURE_PING_PERIOD
-						})
-					},
-				);
+	match status.state {
+		github::StatusState::Failure => {
+			// notify PR author by PM every 24 hours
+			let should_ping =
+				local_state.status_failure_ping().map_or(true, |ping_time| {
+					ping_time.elapsed().ok().map_or(true, |elapsed| {
+						elapsed.as_secs() > STATUS_FAILURE_PING_PERIOD
+					})
+				});
 
-				if should_ping {
-					local_state.update_status_failure_ping(
-						Some(SystemTime::now()),
-						db,
+			if should_ping {
+				local_state
+					.update_status_failure_ping(Some(SystemTime::now()), db)?;
+				if let Some(ref matrix_id) = project_info
+					.owner_or_delegate()
+					.and_then(|owner_login| github_to_matrix.get(owner_login))
+					.and_then(|matrix_id| matrix::parse_id(matrix_id))
+				{
+					matrix_bot.send_private_message(
+						matrix_id,
+						&STATUS_FAILURE_NOTIFICATION
+							.replace("{1}", &format!("{}", pr_html_url)),
 					)?;
-					if let Some(ref matrix_id) = project_info
-						.owner_or_delegate()
-						.and_then(|owner_login| {
-							github_to_matrix.get(owner_login)
-						})
-						.and_then(|matrix_id| matrix::parse_id(matrix_id))
-					{
-						matrix_bot.send_private_message(
-							matrix_id,
-							&STATUS_FAILURE_NOTIFICATION
-								.replace("{1}", &format!("{}", pr_html_url)),
-						)?;
-					} else {
-						log::warn!("Couldn't send a message to the project owner; either their Github or Matrix handle is not set in Bamboo");
-					}
-				}
-			}
-			github::StatusState::Success => {
-				if owner_or_delegate_approved {
-					// merge & delete branch
-					github_bot
-						.merge_pull_request(&repo.name, pr_number)
-						.await?;
-					local_state.delete(db)?;
 				} else {
-					local_state.update_status_failure_ping(None, db)?;
+					log::warn!("Couldn't send a message to the project owner; either their Github or Matrix handle is not set in Bamboo");
 				}
 			}
-			github::StatusState::Pending => {}
 		}
-	} else {
-		// pull request has no status
-		// should never happen
-		unimplemented!()
+		github::StatusState::Success => {
+			if owner_or_delegate_approved {
+				// merge & delete branch
+				github_bot.merge_pull_request(&repo.name, pr_number).await?;
+				local_state.delete(db)?;
+			} else {
+				local_state.update_status_failure_ping(None, db)?;
+			}
+		}
+		github::StatusState::Pending => {}
 	}
 	Ok(())
 }
@@ -380,7 +362,7 @@ async fn handle_pull_request_with_issue_and_project(
 	repo: &github::Repository,
 	pull_request: &github::PullRequest,
 	issue: &github::Issue,
-	statuses: &mut [github::Status],
+	status: &github::Status,
 	reviews: &[github::Review],
 	requested_reviewers: &github::RequestedReviewers,
 ) -> Result<()> {
@@ -447,7 +429,7 @@ async fn handle_pull_request_with_issue_and_project(
 		&project_info,
 		&repo,
 		&pull_request,
-		statuses,
+		status,
 		&reviews,
 	)
 	.await?;
@@ -471,10 +453,10 @@ pub async fn handle_pull_request(
 
 	let author = pull_request.user.as_ref().context(error::MissingData)?;
 
-	let (reviews, issues, mut statuses, requested_reviewers) = futures::try_join!(
+	let (reviews, issues, status, requested_reviewers) = futures::try_join!(
 		github_bot.reviews(pull_request),
 		github_bot.pull_request_issues(repo, pull_request),
-		github_bot.statuses(pull_request),
+		github_bot.status(&repo.name, pull_request),
 		github_bot.requested_reviewers(pull_request)
 	)?;
 
@@ -496,7 +478,7 @@ pub async fn handle_pull_request(
 					repo,
 					pull_request,
 					&issue,
-					&mut statuses,
+					&status,
 					&reviews,
 					&requested_reviewers,
 				)
@@ -522,7 +504,7 @@ pub async fn handle_pull_request(
 						&project_info,
 						&repo,
 						&pull_request,
-						statuses.as_mut(),
+						&status,
 						&reviews,
 					)
 					.await?;
@@ -568,7 +550,7 @@ pub async fn handle_pull_request(
 							repo,
 							pull_request,
 							&issue,
-							statuses.as_mut(),
+							&status,
 							&reviews,
 							&requested_reviewers,
 						)

@@ -39,13 +39,19 @@ impl GithubBot {
 	}
 
 	/// Returns statuses associated with a pull request.
-	pub async fn statuses(
+	pub async fn status(
 		&self,
+		repo_name: &str,
 		pull_request: &github::PullRequest,
-	) -> Result<Vec<github::Status>> {
-		self.client
-			.get(pull_request.statuses_url.as_ref().context(error::MissingData)?)
-			.await
+	) -> Result<github::Status> {
+		let url = format!(
+			"{base_url}/repos/{owner}/{repo}/commits/{sha}/status",
+			base_url = Self::BASE_URL,
+			owner = self.organization.login,
+			repo = repo_name,
+			sha = &pull_request.head.as_ref().context(error::MissingData)?.sha,
+		);
+		self.client.get(url).await
 	}
 
 	/// Returns the contents of a file in a repository.
@@ -93,9 +99,11 @@ mod tests {
 				)
 				.await
 				.expect("create_pull_request");
-			let statuses =
-				github_bot.statuses(&created_pr).await.expect("statuses");
-			assert!(statuses.len() > 0);
+			let status = dbg!(github_bot
+				.status("parity-processbot", &created_pr)
+				.await
+				.expect("statuses"));
+			assert!(status.state == github::StatusState::Success);
 			github_bot
 				.close_pull_request(
 					"parity-processbot",
