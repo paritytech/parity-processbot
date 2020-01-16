@@ -1,4 +1,6 @@
-use crate::{github, Result};
+use crate::{error, github, Result};
+
+use snafu::OptionExt;
 
 pub mod issue;
 pub mod project;
@@ -40,16 +42,10 @@ impl GithubBot {
 	pub async fn statuses(
 		&self,
 		pull_request: &github::PullRequest,
-	) -> Result<Option<Vec<github::Status>>> {
-		if let Some(github::StatusesLink { href }) = pull_request
-			.links
-			.as_ref()
-			.and_then(|links| links.statuses_link.as_ref())
-		{
-			self.client.get(href).await.map(Some)
-		} else {
-			Ok(None)
-		}
+	) -> Result<Vec<github::Status>> {
+		self.client
+			.get(pull_request.statuses_url.as_ref().context(error::MissingData)?)
+			.await
 	}
 
 	/// Returns the contents of a file in a repository.
@@ -67,5 +63,66 @@ impl GithubBot {
 				path = path
 			))
 			.await
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[ignore]
+	#[test]
+	fn test_statuses() {
+		dotenv::dotenv().ok();
+		let github_organization =
+			dotenv::var("GITHUB_ORGANIZATION").expect("GITHUB_ORGANIZATION");
+		let github_token = dotenv::var("GITHUB_TOKEN").expect("GITHUB_TOKEN");
+		let mut rt = tokio::runtime::Runtime::new().expect("runtime");
+		rt.block_on(async {
+			let github_bot =
+				GithubBot::new(&github_organization, &github_token)
+					.await
+					.expect("github_bot");
+			let created_pr = github_bot
+				.create_pull_request(
+					"parity-processbot",
+					"testing pr",
+					"this is a test",
+					"testing_branch",
+					"other_testing_branch",
+				)
+				.await
+				.expect("create_pull_request");
+			let statuses =
+				github_bot.statuses(&created_pr).await.expect("statuses");
+			assert!(statuses.len() > 0);
+			github_bot
+				.close_pull_request(
+					"parity-processbot",
+					created_pr.number.expect("created pr number"),
+				)
+				.await
+				.expect("close_pull_request");
+		});
+	}
+
+	#[ignore]
+	#[test]
+	fn test_contents() {
+		dotenv::dotenv().ok();
+		let github_organization =
+			dotenv::var("GITHUB_ORGANIZATION").expect("GITHUB_ORGANIZATION");
+		let github_token = dotenv::var("GITHUB_TOKEN").expect("GITHUB_TOKEN");
+		let mut rt = tokio::runtime::Runtime::new().expect("runtime");
+		rt.block_on(async {
+			let github_bot =
+				GithubBot::new(&github_organization, &github_token)
+					.await
+					.expect("github_bot");
+			let _contents = github_bot
+				.contents("parity-processbot", "README.md")
+				.await
+				.expect("contents");
+		});
 	}
 }

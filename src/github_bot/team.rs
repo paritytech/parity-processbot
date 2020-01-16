@@ -46,7 +46,7 @@ mod tests {
 				.team_members(team.id.expect("team id"))
 				.await
 				.expect("team members");
-                        assert!(members.len() > 0);
+			assert!(members.len() > 0);
 		});
 	}
 }

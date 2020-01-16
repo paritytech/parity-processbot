@@ -292,7 +292,7 @@ async fn handle_status(
 	project_info: &project_info::ProjectInfo,
 	repo: &github::Repository,
 	pull_request: &github::PullRequest,
-	statuses: Option<&mut Vec<github::Status>>,
+	statuses: &mut [github::Status],
 	reviews: &[github::Review],
 ) -> Result<()> {
 	let pr_number = pull_request.number.context(error::MissingData)?;
@@ -308,10 +308,10 @@ async fn handle_status(
 					.find(|r| &r.user.login == owner_login)
 					.map_or(false, |r| r.state.as_deref() == Some("APPROVED"))
 			});
-	let status = statuses.and_then(|v| {
-		v.sort_by_key(|s| s.updated_at);
-		v.last()
-	});
+	let status = {
+		statuses.sort_by_key(|s| s.updated_at);
+		statuses.last()
+	};
 
 	if let Some(ref status) = status {
 		match status.state {
@@ -380,7 +380,7 @@ async fn handle_pull_request_with_issue_and_project(
 	repo: &github::Repository,
 	pull_request: &github::PullRequest,
 	issue: &github::Issue,
-	statuses: Option<&mut Vec<github::Status>>,
+	statuses: &mut [github::Status],
 	reviews: &[github::Review],
 	requested_reviewers: &github::RequestedReviewers,
 ) -> Result<()> {
@@ -496,7 +496,7 @@ pub async fn handle_pull_request(
 					repo,
 					pull_request,
 					&issue,
-					statuses.as_mut(),
+					&mut statuses,
 					&reviews,
 					&requested_reviewers,
 				)
