@@ -485,8 +485,6 @@ pub async fn handle_issue(
 	issue: &github::Issue,
 	default_channel_id: &str,
 ) -> Result<()> {
-	// TODO: handle multiple projects in a single repo
-
 	let issue_id = issue.id.context(error::MissingData)?;
 
 	let db_key = issue_id.to_le_bytes().to_vec();
@@ -502,10 +500,10 @@ pub async fn handle_issue(
 		{
 			None => {
 				log::info!(
-                        "Handling issue '{issue_title}' with no project in repo '{repo_name}'",
-                        issue_title = issue.title,
-                        repo_name = repo.name
-                );
+                                        "Handling issue '{issue_title}' with no project in repo '{repo_name}'",
+                                        issue_title = issue.title,
+                                        repo_name = repo.name
+                                );
 
 				let since = local_state
 					.issue_no_project_ping()

@@ -46,18 +46,22 @@ pub async fn update(
 				.collect::<Vec<(github::Project, project_info::ProjectInfo)>>();
 
 			for issue in github_bot.repository_issues(&repo).await? {
-				handle_issue(
-					db,
-					github_bot,
-					matrix_bot,
-					core_devs,
-					github_to_matrix,
-					projects.as_ref(),
-					&repo,
-					&issue,
-					default_channel_id,
-				)
-				.await?;
+                                // if issue.pull_request.is_some() then this issue is a pull
+                                // request, which we treat differently
+				if issue.pull_request.is_none() { 
+					handle_issue(
+						db,
+						github_bot,
+						matrix_bot,
+						core_devs,
+						github_to_matrix,
+						projects.as_ref(),
+						&repo,
+						&issue,
+						default_channel_id,
+					)
+					.await?;
+				}
 			}
 
 			for pr in github_bot.pull_requests(&repo).await? {
