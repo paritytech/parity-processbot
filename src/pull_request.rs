@@ -1,12 +1,15 @@
 use crate::db::*;
+use crate::local_state::*;
 use crate::{
 	constants::*, duration_ticks::DurationTicks, error, github,
 	github_bot::GithubBot, issue::issue_actor_and_project_card, matrix,
 	matrix_bot::MatrixBot, project_info, Result,
 };
+use parking_lot::RwLock;
 use rocksdb::DB;
 use snafu::OptionExt;
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::SystemTime;
 
 async fn require_reviewers(
@@ -83,7 +86,7 @@ async fn require_reviewers(
 }
 
 async fn author_is_core_unassigned(
-	db: &DB,
+	db: &Arc<RwLock<DB>>,
 	local_state: &mut LocalState,
 	github_bot: &GithubBot,
 	matrix_bot: &MatrixBot,
@@ -138,7 +141,7 @@ async fn author_is_core_unassigned(
 }
 
 fn author_is_core_unassigned_ticks_none(
-	db: &DB,
+	db: &Arc<RwLock<DB>>,
 	local_state: &mut LocalState,
 	matrix_bot: &MatrixBot,
 	github_to_matrix: &HashMap<String, String>,
@@ -205,7 +208,7 @@ fn author_is_core_unassigned_ticks_none(
 }
 
 fn author_is_core_unassigned_ticks_passed(
-	db: &DB,
+	db: &Arc<RwLock<DB>>,
 	local_state: &mut LocalState,
 	matrix_bot: &MatrixBot,
 	project_info: &project_info::ProjectInfo,
@@ -259,7 +262,7 @@ fn author_is_core_unassigned_ticks_passed(
 }
 
 async fn author_is_core_unassigned_ticks_expired(
-	db: &DB,
+	db: &Arc<RwLock<DB>>,
 	local_state: &mut LocalState,
 	github_bot: &GithubBot,
 	repo: &github::Repository,
@@ -284,7 +287,7 @@ async fn author_is_core_unassigned_ticks_expired(
 }
 
 async fn handle_status(
-	db: &DB,
+	db: &Arc<RwLock<DB>>,
 	local_state: &mut LocalState,
 	github_bot: &GithubBot,
 	matrix_bot: &MatrixBot,
@@ -341,7 +344,7 @@ async fn handle_status(
 			if owner_or_delegate_approved {
 				// merge & delete branch
 				github_bot.merge_pull_request(&repo.name, pr_number).await?;
-				local_state.delete(db)?;
+				local_state.delete(db, &local_state.key)?;
 			} else {
 				local_state.update_status_failure_ping(None, db)?;
 			}
@@ -352,7 +355,7 @@ async fn handle_status(
 }
 
 async fn handle_pull_request_with_issue_and_project(
-	db: &DB,
+	db: &Arc<RwLock<DB>>,
 	local_state: &mut LocalState,
 	github_bot: &GithubBot,
 	matrix_bot: &MatrixBot,
@@ -437,7 +440,7 @@ async fn handle_pull_request_with_issue_and_project(
 }
 
 pub async fn handle_pull_request(
-	db: &DB,
+	db: &Arc<RwLock<DB>>,
 	github_bot: &GithubBot,
 	matrix_bot: &MatrixBot,
 	core_devs: &[github::User],
@@ -449,7 +452,7 @@ pub async fn handle_pull_request(
 	let pr_id = pull_request.id.context(error::MissingData)?;
 	let pr_number = pull_request.number.context(error::MissingData)?;
 	let db_key = format!("{}", pr_id).into_bytes();
-	let mut local_state = LocalState::get_or_new(db, db_key)?;
+	let mut local_state = LocalState::get_or_default(db, db_key)?;
 
 	let author = pull_request.user.as_ref().context(error::MissingData)?;
 

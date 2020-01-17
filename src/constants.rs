@@ -1,3 +1,5 @@
+pub const GITHUB_TO_MATRIX_KEY: &str = "GITHUB_TO_MATRIX";
+
 /*
  * Ping periods measured in seconds
  */

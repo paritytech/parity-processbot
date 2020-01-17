@@ -1,5 +1,7 @@
+use parking_lot::RwLock;
 use rocksdb::DB;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use crate::{
 	github, github_bot::GithubBot, issue::handle_issue, matrix_bot::MatrixBot,
@@ -17,7 +19,7 @@ fn projects_from_contents(
 }
 
 pub async fn update(
-	db: &DB,
+	db: &Arc<RwLock<DB>>,
 	github_bot: &GithubBot,
 	matrix_bot: &MatrixBot,
 	core_devs: &[github::User],
@@ -72,8 +74,8 @@ pub async fn update(
 				.await?;
 			}
 		} else {
-			log::info!(
-				"Projects are disabled for repo '{repo_name}'",
+			log::error!(
+				"Error getting projects for repo '{repo_name}'. They may be disabled.",
 				repo_name = repo.name
 			);
 		}

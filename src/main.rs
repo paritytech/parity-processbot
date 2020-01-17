@@ -1,8 +1,11 @@
+use parking_lot::RwLock;
 use rocksdb::DB;
-use snafu::OptionExt;
-use std::time::Duration;
+use snafu::{OptionExt, ResultExt};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
-use parity_processbot::{bamboo, bots, error, github_bot, matrix_bot};
+use parity_processbot::{
+	bamboo, bots, constants, error, github_bot, matrix_bot,
+};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -33,6 +36,10 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 		.expect("TICK_SECS")
 		.parse::<u64>()
 		.expect("parse tick_secs");
+	let bamboo_tick_secs = dotenv::var("BAMBOO_TICK_SECS")
+		.expect("BAMBOO_TICK_SECS")
+		.parse::<u64>()
+		.expect("parse bamboo tick secs");
 
 	let db = DB::open_default(db_path)?;
 
@@ -63,12 +70,64 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 				.context(error::MissingData)?,
 		)
 		.await?;
+	if db
+		.get_pinned(&constants::GITHUB_TO_MATRIX_KEY)
+		.context(error::Db)?
+		.is_none()
+	{
+		// block on bamboo
+		let github_to_matrix = dbg!(bamboo::github_to_matrix(&bamboo_token))?;
+		db.put(
+			&constants::GITHUB_TO_MATRIX_KEY,
+			serde_json::to_string(&github_to_matrix)
+				.context(error::Json)?
+				.as_bytes(),
+		)
+		.context(error::Db)?;
+	}
 
-	let github_to_matrix = dbg!(bamboo::github_to_matrix(&bamboo_token))?;
+	let db = Arc::new(RwLock::new(db));
+	let db_bamboo = db.clone();
+
+	std::thread::spawn(move || loop {
+		match bamboo::github_to_matrix(&bamboo_token).and_then(
+			|github_to_matrix| {
+				let db = db_bamboo.write();
+				db.delete(&constants::GITHUB_TO_MATRIX_KEY)
+					.context(error::Db)
+					.map(|_| {
+						serde_json::to_string(&github_to_matrix)
+							.context(error::Json)
+							.map(|s| {
+								db.put(
+									&constants::GITHUB_TO_MATRIX_KEY,
+									s.as_bytes(),
+								)
+								.context(error::Db)
+							})
+					})
+			},
+		) {
+			Ok(_) => {}
+			Err(e) => log::error!("DB error: {}", e),
+		}
+		std::thread::sleep(Duration::from_secs(bamboo_tick_secs));
+	});
 
 	let mut interval = tokio::time::interval(Duration::from_secs(tick_secs));
 	loop {
 		interval.tick().await;
+
+		let github_to_matrix = db
+			.read()
+			.get(&constants::GITHUB_TO_MATRIX_KEY)
+			.context(error::Db)?
+			.map(|ref v| {
+				serde_json::from_slice::<HashMap<String, String>>(v)
+					.context(error::Json)
+			})
+			.expect("broken db")?;
+
 		bots::update(
 			&db,
 			&github_bot,

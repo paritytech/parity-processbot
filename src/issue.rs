@@ -1,11 +1,14 @@
 use crate::db::*;
+use crate::local_state::*;
 use crate::{
 	constants::*, duration_ticks::DurationTicks, error, github,
 	github_bot::GithubBot, matrix, matrix_bot::MatrixBot, project_info, Result,
 };
+use parking_lot::RwLock;
 use rocksdb::DB;
 use snafu::OptionExt;
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 /// Return the project card attached to an issue, if there is one, and the user who attached it
@@ -26,7 +29,7 @@ pub async fn issue_actor_and_project_card(
 }
 
 async fn author_special_attach_only_project(
-	db: &DB,
+	db: &Arc<RwLock<DB>>,
 	local_state: &mut LocalState,
 	github_bot: &GithubBot,
 	issue: &github::Issue,
@@ -59,7 +62,7 @@ async fn author_special_attach_only_project(
 }
 
 async fn author_core_no_project(
-	db: &DB,
+	db: &Arc<RwLock<DB>>,
 	local_state: &mut LocalState,
 	github_bot: &GithubBot,
 	matrix_bot: &MatrixBot,
@@ -108,7 +111,7 @@ async fn author_core_no_project(
 							.unwrap_or(String::new().as_ref()),
 					)
 					.await?;
-				local_state.delete(db)?;
+				local_state.delete(db, &local_state.key)?;
 			} else if (local_state.issue_no_project_npings()) < i {
 				local_state.update_issue_no_project_npings(i, db)?;
 				matrix_bot.send_public_message(
@@ -123,7 +126,7 @@ async fn author_core_no_project(
 }
 
 async fn author_unknown_no_project(
-	db: &DB,
+	db: &Arc<RwLock<DB>>,
 	local_state: &mut LocalState,
 	github_bot: &GithubBot,
 	matrix_bot: &MatrixBot,
@@ -173,14 +176,14 @@ async fn author_unknown_no_project(
 						.unwrap_or(String::new().as_ref()),
 				)
 				.await?;
-			local_state.delete(db)?;
+			local_state.delete(db, &local_state.key)?;
 		}
 	}
 	Ok(())
 }
 
 fn author_non_special_project_state_none(
-	db: &DB,
+	db: &Arc<RwLock<DB>>,
 	local_state: &mut LocalState,
 	matrix_bot: &MatrixBot,
 	issue: &github::Issue,
@@ -230,7 +233,7 @@ fn author_non_special_project_state_none(
 }
 
 async fn author_non_special_project_state_unconfirmed(
-	db: &DB,
+	db: &Arc<RwLock<DB>>,
 	local_state: &mut LocalState,
 	github_bot: &GithubBot,
 	matrix_bot: &MatrixBot,
@@ -325,7 +328,7 @@ async fn author_non_special_project_state_unconfirmed(
 }
 
 async fn author_non_special_project_state_denied(
-	db: &DB,
+	db: &Arc<RwLock<DB>>,
 	local_state: &mut LocalState,
 	github_bot: &GithubBot,
 	matrix_bot: &MatrixBot,
@@ -407,7 +410,7 @@ async fn author_non_special_project_state_denied(
 }
 
 fn author_non_special_project_state_confirmed(
-	db: &DB,
+	db: &Arc<RwLock<DB>>,
 	local_state: &mut LocalState,
 	matrix_bot: &MatrixBot,
 	issue: &github::Issue,
@@ -472,7 +475,7 @@ fn author_non_special_project_state_confirmed(
 }
 
 pub async fn handle_issue(
-	db: &DB,
+	db: &Arc<RwLock<DB>>,
 	github_bot: &GithubBot,
 	matrix_bot: &MatrixBot,
 	core_devs: &[github::User],
@@ -487,7 +490,7 @@ pub async fn handle_issue(
 	let issue_id = issue.id.context(error::MissingData)?;
 
 	let db_key = issue_id.to_le_bytes().to_vec();
-	let mut local_state = LocalState::get_or_new(db, db_key)?;
+	let mut local_state = LocalState::get_or_default(db, db_key)?;
 
 	let author_is_core = core_devs.iter().any(|u| u.id == issue.user.id);
 
