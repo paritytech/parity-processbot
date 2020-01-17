@@ -46,9 +46,9 @@ pub async fn update(
 				.collect::<Vec<(github::Project, project_info::ProjectInfo)>>();
 
 			for issue in github_bot.repository_issues(&repo).await? {
-                                // if issue.pull_request.is_some() then this issue is a pull
-                                // request, which we treat differently
-				if issue.pull_request.is_none() { 
+				// if issue.pull_request.is_some() then this issue is a pull
+				// request, which we treat differently
+				if issue.pull_request.is_none() {
 					handle_issue(
 						db,
 						github_bot,
