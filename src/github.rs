@@ -434,9 +434,9 @@ pub struct Repository {
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Permissions {
-	admin: bool,
-	push: bool,
-	pull: bool,
+	admin: Option<bool>,
+	push: Option<bool>,
+	pull: Option<bool>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -525,4 +525,39 @@ pub struct CommitsLink {
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct StatusesLink {
 	pub href: String,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Installation {
+	pub id: i64,
+	pub account: User,
+	pub access_tokens_url: Option<String>,
+	pub repositories_url: Option<String>,
+	pub html_url: Option<String>,
+	pub app_id: Option<i64>,
+	pub target_id: Option<i64>,
+	pub target_type: Option<String>,
+	pub permissions: InstallationPermissions,
+	pub events: Vec<String>,
+	pub single_file_name: Option<String>,
+	pub repository_selection: Option<String>,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InstallationPermissions {
+	pub metadata: String,
+	pub contents: String,
+	pub issues: String,
+	pub single_file: Option<String>,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InstallationToken {
+	pub token: String,
+	pub expires_at: Option<String>,
+	pub permissions: Permissions,
+	pub repositories: Option<Vec<Repository>>,
 }

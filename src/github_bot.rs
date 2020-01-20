@@ -1,8 +1,7 @@
 use crate::{error, github, Result};
 
-use snafu::OptionExt;
-
 use serde::Serialize;
+use snafu::OptionExt;
 
 pub struct GithubBot {
 	client: crate::http::Client,
@@ -10,21 +9,25 @@ pub struct GithubBot {
 }
 
 impl GithubBot {
-	const BASE_URL: &'static str = "https://api.github.com";
+	pub(crate) const BASE_URL: &'static str = "https://api.github.com";
 
 	/// Creates a new instance of `GithubBot` from a GitHub organization defined
 	/// by `org`, and a GitHub authenication key defined by `auth_key`.
 	/// # Errors
 	/// If the organization does not exist or `auth_key` does not have sufficent
 	/// permissions.
-	pub async fn new<A: AsRef<str>, I: Into<String>>(
-		org: A,
-		auth_key: I,
-	) -> Result<Self> {
-		let client = crate::http::Client::new(auth_key);
+	pub async fn new(private_key: impl Into<Vec<u8>>) -> Result<Self> {
+		let client = crate::http::Client::new(private_key.into());
+
+		let installations = Self::installations(&client).await?;
+		let installation = installations.first().context(error::MissingData)?;
 
 		let organization = client
-			.get(&format!("{}/orgs/{}", Self::BASE_URL, org.as_ref()))
+			.get(&format!(
+				"{}/orgs/{}",
+				Self::BASE_URL,
+				&installation.account.login
+			))
 			.await?;
 
 		Ok(Self {
@@ -86,12 +89,12 @@ impl GithubBot {
 		reviewers: &[&str],
 	) -> Result<github::PullRequest> {
 		let url = format!(
-			"{base_url}/repos/{owner}/{repo_name}/pulls/{pull_number}/requested_reviewers",
-			base_url = Self::BASE_URL,
-			owner = self.organization.login,
-			repo_name = repo_name,
-			pull_number = pull_number
-		);
+                "{base_url}/repos/{owner}/{repo_name}/pulls/{pull_number}/requested_reviewers",
+                base_url = Self::BASE_URL,
+                owner = self.organization.login,
+                repo_name = repo_name,
+                pull_number = pull_number
+            );
 		let body = &serde_json::json!({ "reviewers": reviewers });
 
 		self.client.post(url, body).await
@@ -143,14 +146,14 @@ impl GithubBot {
 		issue_number: i64,
 	) -> Result<Vec<github::IssueEvent>> {
 		self.client
-			.get(format!(
-			"{base_url}/repos/{owner}/{repo_name}/issues/{issue_number}/events",
-			base_url = Self::BASE_URL,
-			owner = self.organization.login,
-			repo_name = repo_name,
-			issue_number = issue_number
-		))
-			.await
+                .get(format!(
+                        "{base_url}/repos/{owner}/{repo_name}/issues/{issue_number}/events",
+                        base_url = Self::BASE_URL,
+                        owner = self.organization.login,
+                        repo_name = repo_name,
+                        issue_number = issue_number
+                ))
+                .await
 	}
 
 	/// Returns events associated with an issue.
@@ -397,5 +400,15 @@ impl GithubBot {
 			.delete_response(&url, &serde_json::json!({}))
 			.await
 			.map(|_| ())
+	}
+
+	/// This method doesn't use `self`, as we need to use it before we
+	/// initialise `Self`.
+	async fn installations(
+		client: &crate::http::Client,
+	) -> Result<Vec<github::Installation>> {
+		client
+			.jwt_get(&format!("{}/app/installations", Self::BASE_URL))
+			.await
 	}
 }
