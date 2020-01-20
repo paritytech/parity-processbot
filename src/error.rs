@@ -19,6 +19,7 @@ pub enum Error {
 	},
 
 	/// Data requested was not found or valid.
+	#[snafu(display("Backtrace:\n{}", backtrace))]
 	MissingData { backtrace: Backtrace },
 
 	/// An error occurred while retrieving or setting values in Rocks DB.

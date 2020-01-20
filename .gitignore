@@ -4,4 +4,5 @@
 .env
 engineers.csv
 certificate.key
+*.pem
 db/

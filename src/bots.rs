@@ -26,7 +26,7 @@ pub async fn update(
 	github_to_matrix: &HashMap<String, String>,
 	default_channel_id: &str,
 ) -> Result<()> {
-	for repo in github_bot.repositories().await? {
+	for repo in github_bot.repositories().await?.iter() {
 		if let Ok(repo_projects) = github_bot.projects(&repo.name).await {
 			// projects in Projects.toml are useless if they do not match a project
 			// in the repo
@@ -45,11 +45,30 @@ pub async fn update(
 				})
 				.collect::<Vec<(github::Project, project_info::ProjectInfo)>>();
 
-			for issue in github_bot.repository_issues(&repo).await? {
-				// if issue.pull_request.is_some() then this issue is a pull
-				// request, which we treat differently
-				if issue.pull_request.is_none() {
-					handle_issue(
+			if projects.len() > 0 {
+				for issue in
+					github_bot.repository_issues(&repo).await?.iter().skip(1)
+				{
+					// if issue.pull_request.is_some() then this issue is a pull
+					// request, which we treat differently
+					if issue.pull_request.is_none() {
+						handle_issue(
+							db,
+							github_bot,
+							matrix_bot,
+							core_devs,
+							github_to_matrix,
+							projects.as_ref(),
+							&repo,
+							&issue,
+							default_channel_id,
+						)
+						.await?;
+					}
+				}
+
+				for pr in github_bot.pull_requests(&repo).await? {
+					handle_pull_request(
 						db,
 						github_bot,
 						matrix_bot,
@@ -57,25 +76,10 @@ pub async fn update(
 						github_to_matrix,
 						projects.as_ref(),
 						&repo,
-						&issue,
-						default_channel_id,
+						&pr,
 					)
 					.await?;
 				}
-			}
-
-			for pr in github_bot.pull_requests(&repo).await? {
-				handle_pull_request(
-					db,
-					github_bot,
-					matrix_bot,
-					core_devs,
-					github_to_matrix,
-					projects.as_ref(),
-					&repo,
-					&pr,
-				)
-				.await?;
 			}
 		} else {
 			log::error!(
