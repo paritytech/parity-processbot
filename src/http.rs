@@ -1,14 +1,18 @@
 use std::borrow::Cow;
+use std::time::SystemTime;
 
-use crate::{error, Result};
+use crate::{error, github, Result};
 
+use chrono::{DateTime, Utc};
 use hyperx::header::TypedHeaders;
+use reqwest::{header, IntoUrl, Method, RequestBuilder, Response};
 use serde::Serialize;
-use snafu::ResultExt;
+use snafu::{OptionExt, ResultExt};
 
+#[derive(Default)]
 pub struct Client {
 	client: reqwest::Client,
-	auth_key: String,
+	private_key: Vec<u8>,
 }
 
 macro_rules! impl_methods_with_body {
@@ -31,15 +35,14 @@ macro_rules! impl_methods_with_body {
                 &self,
                 url: I,
                 body: &B,
-            ) -> Result<reqwest::Response>
+            ) -> Result<Response>
             where
                 I: Into<Cow<'b, str>>,
                 B: Serialize,
             {
-                self.request(
+                self.execute(
                     self.client
                     .$method(&*url.into())
-                    .bearer_auth(&self.auth_key)
                     .json(body),
                 )
                     .await
@@ -49,12 +52,36 @@ macro_rules! impl_methods_with_body {
     }
 }
 
+/// Checks the response's status and maps into an `Err` branch if
+/// not successful.
+async fn handle_response(response: Response) -> Result<Response> {
+	let status = response.status();
+
+	if status.is_success() {
+		Ok(response)
+	} else {
+		let text = response.text().await.context(error::Http)?;
+
+		// Try to decode the response error as JSON otherwise store
+		// it as plain text in a JSON object.
+		let body = if let Ok(value) =
+			serde_json::from_str(&text).context(error::Json)
+		{
+			value
+		} else {
+			serde_json::json!({ "error_message": text })
+		};
+
+		error::Response { status, body }.fail()
+	}
+}
+
 /// HTTP util methods.
 impl Client {
-	pub fn new<I: Into<String>>(auth_key: I) -> Self {
+	pub fn new(private_key: Vec<u8>) -> Self {
 		Self {
-			client: reqwest::Client::new(),
-			auth_key: auth_key.into(),
+			private_key: private_key.into(),
+			..Self::default()
 		}
 	}
 
@@ -67,48 +94,147 @@ impl Client {
 
 	pub async fn request(
 		&self,
-		builder: reqwest::RequestBuilder,
-	) -> Result<reqwest::Response> {
+		method: Method,
+		url: impl IntoUrl,
+	) -> RequestBuilder {
+		self.client.request(method, url)
+	}
+
+	async fn auth_key(&self) -> Result<String> {
+		lazy_static::lazy_static! {
+			static ref TOKEN_CACHE: std::sync::RwLock<Option<(Option<DateTime<Utc>>, String)>> = {
+				std::sync::RwLock::new(None)
+			};
+		}
+
+		let token = TOKEN_CACHE
+			.read()
+			.as_ref()
+			.unwrap()
+			.as_ref()
+			// Ensure token is not expired if set.
+			.filter(|(time, _)| time.map_or(true, |t| t < Utc::now()))
+			.map(|(_, token)| token.clone());
+
+		if let Some(token) = token {
+			return Ok(token);
+		}
+
+		let installations: Vec<github::Installation> = self
+			.jwt_get(&format!(
+				"{}/app/installations",
+				crate::github_bot::GithubBot::BASE_URL
+			))
+			.await?;
+
+		// App should be installed on only one organisation.
+		let installation = installations.get(0).context(error::MissingData)?;
+
+		let install_token: github::InstallationToken = self
+			.jwt_post(
+				&format!(
+					"{}/app/installations/{}/access_tokens",
+					crate::github_bot::GithubBot::BASE_URL,
+					installation.id
+				),
+				&serde_json::json!({}),
+			)
+			.await?;
+
+		let mut write = TOKEN_CACHE.write().unwrap();
+
+		let token = install_token.token.clone();
+		*write = Some((
+			install_token.expires_at.and_then(|t| t.parse().ok()),
+			install_token.token,
+		));
+
+		Ok(token)
+	}
+
+	async fn execute(&self, builder: RequestBuilder) -> Result<Response> {
 		let request = builder
-			.bearer_auth(&self.auth_key)
+			.bearer_auth(&self.auth_key().await?)
 			.header(
-				reqwest::header::ACCEPT,
+				header::ACCEPT,
 				"application/vnd.github.starfox-preview+json",
 			)
-			.header(reqwest::header::USER_AGENT, "parity-processbot/0.0.1")
+			.header(header::USER_AGENT, "parity-processbot/0.0.1")
 			.build()
 			.context(error::Http)?;
 
-		let response =
-			self.client.execute(request).await.context(error::Http)?;
-		let status = response.status();
-
-		if status.is_success() {
-			Ok(response)
-		} else {
-			let text = response.text().await.context(error::Http)?;
-
-			// Try to decode the response error as JSON otherwise store
-			// it as plain text in a JSON object.
-			let body = if let Ok(value) =
-				serde_json::from_str(&text).context(error::Json)
-			{
-				value
-			} else {
-				serde_json::json!({ "error_message": text })
-			};
-
-			error::Response { status, body }.fail()
-		}
+		handle_response(
+			self.client.execute(request).await.context(error::Http)?,
+		)
+		.await
 	}
 
-	/// Sends a `GET` request to `url`, supplying the relevant headers for
-	/// authenication and feature detection.
-	async fn get_response<'b, I: Into<Cow<'b, str>>>(
+	fn create_jwt(&self) -> Result<String> {
+		const TEN_MINS_IN_SECONDS: u64 = 10 * 60;
+		lazy_static::lazy_static! {
+			static ref APP_ID: u64 = dotenv::var("GITHUB_APP_ID").unwrap().parse::<u64>().unwrap();
+		}
+		let iat = SystemTime::now()
+			.duration_since(SystemTime::UNIX_EPOCH)
+			.unwrap()
+			.as_secs();
+
+		let body = serde_json::json!({
+			"iat": iat,
+			"exp": iat + TEN_MINS_IN_SECONDS,
+			"iss": *APP_ID,
+		});
+
+		jsonwebtoken::encode(
+			&jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256),
+			&body,
+			&self.private_key,
+		)
+		.context(error::Jwt)
+	}
+
+	async fn jwt_execute(&self, builder: RequestBuilder) -> Result<Response> {
+		let response = builder
+			.bearer_auth(&self.create_jwt()?)
+			.header(
+				header::ACCEPT,
+				"application/vnd.github.machine-man-preview+json",
+			)
+			.header(header::USER_AGENT, "parity-processbot/0.0.1")
+			.send()
+			.await
+			.context(error::Http)?;
+
+		handle_response(response).await
+	}
+
+	/// Get a single entry from a resource in GitHub using
+	/// JWT authenication.
+	pub async fn jwt_get<T>(&self, url: impl IntoUrl) -> Result<T>
+	where
+		T: serde::de::DeserializeOwned,
+	{
+		self.jwt_execute(self.client.get(url))
+			.await?
+			.json::<T>()
+			.await
+			.context(error::Http)
+	}
+
+	/// Posts `body` GitHub to `url` using JWT authenication.
+	pub async fn jwt_post<T>(
 		&self,
-		url: I,
-	) -> Result<reqwest::Response> {
-		self.request(self.client.get(&*url.into())).await
+		url: impl IntoUrl,
+		body: &impl serde::Serialize,
+	) -> Result<T>
+	where
+		T: serde::de::DeserializeOwned,
+	{
+		self.jwt_execute(self.client.post(url).json(body))
+			.await?
+			.json::<T>()
+			.await
+			.context(error::Http)
 	}
 
 	/// Get a single entry from a resource in GitHub.
@@ -122,6 +248,15 @@ impl Client {
 			.json::<T>()
 			.await
 			.context(error::Http)
+	}
+
+	/// Sends a `GET` request to `url`, supplying the relevant headers for
+	/// authenication and feature detection.
+	async fn get_response<'b, I: Into<Cow<'b, str>>>(
+		&self,
+		url: I,
+	) -> Result<Response> {
+		self.execute(self.client.get(&*url.into())).await
 	}
 
 	// Originally adapted from:
@@ -142,22 +277,16 @@ impl Client {
 				.headers()
 				.decode::<hyperx::header::Link>()
 				.ok()
-				.and_then(|v| {
-					v.values()
-						.iter()
-						.find(|link| {
-							link.rel()
-								.map(|rel| {
-									rel.contains(
-										&hyperx::header::RelationType::Next,
-									)
-								})
-								.unwrap_or(false)
-						})
-						.map(|l| l.link())
-						.map(str::to_owned)
-						.map(Cow::Owned)
-				});
+				.iter()
+				.flat_map(|v| v.values())
+				.find(|link| {
+					link.rel().map_or(false, |rel| {
+						rel.contains(&hyperx::header::RelationType::Next)
+					})
+				})
+				.map(|l| l.link())
+				.map(str::to_owned)
+				.map(Cow::Owned);
 
 			let mut body =
 				response.json::<Vec<T>>().await.context(error::Http)?;

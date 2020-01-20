@@ -19,7 +19,9 @@ pub enum Error {
 	},
 
 	/// Data requested was not found or valid.
-	MissingData { backtrace: Backtrace },
+	MissingData {
+		backtrace: Backtrace,
+	},
 
 	/// An error occurred while retrieving or setting values in Rocks DB.
 	#[snafu(display("Source: {}\nBacktrace:\n{}", source, backtrace))]
@@ -53,6 +55,10 @@ pub enum Error {
 	Curl {
 		status: curl_sys::CURLcode,
 		body: Option<String>,
+	},
+
+	Jwt {
+		source: jsonwebtoken::errors::Error,
 	},
 }
 
