@@ -31,16 +31,15 @@ mod tests {
 	fn test_teams() {
 		dotenv::dotenv().ok();
 
-		let github_organization =
-			dotenv::var("GITHUB_ORGANIZATION").expect("GITHUB_ORGANIZATION");
-		let github_token = dotenv::var("GITHUB_TOKEN").expect("GITHUB_TOKEN");
+		let private_key_path =
+			dotenv::var("PRIVATE_KEY_PATH").expect("PRIVATE_KEY_PATH");
+		let private_key = std::fs::read(&private_key_path)
+			.expect("Couldn't find private key.");
 
 		let mut rt = tokio::runtime::Runtime::new().expect("runtime");
 		rt.block_on(async {
 			let github_bot =
-				GithubBot::new(&github_organization, &github_token)
-					.await
-					.expect("github_bot");
+				GithubBot::new(private_key).await.expect("github_bot");
 			let team = github_bot.team("core-devs").await.expect("team");
 			let members = github_bot
 				.team_members(team.id.expect("team id"))

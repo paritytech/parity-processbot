@@ -26,7 +26,12 @@ pub async fn update(
 	github_to_matrix: &HashMap<String, String>,
 	default_channel_id: &str,
 ) -> Result<()> {
-	for repo in github_bot.repositories().await?.iter() {
+	for repo in github_bot
+		.repositories()
+		.await?
+		.iter()
+		.filter(|r| r.name == "parity-processbot")
+	{
 		if let Ok(repo_projects) = github_bot.projects(&repo.name).await {
 			// projects in Projects.toml are useless if they do not match a project
 			// in the repo

@@ -15,21 +15,35 @@ pub struct GithubBot {
 }
 
 impl GithubBot {
-	const BASE_URL: &'static str = "https://api.github.com";
+	pub(crate) const BASE_URL: &'static str = "https://api.github.com";
+
+	/// This method doesn't use `self`, as we need to use it before we
+	/// initialise `Self`.
+	async fn installations(
+		client: &crate::http::Client,
+	) -> Result<Vec<github::Installation>> {
+		client
+			.jwt_get(&format!("{}/app/installations", Self::BASE_URL))
+			.await
+	}
 
 	/// Creates a new instance of `GithubBot` from a GitHub organization defined
 	/// by `org`, and a GitHub authenication key defined by `auth_key`.
 	/// # Errors
 	/// If the organization does not exist or `auth_key` does not have sufficent
 	/// permissions.
-	pub async fn new<A: AsRef<str>, I: Into<String>>(
-		org: A,
-		auth_key: I,
-	) -> Result<Self> {
-		let client = crate::http::Client::new(auth_key);
+	pub async fn new(private_key: impl Into<Vec<u8>>) -> Result<Self> {
+		let client = crate::http::Client::new(private_key.into());
+
+		let installations = Self::installations(&client).await?;
+		let installation = installations.first().context(error::MissingData)?;
 
 		let organization = client
-			.get(&format!("{}/orgs/{}", Self::BASE_URL, org.as_ref()))
+			.get(&format!(
+				"{}/orgs/{}",
+				Self::BASE_URL,
+				&installation.account.login
+			))
 			.await?;
 
 		Ok(Self {
@@ -80,15 +94,15 @@ mod tests {
 	#[test]
 	fn test_statuses() {
 		dotenv::dotenv().ok();
-		let github_organization =
-			dotenv::var("GITHUB_ORGANIZATION").expect("GITHUB_ORGANIZATION");
-		let github_token = dotenv::var("GITHUB_TOKEN").expect("GITHUB_TOKEN");
+		let private_key_path =
+			dotenv::var("PRIVATE_KEY_PATH").expect("PRIVATE_KEY_PATH");
+		let private_key = std::fs::read(&private_key_path)
+			.expect("Couldn't find private key.");
+
 		let mut rt = tokio::runtime::Runtime::new().expect("runtime");
 		rt.block_on(async {
 			let github_bot =
-				GithubBot::new(&github_organization, &github_token)
-					.await
-					.expect("github_bot");
+				GithubBot::new(private_key).await.expect("github_bot");
 			let created_pr = github_bot
 				.create_pull_request(
 					"parity-processbot",
@@ -118,15 +132,14 @@ mod tests {
 	#[test]
 	fn test_contents() {
 		dotenv::dotenv().ok();
-		let github_organization =
-			dotenv::var("GITHUB_ORGANIZATION").expect("GITHUB_ORGANIZATION");
-		let github_token = dotenv::var("GITHUB_TOKEN").expect("GITHUB_TOKEN");
+		let private_key_path =
+			dotenv::var("PRIVATE_KEY_PATH").expect("PRIVATE_KEY_PATH");
+		let private_key = std::fs::read(&private_key_path)
+			.expect("Couldn't find private key.");
 		let mut rt = tokio::runtime::Runtime::new().expect("runtime");
 		rt.block_on(async {
 			let github_bot =
-				GithubBot::new(&github_organization, &github_token)
-					.await
-					.expect("github_bot");
+				GithubBot::new(private_key).await.expect("github_bot");
 			let _contents = github_bot
 				.contents("parity-processbot", "README.md")
 				.await

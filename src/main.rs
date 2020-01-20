@@ -15,51 +15,82 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 	}
 }
 
+#[derive(Debug, Clone)]
+struct Config {
+	db_path: String,
+	bamboo_token: String,
+	private_key: Vec<u8>,
+	matrix_homeserver: String,
+	matrix_user: String,
+	matrix_password: String,
+	matrix_default_channel_id: String,
+	tick_secs: u64,
+	bamboo_tick_secs: u64,
+}
+
+impl Config {
+	pub fn from_env() -> Self {
+		dotenv::dotenv().ok();
+
+		let db_path = dotenv::var("DB_PATH").expect("DB_PATH");
+		let bamboo_token = dotenv::var("BAMBOO_TOKEN").expect("BAMBOO_TOKEN");
+		let matrix_homeserver =
+			dotenv::var("MATRIX_HOMESERVER").expect("MATRIX_HOMESERVER");
+		let matrix_user = dotenv::var("MATRIX_USER").expect("MATRIX_USER");
+		let matrix_password =
+			dotenv::var("MATRIX_PASSWORD").expect("MATRIX_PASSWORD");
+		let matrix_default_channel_id =
+			dotenv::var("MATRIX_DEFAULT_CHANNEL_ID")
+				.expect("MATRIX_DEFAULT_CHANNEL_ID");
+		let tick_secs = dotenv::var("TICK_SECS")
+			.expect("TICK_SECS")
+			.parse::<u64>()
+			.expect("parse tick_secs");
+		let bamboo_tick_secs = dotenv::var("BAMBOO_TICK_SECS")
+			.expect("BAMBOO_TICK_SECS")
+			.parse::<u64>()
+			.expect("parse bamboo_tick_secs");
+
+		let private_key_path =
+			dotenv::var("PRIVATE_KEY_PATH").expect("PRIVATE_KEY_PATH");
+		let private_key = std::fs::read(&private_key_path)
+			.expect("Couldn't find private key.");
+
+		Self {
+			db_path,
+			bamboo_token,
+			private_key,
+			matrix_homeserver,
+			matrix_user,
+			matrix_password,
+			matrix_default_channel_id,
+			tick_secs,
+			bamboo_tick_secs,
+		}
+	}
+}
+
 async fn run() -> Result<(), Box<dyn std::error::Error>> {
+	let config = Config::from_env();
 	env_logger::from_env(env_logger::Env::default().default_filter_or("info"))
 		.init();
 
-	dotenv::dotenv().ok();
-	let db_path = dotenv::var("DB_PATH").expect("DB_PATH");
-	let bamboo_token = dotenv::var("BAMBOO_TOKEN").expect("BAMBOO_TOKEN");
-	let github_organization =
-		dotenv::var("GITHUB_ORGANIZATION").expect("GITHUB_ORGANIZATION");
-	let github_token = dotenv::var("GITHUB_TOKEN").expect("GITHUB_TOKEN");
-	let matrix_homeserver =
-		dotenv::var("MATRIX_HOMESERVER").expect("MATRIX_HOMESERVER");
-	let matrix_user = dotenv::var("MATRIX_USER").expect("MATRIX_USER");
-	let matrix_password =
-		dotenv::var("MATRIX_PASSWORD").expect("MATRIX_PASSWORD");
-	let matrix_default_channel_id = dotenv::var("MATRIX_DEFAULT_CHANNEL_ID")
-		.expect("MATRIX_DEFAULT_CHANNEL_ID");
-	let tick_secs = dotenv::var("TICK_SECS")
-		.expect("TICK_SECS")
-		.parse::<u64>()
-		.expect("parse tick_secs");
-	let bamboo_tick_secs = dotenv::var("BAMBOO_TICK_SECS")
-		.expect("BAMBOO_TICK_SECS")
-		.parse::<u64>()
-		.expect("parse bamboo tick secs");
-
-	let db = DB::open_default(db_path)?;
+	let db = DB::open_default(&config.db_path)?;
 
 	let matrix_bot = matrix_bot::MatrixBot::new(
-		&matrix_homeserver,
-		&matrix_user,
-		&matrix_password,
+		&config.matrix_homeserver,
+		&config.matrix_user,
+		&config.matrix_password,
 	)?;
 	log::info!(
 		"[+] Connected to matrix homeserver {} as {}",
-		matrix_homeserver,
-		matrix_user
+		config.matrix_homeserver,
+		config.matrix_user
 	);
 
 	let github_bot =
-		github_bot::GithubBot::new(&github_organization, &github_token).await?;
-	log::info!(
-		"[+] Connected to github organisation {}",
-		github_organization
-	);
+		github_bot::GithubBot::new(config.private_key.clone()).await?;
+	log::info!("[+] Connected to github");
 
 	let core_devs = github_bot
 		.team_members(
@@ -76,7 +107,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 		.is_none()
 	{
 		// block on bamboo
-		let github_to_matrix = dbg!(bamboo::github_to_matrix(&bamboo_token))?;
+		let github_to_matrix =
+			dbg!(bamboo::github_to_matrix(&config.bamboo_token))?;
 		db.put(
 			&constants::GITHUB_TO_MATRIX_KEY,
 			serde_json::to_string(&github_to_matrix)
@@ -89,8 +121,10 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 	let db = Arc::new(RwLock::new(db));
 	let db_bamboo = db.clone();
 
+	let config_clone = config.clone();
+
 	std::thread::spawn(move || loop {
-		match bamboo::github_to_matrix(&bamboo_token).and_then(
+		match bamboo::github_to_matrix(&config_clone.bamboo_token).and_then(
 			|github_to_matrix| {
 				let db = db_bamboo.write();
 				db.delete(&constants::GITHUB_TO_MATRIX_KEY)
@@ -111,10 +145,11 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 			Ok(_) => {}
 			Err(e) => log::error!("DB error: {}", e),
 		}
-		std::thread::sleep(Duration::from_secs(bamboo_tick_secs));
+		std::thread::sleep(Duration::from_secs(config_clone.bamboo_tick_secs));
 	});
 
-	let mut interval = tokio::time::interval(Duration::from_secs(tick_secs));
+	let mut interval =
+		tokio::time::interval(Duration::from_secs(config.tick_secs));
 	loop {
 		interval.tick().await;
 
@@ -134,7 +169,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 			&matrix_bot,
 			&core_devs,
 			&github_to_matrix,
-			&matrix_default_channel_id,
+			&config.matrix_default_channel_id,
 		)
 		.await?;
 	}

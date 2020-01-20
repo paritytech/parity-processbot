@@ -3,6 +3,5 @@
 .DS_Store
 .env
 engineers.csv
-certificate.key
 *.pem
 db/
