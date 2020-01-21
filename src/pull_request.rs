@@ -468,14 +468,15 @@ pub async fn handle_pull_request(
 		1 => {
 			let (project, project_info) = projects.last().unwrap();
 			log::info!(
-                                "Handling pull request '{issue_title:?}' in project '{project_name}' in repo '{repo_name}'",
-                                issue_title = pull_request.title,
-                                project_name = project.name,
-                                repo_name = repo.name
-                        );
+                "Handling pull request '{issue_title:?}' in project '{project_name}' in repo '{repo_name}'",
+                issue_title = pull_request.title,
+                project_name = project.name,
+                repo_name = repo.name
+            );
 
 			let author_info = project_info.author_info(&author.login);
 			if issues.len() > 0 {
+				// TODO consider all attached issues here
 				let issue = issues.first().unwrap();
 				handle_pull_request_with_issue_and_project(
 					db,
@@ -495,6 +496,7 @@ pub async fn handle_pull_request(
 				.await?;
 			} else {
 				if author_info.is_special() {
+					// owners and whitelisted devs can open prs without an attached issue.
 					require_reviewers(
 						&pull_request,
 						github_bot,
@@ -521,6 +523,12 @@ pub async fn handle_pull_request(
 				} else {
 					// leave a message that a corresponding issue must exist for
 					// each PR close the PR
+					log::info!(
+                        "Closing pull request '{issue_title:?}' as it addresses no issue in repo '{repo_name}'",
+                        issue_title = pull_request.title,
+                        repo_name = repo.name
+                    );
+
 					github_bot
 						.create_issue_comment(
 							&repo.name,
@@ -536,6 +544,7 @@ pub async fn handle_pull_request(
 		}
 		_ => {
 			if issues.len() > 0 {
+				// TODO consider all attached issues here
 				let issue = issues.first().unwrap();
 				if let Some((_, card)) =
 					issue_actor_and_project_card(&repo.name, &issue, github_bot)
@@ -549,7 +558,7 @@ pub async fn handle_pull_request(
                         issue_title = pull_request.title,
                         project_name = project.name,
                         repo_name = repo.name
-                );
+                    );
 
 					if let Some(project_info) = projects
 						.iter()
@@ -573,24 +582,64 @@ pub async fn handle_pull_request(
 						)
 						.await?;
 					} else {
-						github_bot
-							.create_issue_comment(
-								&repo.name,
-								pr_number,
-								&ISSUE_MUST_BE_VALID_MESSAGE,
-							)
-							.await?;
-						github_bot
-							.close_pull_request(&repo.name, pr_number)
-							.await?;
+						// we have no project info so cannot know if the author is whitelisted or
+						// who the owner / delegate are. the pr is attached to an issue though, so
+						// don't close it.
+						log::info!(
+                            "Pull request '{issue_title:?}' in repo '{repo_name}' addresses an issue attached to a project not listed in Projects.toml; ignoring",
+                            issue_title = pull_request.title,
+                            repo_name = repo.name
+                        );
 					}
 				} else {
+					// there are multiple projects and the pr is unattached, so we cannot know if
+					// the author is whitelisted or who the owner / delegate are. the pr is
+					// attached to an issue though, so don't close it.
 					log::info!(
-                        "Pull request '{issue_title:?}' addresses an issue with project in repo '{repo_name}'",
+                        "Pull request '{issue_title:?}' in repo '{repo_name}' addresses an issue unattached to any project; ignoring",
                         issue_title = pull_request.title,
                         repo_name = repo.name
+                    );
+				}
+			} else {
+				if let Some((_project, project_info)) =
+					projects.iter().find(|(_, p)| {
+						pull_request
+							.user
+							.as_ref()
+							.map_or(false, |u| p.is_special(&u.login))
+					}) {
+					// owners and whitelisted devs can open prs without an attached issue.
+					require_reviewers(
+						&pull_request,
+						github_bot,
+						matrix_bot,
+						github_to_matrix,
+						project_info,
+						&reviews,
+						&requested_reviewers,
+					)
+					.await?;
+					handle_status(
+						db,
+						&mut local_state,
+						github_bot,
+						matrix_bot,
+						github_to_matrix,
+						&project_info,
+						&repo,
+						&pull_request,
+						&status,
+						&reviews,
+					)
+					.await?;
+				} else {
+					// the pr does not address an issue and the author is not special, so close it.
+					log::info!(
+                    "Closing pull request '{issue_title:?}' as it addresses no issue in repo '{repo_name}'",
+                    issue_title = pull_request.title,
+                    repo_name = repo.name
                 );
-
 					github_bot
 						.create_issue_comment(
 							&repo.name,
@@ -602,20 +651,6 @@ pub async fn handle_pull_request(
 						.close_pull_request(&repo.name, pr_number)
 						.await?;
 				}
-			} else {
-				log::info!(
-                        "Pull request '{issue_title:?}' addresses no issue in repo '{repo_name}'",
-                        issue_title = pull_request.title,
-                        repo_name = repo.name
-                );
-				github_bot
-					.create_issue_comment(
-						&repo.name,
-						pr_number,
-						&ISSUE_MUST_BE_VALID_MESSAGE,
-					)
-					.await?;
-				github_bot.close_pull_request(&repo.name, pr_number).await?;
 			}
 		}
 	}

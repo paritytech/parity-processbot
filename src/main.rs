@@ -92,15 +92,9 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 		github_bot::GithubBot::new(config.private_key.clone()).await?;
 	log::info!("[+] Connected to github");
 
-	let core_devs = github_bot
-		.team_members(
-			github_bot
-				.team("core-devs")
-				.await?
-				.id
-				.context(error::MissingData)?,
-		)
-		.await?;
+	// the bamboo queries can take a long time so only wait for it
+	// if github_to_matrix is not in the db. otherwise update it
+	// in the background and start the main loop
 	if db
 		.get_pinned(&constants::GITHUB_TO_MATRIX_KEY)
 		.context(error::Db)?
@@ -119,14 +113,15 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 	}
 
 	let db = Arc::new(RwLock::new(db));
-	let db_bamboo = db.clone();
 
+	let db_clone = db.clone();
 	let config_clone = config.clone();
 
+	// update github_to_matrix on another thread
 	std::thread::spawn(move || loop {
 		match bamboo::github_to_matrix(&config_clone.bamboo_token).and_then(
 			|github_to_matrix| {
-				let db = db_bamboo.write();
+				let db = db_clone.write();
 				db.delete(&constants::GITHUB_TO_MATRIX_KEY)
 					.context(error::Db)
 					.map(|_| {
@@ -150,8 +145,19 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
 	let mut interval =
 		tokio::time::interval(Duration::from_secs(config.tick_secs));
+
 	loop {
 		interval.tick().await;
+
+		let core_devs = github_bot
+			.team_members(
+				github_bot
+					.team("core-devs")
+					.await?
+					.id
+					.context(error::MissingData)?,
+			)
+			.await?;
 
 		let github_to_matrix = db
 			.read()
@@ -161,7 +167,9 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 				serde_json::from_slice::<HashMap<String, String>>(v)
 					.context(error::Json)
 			})
-			.expect("broken db")?;
+			.expect(
+				"github_to_matrix should always be in the db by this time",
+			)?;
 
 		bots::update(
 			&db,
