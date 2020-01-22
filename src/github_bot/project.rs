@@ -73,10 +73,10 @@ impl GithubBot {
 	pub async fn active_project_event(
 		&self,
 		repo_name: &str,
-		issue: &github::Issue,
+		issue_number: i64,
 	) -> Result<Option<github::IssueEvent>> {
 		Ok(self
-			.issue_events(repo_name, issue.number.context(error::MissingData)?)
+			.issue_events(repo_name, issue_number)
 			.await?
 			.into_iter()
 			.sorted_by_key(|ie| ie.created_at)
@@ -188,7 +188,13 @@ mod tests {
 			);
 
 			let project_card = github_bot
-				.active_project_event("parity-processbot", &created_issue)
+				.active_project_event(
+					"parity-processbot",
+					created_issue
+						.number
+						.context(error::MissingData)
+						.expect("created issue number"),
+				)
 				.await
 				.expect("active_project_event")
 				.expect("active_project_event option")

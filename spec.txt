@@ -1,3 +1,5 @@
+- projects should have a backlog column
+
 PULL REQUESTS
 0 projects : do nothing
 1 projects : 

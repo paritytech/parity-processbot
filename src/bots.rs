@@ -24,7 +24,6 @@ pub async fn update(
 	matrix_bot: &MatrixBot,
 	core_devs: &[github::User],
 	github_to_matrix: &HashMap<String, String>,
-	default_channel_id: &str,
 ) -> Result<()> {
 	for repo in github_bot.repositories().await?.iter() {
 		if let Ok(repo_projects) = github_bot.projects(&repo.name).await {
@@ -37,13 +36,14 @@ pub async fn update(
 				.and_then(projects_from_contents)
 				.into_iter()
 				.flat_map(|p| p)
-				.filter_map(|(key, project_info)| {
-					repo_projects
-						.iter()
-						.find(|rp| rp.name == key)
-						.map(|rp| (rp.clone(), project_info))
+				.map(|(key, project_info)| {
+					(
+						repo_projects.iter().find(|rp| rp.name == key).cloned(),
+						project_info,
+					)
 				})
-				.collect::<Vec<(github::Project, project_info::ProjectInfo)>>();
+				.collect::<Vec<(Option<github::Project>, project_info::ProjectInfo)>>(
+				);
 
 			if projects.len() > 0 {
 				for issue in
@@ -61,7 +61,6 @@ pub async fn update(
 							projects.as_ref(),
 							&repo,
 							&issue,
-							default_channel_id,
 						)
 						.await?;
 					}

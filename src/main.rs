@@ -81,6 +81,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 		&config.matrix_homeserver,
 		&config.matrix_user,
 		&config.matrix_password,
+		&config.matrix_default_channel_id,
 	)?;
 	log::info!(
 		"[+] Connected to matrix homeserver {} as {}",
@@ -177,7 +178,6 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 			&matrix_bot,
 			&core_devs,
 			&github_to_matrix,
-			&config.matrix_default_channel_id,
 		)
 		.await?;
 	}

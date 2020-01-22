@@ -17,7 +17,7 @@ impl GithubBot {
 			.await
 	}
 
-	/// Returns the issue associated with a pull request.
+	/// Returns a list of issues mentioned in the body of a pull request.
 	pub async fn pull_request_issues(
 		&self,
 		repo: &github::Repository,
@@ -202,7 +202,10 @@ mod tests {
 				.expect("create_issue");
 			let issues =
 				github_bot.repository_issues(&repo).await.expect("issues");
-			assert!(issues.iter().any(|is| is.title == "testing issue"));
+			assert!(issues.iter().any(|is| is
+				.title
+				.as_ref()
+				.map_or(false, |t| t == "testing issue")));
 			github_bot
 				.create_issue_comment(
 					"parity-processbot",
@@ -240,7 +243,10 @@ mod tests {
 				.repository_issues(&repo)
 				.await
 				.expect("pull_requests");
-			assert!(!issues.iter().any(|pr| pr.title == "testing issue"));
+			assert!(!issues.iter().any(|pr| pr
+				.title
+				.as_ref()
+				.map_or(false, |t| t == "testing issue")));
 			github_bot
 				.close_pull_request(
 					"parity-processbot",

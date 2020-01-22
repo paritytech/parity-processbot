@@ -11,8 +11,9 @@ pub const ISSUE_NO_PROJECT_ACTION_AFTER_NPINGS: u64 = 9;
 pub const ISSUE_UNCONFIRMED_PROJECT_PING_PERIOD: u64 = 3600 * 8;
 pub const MIN_REVIEWERS: usize = 2;
 
-pub const FALLBACK_ROOM_ID: &str = "!aenJixaHcSKbJOWxYk:matrix.parity.io";
+pub const TEMP_FALLBACK_ROOM_ID: &str = "!aenJixaHcSKbJOWxYk:matrix.parity.io";
 pub const PROJECT_BACKLOG_COLUMN_NAME: &str = "backlog";
+pub const PROJECT_NEEDS_BACKLOG_MESSAGE: &str = "{1} needs a backlog column.";
 
 pub const ISSUE_MUST_EXIST_MESSAGE: &str =
 	"Every pull request must address an issue.";

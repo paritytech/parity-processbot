@@ -57,11 +57,13 @@ async fn author_special_attach_only_project(
 			)
 			.await?;
 	} else {
-		log::warn!(
-			"{project_url} needs a backlog column",
-			project_url =
+				log::warn!(
+			&PROJECT_NEEDS_BACKLOG_MESSAGE.replace(
+				"{1}",
 				project.html_url.as_ref().context(error::MissingData)?,
-		);
+			),
+                );
+
 		matrix_bot.send_to_room_or_default(
 			project_info.matrix_room_id.as_ref(),
 			&PROJECT_NEEDS_BACKLOG_MESSAGE.replace(
