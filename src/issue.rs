@@ -62,8 +62,8 @@ async fn author_special_attach_only_project(
 			project_url =
 				project.html_url.as_ref().context(error::MissingData)?,
 		);
-		matrix_bot.send_to_room_or_default(
-			process_info.matrix_room_id.as_ref(),
+		matrix_bot.send_to_room(
+			&process_info.matrix_room_id,
 			&PROJECT_NEEDS_BACKLOG_MESSAGE.replace(
 				"{1}",
 				project.html_url.as_ref().context(error::MissingData)?,
@@ -196,42 +196,34 @@ fn author_non_special_project_state_none(
 	process_info: &process::ProcessInfo,
 	actor: &github::User,
 ) -> Result<()> {
-	if let Some(room_id) = &process_info.matrix_room_id {
-		local_state
-			.update_issue_confirm_project_ping(Some(SystemTime::now()), db)?;
-		local_state.update_issue_project(
-			Some(IssueProject {
-				state: IssueProjectState::Unconfirmed,
-				actor_login: actor.login.clone(),
-				project_column_id: project_column.id,
-			}),
-			db,
-		)?;
-		matrix_bot.send_to_room(
-			&room_id,
-			&ISSUE_CONFIRM_PROJECT_MESSAGE
-				.replace(
-					"{issue_url}",
-					issue.html_url.as_ref().context(error::MissingData)?,
-				)
-				.replace(
-					"{project_url}",
-					project.html_url.as_ref().context(error::MissingData)?,
-				)
-				.replace(
-					"{issue_id}",
-					&format!("{}", issue.id.context(error::MissingData)?),
-				)
-				.replace(
-					"{project_column.id}",
-					&format!("{}", project_column.id),
-				),
-		)?;
-	} else if let Some(_owner) = &process_info.owner_or_delegate() {
-		// TODO notify project owner
-	} else {
-		// TODO notify default matrix room
-	}
+	let room_id = &process_info.matrix_room_id;
+	local_state
+		.update_issue_confirm_project_ping(Some(SystemTime::now()), db)?;
+	local_state.update_issue_project(
+		Some(IssueProject {
+			state: IssueProjectState::Unconfirmed,
+			actor_login: actor.login.clone(),
+			project_column_id: project_column.id,
+		}),
+		db,
+	)?;
+	matrix_bot.send_to_room(
+		&room_id,
+		&ISSUE_CONFIRM_PROJECT_MESSAGE
+			.replace(
+				"{issue_url}",
+				issue.html_url.as_ref().context(error::MissingData)?,
+			)
+			.replace(
+				"{project_url}",
+				project.html_url.as_ref().context(error::MissingData)?,
+			)
+			.replace(
+				"{issue_id}",
+				&format!("{}", issue.id.context(error::MissingData)?),
+			)
+			.replace("{project_column.id}", &format!("{}", project_column.id)),
+	)?;
 	Ok(())
 }
 
@@ -267,23 +259,17 @@ async fn author_non_special_project_state_unconfirmed(
 			}),
 			db,
 		)?;
-		if let Some(room_id) = &process_info.matrix_room_id {
-			matrix_bot.send_to_room(
-				&room_id,
-				&ISSUE_CONFIRM_PROJECT_MESSAGE
-					.replace("{issue_url}", issue_html_url)
-					.replace("{project_url}", project_html_url)
-					.replace("{issue_id}", &format!("{}", issue_id))
-					.replace(
-						"{project_column.id}",
-						&format!("{}", project_column.id),
-					),
-			)?;
-		} else if let Some(_owner) = &process_info.owner_or_delegate() {
-			// TODO notify project owner
-		} else {
-			// TODO notify default matrix room
-		}
+		matrix_bot.send_to_room(
+			&process_info.matrix_room_id,
+			&ISSUE_CONFIRM_PROJECT_MESSAGE
+				.replace("{issue_url}", issue_html_url)
+				.replace("{project_url}", project_html_url)
+				.replace("{issue_id}", &format!("{}", issue_id))
+				.replace(
+					"{project_column.id}",
+					&format!("{}", project_column.id),
+				),
+		)?;
 	} else {
 		let ticks = local_state
 			.issue_confirm_project_ping()
@@ -358,23 +344,17 @@ async fn author_non_special_project_state_denied(
 			}),
 			db,
 		)?;
-		if let Some(room_id) = &process_info.matrix_room_id {
-			matrix_bot.send_to_room(
-				&room_id,
-				&ISSUE_CONFIRM_PROJECT_MESSAGE
-					.replace("{issue_url}", issue_html_url)
-					.replace("{project_url}", project_html_url)
-					.replace("{issue_id}", &format!("{}", issue_id))
-					.replace(
-						"{project_column.id}",
-						&format!("{}", project_column.id),
-					),
-			)?;
-		} else if let Some(_owner) = &process_info.owner_or_delegate() {
-			// TODO notify project owner
-		} else {
-			// TODO notify default matrix room
-		}
+		matrix_bot.send_to_room(
+			&process_info.matrix_room_id,
+			&ISSUE_CONFIRM_PROJECT_MESSAGE
+				.replace("{issue_url}", issue_html_url)
+				.replace("{project_url}", project_html_url)
+				.replace("{issue_id}", &format!("{}", issue_id))
+				.replace(
+					"{project_column.id}",
+					&format!("{}", project_column.id),
+				),
+		)?;
 	} else {
 		local_state.update_issue_confirm_project_ping(None, db)?;
 		local_state.update_issue_project(
@@ -402,10 +382,6 @@ async fn author_non_special_project_state_denied(
 			&matrix_id,
 			&ISSUE_REVERT_PROJECT_NOTIFICATION.replace("{1}", &issue_html_url),
 		)?;
-	} else if let Some(_owner) = &process_info.owner_or_delegate() {
-		// TODO notify project owner
-	} else {
-		// TODO notify default matrix room
 	}
 	Ok(())
 }
@@ -453,23 +429,17 @@ fn author_non_special_project_state_confirmed(
 			}),
 			db,
 		)?;
-		if let Some(room_id) = &process_info.matrix_room_id {
-			matrix_bot.send_to_room(
-				&room_id,
-				&ISSUE_CONFIRM_PROJECT_MESSAGE
-					.replace("{issue_url}", issue_html_url)
-					.replace("{project_url}", project_html_url)
-					.replace("{issue_id}", &format!("{}", issue_id))
-					.replace(
-						"{project_column.id}",
-						&format!("{}", project_column.id),
-					),
-			)?;
-		} else if let Some(_owner) = &process_info.owner_or_delegate() {
-			// TODO notify project owner
-		} else {
-			// TODO notify default matrix room
-		}
+		matrix_bot.send_to_room(
+			&process_info.matrix_room_id,
+			&ISSUE_CONFIRM_PROJECT_MESSAGE
+				.replace("{issue_url}", issue_html_url)
+				.replace("{project_url}", project_html_url)
+				.replace("{issue_id}", &format!("{}", issue_id))
+				.replace(
+					"{project_column.id}",
+					&format!("{}", project_column.id),
+				),
+		)?;
 	}
 	Ok(())
 }

@@ -35,11 +35,7 @@ async fn require_reviewers(
 		.iter()
 		.map(|r| &r.user)
 		.chain(requested_reviewers.users.iter().by_ref())
-		.any(|u| {
-			process_info
-				.owner_or_delegate()
-				.map_or(false, |x| &u.login == x)
-		});
+		.any(|u| process_info.owner_or_delegate() == &u.login);
 
 	let author_info = process_info.author_info(
 		&pull_request
@@ -48,27 +44,26 @@ async fn require_reviewers(
 			.context(error::MissingData)?
 			.login,
 	);
+
 	let pr_html_url =
 		pull_request.html_url.as_ref().context(error::MissingData)?;
 
 	if !author_info.is_owner_or_delegate && !owner_or_delegate_requested {
-		if let Some((github_id, matrix_id)) = process_info
-			.owner_or_delegate()
-			.and_then(|u| github_to_matrix.get(u).map(|m| (u, m)))
-		{
+		let github_login = process_info.owner_or_delegate();
+		if let Some(matrix_id) = github_to_matrix.get(github_login) {
 			matrix_bot.send_private_message(
 				&matrix_id,
 				&REQUEST_DELEGATED_REVIEW_MESSAGE.replace("{1}", &pr_html_url),
 			)?;
 			github_bot
-				.request_reviews(&pull_request, &[github_id.as_ref()])
+				.request_reviews(&pull_request, &[github_login.as_ref()])
 				.await?;
 		}
 	} else if reviewer_count < MIN_REVIEWERS {
 		// post a message in the project's Riot channel, requesting a review;
 		// repeat this message every 24 hours until a reviewer is assigned.
-		matrix_bot.send_to_room_or_default(
-			process_info.matrix_room_id.as_ref(),
+		matrix_bot.send_to_room(
+			&process_info.matrix_room_id,
 			&REQUESTING_REVIEWS_MESSAGE.replace("{1}", &pr_html_url),
 		)?;
 	} else {
@@ -172,12 +167,10 @@ fn author_is_core_unassigned_ticks_none(
             );
 		}
 	}
-	if let Some(ref matrix_id) =
-		process_info.owner_or_delegate().and_then(|owner_login| {
-			github_to_matrix
-				.get(owner_login)
-				.and_then(|matrix_id| matrix::parse_id(matrix_id))
-		}) {
+	if let Some(ref matrix_id) = github_to_matrix
+		.get(process_info.owner_or_delegate())
+		.and_then(|matrix_id| matrix::parse_id(matrix_id))
+	{
 		matrix_bot.send_private_message(
 			matrix_id,
 			&ISSUE_ASSIGNEE_NOTIFICATION
@@ -219,8 +212,8 @@ fn author_is_core_unassigned_ticks_passed(
 				| PullRequestCoreDevAuthorIssueNotAssigned24h,
 			db,
 		)?;
-		matrix_bot.send_to_room_or_default(
-			process_info.matrix_room_id.as_ref(),
+		matrix_bot.send_to_room(
+			&process_info.matrix_room_id,
 			&ISSUE_ASSIGNEE_NOTIFICATION
 				.replace("{1}", &pr_html_url)
 				.replace("{2}", &issue_html_url)
@@ -278,15 +271,11 @@ async fn handle_status(
 	let pr_html_url =
 		pull_request.html_url.as_ref().context(error::MissingData)?;
 
-	let owner_or_delegate_approved =
-		process_info
-			.owner_or_delegate()
-			.map_or(false, |owner_login| {
-				reviews
-					.iter()
-					.find(|r| &r.user.login == owner_login)
-					.map_or(false, |r| r.state.as_deref() == Some("APPROVED"))
-			});
+	let owner_login = process_info.owner_or_delegate();
+	let owner_or_delegate_approved = reviews
+		.iter()
+		.find(|r| &r.user.login == owner_login)
+		.map_or(false, |r| r.state.as_deref() == Some("APPROVED"));
 
 	match status.state {
 		github::StatusState::Failure => {
@@ -301,9 +290,8 @@ async fn handle_status(
 			if should_ping {
 				local_state
 					.update_status_failure_ping(Some(SystemTime::now()), db)?;
-				if let Some(ref matrix_id) = process_info
-					.owner_or_delegate()
-					.and_then(|owner_login| github_to_matrix.get(owner_login))
+				if let Some(ref matrix_id) = github_to_matrix
+					.get(owner_login)
 					.and_then(|matrix_id| matrix::parse_id(matrix_id))
 				{
 					matrix_bot.send_private_message(

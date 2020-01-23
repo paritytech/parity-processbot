@@ -38,6 +38,20 @@ pub enum Error {
 		backtrace: Backtrace,
 	},
 
+	/// An error occurred while parsing TOML.
+	#[snafu(display("Source: {}\nBacktrace:\n{}", source, backtrace))]
+	Toml {
+		source: toml::de::Error,
+		backtrace: Backtrace,
+	},
+
+	/// An error occurred while parsing TOML.
+	#[snafu(display("Source: {}\nBacktrace:\n{}", source, backtrace))]
+	Base64 {
+		source: base64::DecodeError,
+		backtrace: Backtrace,
+	},
+
 	/// An error occurred with an integration service (e.g. GitHub).
 	#[snafu(display(
 		"Status code: {}\nBody:\n{:#?}\nBacktrace:\n{}",
