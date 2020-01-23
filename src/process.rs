@@ -1,7 +1,7 @@
-pub type ProjectInfoMap = std::collections::HashMap<String, ProjectInfo>;
+pub type ProcessInfoMap = std::collections::HashMap<String, ProcessInfo>;
 
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
-pub struct ProjectInfo {
+pub struct ProcessInfo {
 	owner: Option<String>,
 	delegated_reviewer: Option<String>,
 	pub whitelist: Option<Vec<String>>,
@@ -20,7 +20,7 @@ impl AuthorInfo {
 	}
 }
 
-impl ProjectInfo {
+impl ProcessInfo {
 	pub fn owner_or_delegate(&self) -> Option<&String> {
 		self.delegated_reviewer.as_ref().or(self.owner.as_ref())
 	}
@@ -61,12 +61,12 @@ impl ProjectInfo {
 	}
 }
 
-pub fn projects_from_table(tab: toml::value::Table) -> ProjectInfoMap {
+pub fn projects_from_table(tab: toml::value::Table) -> ProcessInfoMap {
 	tab.into_iter()
 		.filter_map(|(key, val)| match val {
 			toml::value::Value::Table(ref tab) => Some((
 				key,
-				ProjectInfo {
+				ProcessInfo {
 					owner: val
 						.get("owner")
 						.and_then(toml::value::Value::as_str)

@@ -2,7 +2,7 @@ use crate::db::*;
 use crate::local_state::*;
 use crate::{
 	constants::*, duration_ticks::DurationTicks, error, github,
-	github_bot::GithubBot, matrix, matrix_bot::MatrixBot, project_info, Result,
+	github_bot::GithubBot, matrix, matrix_bot::MatrixBot, process, Result,
 };
 use parking_lot::RwLock;
 use rocksdb::DB;
@@ -34,7 +34,7 @@ async fn author_special_attach_only_project(
 	github_bot: &GithubBot,
 	matrix_bot: &MatrixBot,
 	issue: &github::Issue,
-	(project, project_info): (&github::Project, &project_info::ProjectInfo),
+	(project, process_info): (&github::Project, &process::ProcessInfo),
 	actor: &github::User,
 ) -> Result<()> {
 	if let Some(backlog_column) = github_bot
@@ -63,7 +63,7 @@ async fn author_special_attach_only_project(
 				project.html_url.as_ref().context(error::MissingData)?,
 		);
 		matrix_bot.send_to_room_or_default(
-			project_info.matrix_room_id.as_ref(),
+			process_info.matrix_room_id.as_ref(),
 			&PROJECT_NEEDS_BACKLOG_MESSAGE.replace(
 				"{1}",
 				project.html_url.as_ref().context(error::MissingData)?,
@@ -193,10 +193,10 @@ fn author_non_special_project_state_none(
 	issue: &github::Issue,
 	project: &github::Project,
 	project_column: &github::ProjectColumn,
-	project_info: &project_info::ProjectInfo,
+	process_info: &process::ProcessInfo,
 	actor: &github::User,
 ) -> Result<()> {
-	if let Some(room_id) = &project_info.matrix_room_id {
+	if let Some(room_id) = &process_info.matrix_room_id {
 		local_state
 			.update_issue_confirm_project_ping(Some(SystemTime::now()), db)?;
 		local_state.update_issue_project(
@@ -227,7 +227,7 @@ fn author_non_special_project_state_none(
 					&format!("{}", project_column.id),
 				),
 		)?;
-	} else if let Some(_owner) = &project_info.owner_or_delegate() {
+	} else if let Some(_owner) = &process_info.owner_or_delegate() {
 		// TODO notify project owner
 	} else {
 		// TODO notify default matrix room
@@ -244,7 +244,7 @@ async fn author_non_special_project_state_unconfirmed(
 	issue: &github::Issue,
 	project: &github::Project,
 	project_column: &github::ProjectColumn,
-	project_info: &project_info::ProjectInfo,
+	process_info: &process::ProcessInfo,
 	actor: &github::User,
 ) -> Result<()> {
 	let issue_id = issue.id.context(error::MissingData)?;
@@ -267,7 +267,7 @@ async fn author_non_special_project_state_unconfirmed(
 			}),
 			db,
 		)?;
-		if let Some(room_id) = &project_info.matrix_room_id {
+		if let Some(room_id) = &process_info.matrix_room_id {
 			matrix_bot.send_to_room(
 				&room_id,
 				&ISSUE_CONFIRM_PROJECT_MESSAGE
@@ -279,7 +279,7 @@ async fn author_non_special_project_state_unconfirmed(
 						&format!("{}", project_column.id),
 					),
 			)?;
-		} else if let Some(_owner) = &project_info.owner_or_delegate() {
+		} else if let Some(_owner) = &process_info.owner_or_delegate() {
 			// TODO notify project owner
 		} else {
 			// TODO notify default matrix room
@@ -338,7 +338,7 @@ async fn author_non_special_project_state_denied(
 	issue: &github::Issue,
 	project: &github::Project,
 	project_column: &github::ProjectColumn,
-	project_info: &project_info::ProjectInfo,
+	process_info: &process::ProcessInfo,
 	actor: &github::User,
 ) -> Result<()> {
 	let issue_id = issue.id.context(error::MissingData)?;
@@ -358,7 +358,7 @@ async fn author_non_special_project_state_denied(
 			}),
 			db,
 		)?;
-		if let Some(room_id) = &project_info.matrix_room_id {
+		if let Some(room_id) = &process_info.matrix_room_id {
 			matrix_bot.send_to_room(
 				&room_id,
 				&ISSUE_CONFIRM_PROJECT_MESSAGE
@@ -370,7 +370,7 @@ async fn author_non_special_project_state_denied(
 						&format!("{}", project_column.id),
 					),
 			)?;
-		} else if let Some(_owner) = &project_info.owner_or_delegate() {
+		} else if let Some(_owner) = &process_info.owner_or_delegate() {
 			// TODO notify project owner
 		} else {
 			// TODO notify default matrix room
@@ -402,7 +402,7 @@ async fn author_non_special_project_state_denied(
 			&matrix_id,
 			&ISSUE_REVERT_PROJECT_NOTIFICATION.replace("{1}", &issue_html_url),
 		)?;
-	} else if let Some(_owner) = &project_info.owner_or_delegate() {
+	} else if let Some(_owner) = &process_info.owner_or_delegate() {
 		// TODO notify project owner
 	} else {
 		// TODO notify default matrix room
@@ -417,7 +417,7 @@ fn author_non_special_project_state_confirmed(
 	issue: &github::Issue,
 	project: &github::Project,
 	project_column: &github::ProjectColumn,
-	project_info: &project_info::ProjectInfo,
+	process_info: &process::ProcessInfo,
 	actor: &github::User,
 ) -> Result<()> {
 	let issue_id = issue.id.context(error::MissingData)?;
@@ -453,7 +453,7 @@ fn author_non_special_project_state_confirmed(
 			}),
 			db,
 		)?;
-		if let Some(room_id) = &project_info.matrix_room_id {
+		if let Some(room_id) = &process_info.matrix_room_id {
 			matrix_bot.send_to_room(
 				&room_id,
 				&ISSUE_CONFIRM_PROJECT_MESSAGE
@@ -465,7 +465,7 @@ fn author_non_special_project_state_confirmed(
 						&format!("{}", project_column.id),
 					),
 			)?;
-		} else if let Some(_owner) = &project_info.owner_or_delegate() {
+		} else if let Some(_owner) = &process_info.owner_or_delegate() {
 			// TODO notify project owner
 		} else {
 			// TODO notify default matrix room
@@ -480,7 +480,7 @@ pub async fn handle_issue(
 	matrix_bot: &MatrixBot,
 	core_devs: &[github::User],
 	github_to_matrix: &HashMap<String, String>,
-	projects: &[(Option<github::Project>, project_info::ProjectInfo)],
+	projects: &[(Option<github::Project>, process::ProcessInfo)],
 	repo: &github::Repository,
 	issue: &github::Issue,
 ) -> Result<()> {
@@ -494,7 +494,7 @@ pub async fn handle_issue(
 		.any(|u| issue.user.as_ref().map_or(false, |user| u.id == user.id));
 
 	if projects.is_empty() {
-		// there are no projects matching those listed in Projects.toml so do nothing
+		// there are no projects matching those listed in Process.toml so do nothing
 	} else {
 		match issue_actor_and_project_card(
 			&repo.name,
@@ -584,14 +584,14 @@ pub async fn handle_issue(
                         repo_name = repo.name
                 );
 
-				if let Some(project_info) = projects
+				if let Some(process_info) = projects
 					.iter()
 					.find(|(p, _)| {
 						p.as_ref().map_or(false, |p| &project.name == &p.name)
 					})
 					.map(|(_, p)| p)
 				{
-					if !project_info.is_special(&actor.login) {
+					if !process_info.is_special(&actor.login) {
 						// TODO check if confirmation has confirmed/denied.
 						// requires parsing messages in project room
 
@@ -603,7 +603,7 @@ pub async fn handle_issue(
 								issue,
 								&project,
 								&project_column,
-								&project_info,
+								&process_info,
 								&actor,
 							)?,
 							Some(IssueProjectState::Unconfirmed) => {
@@ -616,7 +616,7 @@ pub async fn handle_issue(
 									issue,
 									&project,
 									&project_column,
-									&project_info,
+									&process_info,
 									&actor,
 								)
 								.await?
@@ -631,7 +631,7 @@ pub async fn handle_issue(
 									issue,
 									&project,
 									&project_column,
-									&project_info,
+									&process_info,
 									&actor,
 								)
 								.await?
@@ -644,7 +644,7 @@ pub async fn handle_issue(
 									issue,
 									&project,
 									&project_column,
-									&project_info,
+									&process_info,
 									&actor,
 								)?
 							}
@@ -653,7 +653,7 @@ pub async fn handle_issue(
 						// actor is special so allow any change
 					}
 				} else {
-					// no key in in Projects.toml matches the project name
+					// no key in in Process.toml matches the project name
 					// TODO notification here
 				}
 			}

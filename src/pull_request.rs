@@ -3,7 +3,7 @@ use crate::local_state::*;
 use crate::{
 	constants::*, duration_ticks::DurationTicks, error, github,
 	github_bot::GithubBot, issue::issue_actor_and_project_card, matrix,
-	matrix_bot::MatrixBot, project_info, Result,
+	matrix_bot::MatrixBot, process, Result,
 };
 use parking_lot::RwLock;
 use rocksdb::DB;
@@ -17,7 +17,7 @@ async fn require_reviewers(
 	github_bot: &GithubBot,
 	matrix_bot: &MatrixBot,
 	github_to_matrix: &HashMap<String, String>,
-	project_info: &project_info::ProjectInfo,
+	process_info: &process::ProcessInfo,
 	reviews: &[github::Review],
 	requested_reviewers: &github::RequestedReviewers,
 ) -> Result<()> {
@@ -36,12 +36,12 @@ async fn require_reviewers(
 		.map(|r| &r.user)
 		.chain(requested_reviewers.users.iter().by_ref())
 		.any(|u| {
-			project_info
+			process_info
 				.owner_or_delegate()
 				.map_or(false, |x| &u.login == x)
 		});
 
-	let author_info = project_info.author_info(
+	let author_info = process_info.author_info(
 		&pull_request
 			.user
 			.as_ref()
@@ -52,7 +52,7 @@ async fn require_reviewers(
 		pull_request.html_url.as_ref().context(error::MissingData)?;
 
 	if !author_info.is_owner_or_delegate && !owner_or_delegate_requested {
-		if let Some((github_id, matrix_id)) = project_info
+		if let Some((github_id, matrix_id)) = process_info
 			.owner_or_delegate()
 			.and_then(|u| github_to_matrix.get(u).map(|m| (u, m)))
 		{
@@ -68,7 +68,7 @@ async fn require_reviewers(
 		// post a message in the project's Riot channel, requesting a review;
 		// repeat this message every 24 hours until a reviewer is assigned.
 		matrix_bot.send_to_room_or_default(
-			project_info.matrix_room_id.as_ref(),
+			process_info.matrix_room_id.as_ref(),
 			&REQUESTING_REVIEWS_MESSAGE.replace("{1}", &pr_html_url),
 		)?;
 	} else {
@@ -84,7 +84,7 @@ async fn author_is_core_unassigned(
 	github_bot: &GithubBot,
 	matrix_bot: &MatrixBot,
 	github_to_matrix: &HashMap<String, String>,
-	project_info: &project_info::ProjectInfo,
+	process_info: &process::ProcessInfo,
 	repo: &github::Repository,
 	pull_request: &github::PullRequest,
 	issue: &github::Issue,
@@ -101,7 +101,7 @@ async fn author_is_core_unassigned(
 			local_state,
 			matrix_bot,
 			github_to_matrix,
-			project_info,
+			process_info,
 			pull_request,
 			issue,
 		),
@@ -114,7 +114,7 @@ async fn author_is_core_unassigned(
 			db,
 			local_state,
 			matrix_bot,
-			project_info,
+			process_info,
 			pull_request,
 			issue,
 		),
@@ -138,7 +138,7 @@ fn author_is_core_unassigned_ticks_none(
 	local_state: &mut LocalState,
 	matrix_bot: &MatrixBot,
 	github_to_matrix: &HashMap<String, String>,
-	project_info: &project_info::ProjectInfo,
+	process_info: &process::ProcessInfo,
 	pull_request: &github::PullRequest,
 	issue: &github::Issue,
 ) -> Result<()> {
@@ -173,7 +173,7 @@ fn author_is_core_unassigned_ticks_none(
 		}
 	}
 	if let Some(ref matrix_id) =
-		project_info.owner_or_delegate().and_then(|owner_login| {
+		process_info.owner_or_delegate().and_then(|owner_login| {
 			github_to_matrix
 				.get(owner_login)
 				.and_then(|matrix_id| matrix::parse_id(matrix_id))
@@ -204,7 +204,7 @@ fn author_is_core_unassigned_ticks_passed(
 	db: &Arc<RwLock<DB>>,
 	local_state: &mut LocalState,
 	matrix_bot: &MatrixBot,
-	project_info: &project_info::ProjectInfo,
+	process_info: &process::ProcessInfo,
 	pull_request: &github::PullRequest,
 	issue: &github::Issue,
 ) -> Result<()> {
@@ -220,7 +220,7 @@ fn author_is_core_unassigned_ticks_passed(
 			db,
 		)?;
 		matrix_bot.send_to_room_or_default(
-			project_info.matrix_room_id.as_ref(),
+			process_info.matrix_room_id.as_ref(),
 			&ISSUE_ASSIGNEE_NOTIFICATION
 				.replace("{1}", &pr_html_url)
 				.replace("{2}", &issue_html_url)
@@ -268,7 +268,7 @@ async fn handle_status(
 	github_bot: &GithubBot,
 	matrix_bot: &MatrixBot,
 	github_to_matrix: &HashMap<String, String>,
-	project_info: &project_info::ProjectInfo,
+	process_info: &process::ProcessInfo,
 	repo: &github::Repository,
 	pull_request: &github::PullRequest,
 	status: &github::Status,
@@ -279,7 +279,7 @@ async fn handle_status(
 		pull_request.html_url.as_ref().context(error::MissingData)?;
 
 	let owner_or_delegate_approved =
-		project_info
+		process_info
 			.owner_or_delegate()
 			.map_or(false, |owner_login| {
 				reviews
@@ -301,7 +301,7 @@ async fn handle_status(
 			if should_ping {
 				local_state
 					.update_status_failure_ping(Some(SystemTime::now()), db)?;
-				if let Some(ref matrix_id) = project_info
+				if let Some(ref matrix_id) = process_info
 					.owner_or_delegate()
 					.and_then(|owner_login| github_to_matrix.get(owner_login))
 					.and_then(|matrix_id| matrix::parse_id(matrix_id))
@@ -337,7 +337,7 @@ async fn handle_pull_request_with_issue_and_project(
 	matrix_bot: &MatrixBot,
 	core_devs: &[github::User],
 	github_to_matrix: &HashMap<String, String>,
-	project_info: &project_info::ProjectInfo,
+	process_info: &process::ProcessInfo,
 	repo: &github::Repository,
 	pull_request: &github::PullRequest,
 	issue: &github::Issue,
@@ -346,7 +346,7 @@ async fn handle_pull_request_with_issue_and_project(
 	requested_reviewers: &github::RequestedReviewers,
 ) -> Result<()> {
 	let author = pull_request.user.as_ref().context(error::MissingData)?;
-	let author_info = project_info.author_info(&author.login);
+	let author_info = process_info.author_info(&author.login);
 	let _author_is_core = core_devs.iter().any(|u| u.id == author.id);
 	let author_is_assignee = issue
 		.assignee
@@ -358,7 +358,7 @@ async fn handle_pull_request_with_issue_and_project(
 			github_bot,
 			matrix_bot,
 			github_to_matrix,
-			project_info,
+			process_info,
 			&reviews,
 			&requested_reviewers,
 		)
@@ -375,7 +375,7 @@ async fn handle_pull_request_with_issue_and_project(
 				github_bot,
 				matrix_bot,
 				github_to_matrix,
-				project_info,
+				process_info,
 				&reviews,
 				&requested_reviewers,
 			)
@@ -389,7 +389,7 @@ async fn handle_pull_request_with_issue_and_project(
 				github_bot,
 				matrix_bot,
 				github_to_matrix,
-				project_info,
+				process_info,
 				repo,
 				pull_request,
 				&issue,
@@ -404,7 +404,7 @@ async fn handle_pull_request_with_issue_and_project(
 		github_bot,
 		matrix_bot,
 		github_to_matrix,
-		&project_info,
+		&process_info,
 		&repo,
 		&pull_request,
 		status,
@@ -535,7 +535,7 @@ pub async fn handle_pull_request(
 	matrix_bot: &MatrixBot,
 	core_devs: &[github::User],
 	github_to_matrix: &HashMap<String, String>,
-	projects: &[(Option<github::Project>, project_info::ProjectInfo)],
+	projects: &[(Option<github::Project>, process::ProcessInfo)],
 	repo: &github::Repository,
 	pull_request: &github::PullRequest,
 ) -> Result<()> {
@@ -559,7 +559,7 @@ pub async fn handle_pull_request(
 
 		1 => {
 			// assume the sole project is the relevant one
-			let (project, project_info) = projects.last().unwrap();
+			let (project, process_info) = projects.last().unwrap();
 			log::info!(
                 "Handling pull request '{issue_title:?}' in project '{project_name:?}' in repo '{repo_name}'",
                 issue_title = pull_request.title,
@@ -567,7 +567,7 @@ pub async fn handle_pull_request(
                 repo_name = repo.name
             );
 
-			let author_info = project_info.author_info(&author.login);
+			let author_info = process_info.author_info(&author.login);
 			if issues.len() > 0 {
 				// TODO consider all mentioned issues here
 				let issue = issues.first().unwrap();
@@ -578,7 +578,7 @@ pub async fn handle_pull_request(
 					matrix_bot,
 					core_devs,
 					github_to_matrix,
-					project_info,
+					process_info,
 					repo,
 					pull_request,
 					&issue,
@@ -595,7 +595,7 @@ pub async fn handle_pull_request(
 						github_bot,
 						matrix_bot,
 						github_to_matrix,
-						project_info,
+						process_info,
 						&reviews,
 						&requested_reviewers,
 					)
@@ -606,7 +606,7 @@ pub async fn handle_pull_request(
 						github_bot,
 						matrix_bot,
 						github_to_matrix,
-						&project_info,
+						&process_info,
 						&repo,
 						&pull_request,
 						&status,
@@ -662,7 +662,7 @@ pub async fn handle_pull_request(
                         repo_name = repo.name
                     );
 
-					if let Some(project_info) = projects
+					if let Some(process_info) = projects
 						.iter()
 						.find(|(p, _)| {
 							p.as_ref()
@@ -677,7 +677,7 @@ pub async fn handle_pull_request(
 							matrix_bot,
 							core_devs,
 							github_to_matrix,
-							project_info,
+							process_info,
 							repo,
 							pull_request,
 							&issue,
@@ -690,7 +690,7 @@ pub async fn handle_pull_request(
 						// notify the author that this pr/issue needs a project attached or it will be
 						// closed.
 						log::info!(
-                            "Pull request '{issue_title:?}' in repo '{repo_name}' addresses an issue attached to a project not listed in Projects.toml; ignoring",
+                            "Pull request '{issue_title:?}' in repo '{repo_name}' addresses an issue attached to a project not listed in Process.toml; ignoring",
                             issue_title = pull_request.title,
                             repo_name = repo.name
                         );

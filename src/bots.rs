@@ -5,16 +5,16 @@ use std::sync::Arc;
 
 use crate::{
 	github, github_bot::GithubBot, issue::handle_issue, matrix_bot::MatrixBot,
-	project_info, pull_request::handle_pull_request, Result,
+	process, pull_request::handle_pull_request, Result,
 };
 
 fn projects_from_contents(
 	c: github::Contents,
-) -> Option<impl Iterator<Item = (String, project_info::ProjectInfo)>> {
+) -> Option<impl Iterator<Item = (String, process::ProcessInfo)>> {
 	base64::decode(&c.content.replace("\n", ""))
 		.ok()
 		.and_then(|s| toml::from_slice::<toml::value::Table>(&s).ok())
-		.map(project_info::projects_from_table)
+		.map(process::projects_from_table)
 		.map(|p| p.into_iter())
 }
 
@@ -27,22 +27,22 @@ pub async fn update(
 ) -> Result<()> {
 	for repo in github_bot.repositories().await?.iter() {
 		if let Ok(repo_projects) = github_bot.projects(&repo.name).await {
-			// projects in Projects.toml are useless if they do not match a project
+			// projects in Process.toml are useless if they do not match a project
 			// in the repo
 			let projects = github_bot
-				.contents(&repo.name, "Projects.toml")
+				.contents(&repo.name, "Process.toml")
 				.await
 				.ok()
 				.and_then(projects_from_contents)
 				.into_iter()
 				.flat_map(|p| p)
-				.map(|(key, project_info)| {
+				.map(|(key, process_info)| {
 					(
 						repo_projects.iter().find(|rp| rp.name == key).cloned(),
-						project_info,
+						process_info,
 					)
 				})
-				.collect::<Vec<(Option<github::Project>, project_info::ProjectInfo)>>(
+				.collect::<Vec<(Option<github::Project>, process::ProcessInfo)>>(
 				);
 
 			if projects.len() > 0 {
