@@ -1,5 +1,5 @@
-use crate::{error, Result};
-use snafu::OptionExt;
+use crate::{error, github, Result};
+use snafu::{OptionExt, ResultExt};
 
 pub type ProcessInfoMap = std::collections::HashMap<String, ProcessInfo>;
 
@@ -70,6 +70,18 @@ impl ProcessInfo {
 			|| self.is_delegated_reviewer(login)
 			|| self.is_whitelisted(login)
 	}
+}
+
+pub fn process_from_contents(
+	c: github::Contents,
+) -> Result<impl Iterator<Item = (String, ProcessInfo)>> {
+	base64::decode(&c.content.replace("\n", ""))
+		.context(error::Base64)
+		.and_then(|s| {
+			toml::from_slice::<toml::value::Table>(&s).context(error::Toml)
+		})
+		.and_then(process_from_table)
+		.map(|p| p.into_iter())
 }
 
 pub fn process_from_table(tab: toml::value::Table) -> Result<ProcessInfoMap> {

@@ -1,25 +1,13 @@
 use parking_lot::RwLock;
 use rocksdb::DB;
-use snafu::ResultExt;
+use snafu::OptionExt;
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::{
-	error, github, github_bot::GithubBot, issue::handle_issue,
+	constants::*, error, github, github_bot::GithubBot, issue::handle_issue,
 	matrix_bot::MatrixBot, process, pull_request::handle_pull_request, Result,
 };
-
-fn process_from_contents(
-	c: github::Contents,
-) -> Result<impl Iterator<Item = (String, process::ProcessInfo)>> {
-	base64::decode(&c.content.replace("\n", ""))
-		.context(error::Base64)
-		.and_then(|s| {
-			toml::from_slice::<toml::value::Table>(&s).context(error::Toml)
-		})
-		.and_then(process::process_from_table)
-		.map(|p| p.into_iter())
-}
 
 pub async fn update(
 	db: &Arc<RwLock<DB>>,
@@ -33,23 +21,28 @@ pub async fn update(
 			if let Ok(contents) =
 				github_bot.contents(&repo.name, "Process.toml").await
 			{
-				if let Ok(process) = process_from_contents(contents) {
+				if let Ok(process) = process::process_from_contents(contents) {
+					// projects in Process.toml are useless if they do not match a project
+					// in the repo
 					let projects_with_process = process
 						.into_iter()
-						.map(|(key, process_info)| {
-							(
-								repo_projects
-									.iter()
-									.find(|rp| rp.name == key)
-									.cloned(),
-								process_info,
-							)
-						})
+						.map(
+							|(key, process_info): (
+								String,
+								process::ProcessInfo,
+							)| {
+								(
+									repo_projects
+										.iter()
+										.find(|rp| rp.name == key)
+										.cloned(),
+									process_info,
+								)
+							},
+						)
 						.collect::<Vec<(Option<github::Project>, process::ProcessInfo)>>(
 						);
 
-					// projects in Process.toml are useless if they do not match a project
-					// in the repo
 					if projects_with_process.len() > 0 {
 						for issue in github_bot
 							.repository_issues(&repo)
@@ -88,10 +81,26 @@ pub async fn update(
 							.await?;
 						}
 					} else {
-						// TODO notify projects in Process.toml do not match projects in repo
+						matrix_bot.send_to_default(
+							&MISMATCHED_PROCESS_FILE.replace(
+								"{1}",
+								&repo
+									.html_url
+									.as_ref()
+									.context(error::MissingData)?,
+							),
+						)?;
 					}
 				} else {
-					// TODO notify Process.toml malformed or missing fields
+					matrix_bot.send_to_default(
+						&MALFORMED_PROCESS_FILE.replace(
+							"{1}",
+							&repo
+								.html_url
+								.as_ref()
+								.context(error::MissingData)?,
+						),
+					)?;
 				}
 			} else {
 				// no Process.toml so ignore and continue

@@ -14,9 +14,9 @@ pub const MIN_REVIEWERS: usize = 2;
 pub const TEMP_FALLBACK_ROOM_ID: &str = "!aenJixaHcSKbJOWxYk:matrix.parity.io";
 pub const PROJECT_BACKLOG_COLUMN_NAME: &str = "backlog";
 pub const PROJECT_NEEDS_BACKLOG_MESSAGE: &str = "{1} needs a backlog column.";
-pub const PROCESS_FILE_NEEDS_ROOM_ID: &str =
-	"Process.toml for repo {1} needs a 'matrix_room_id'.";
 pub const PUBLIC_MISSING_PROJECT_FIELDS_NOTIFICATION: &str = "Process.toml for repo {1} is missing some fields. Please ensure that every project lists an owner and a matrix_room_id.";
+pub const MISMATCHED_PROCESS_FILE: &str = "Process.toml for repo {1} lists projects that do not exist in the repo, so it will be treated as invalid.";
+pub const MALFORMED_PROCESS_FILE: &str = "Process.toml for repo {1} is malformed or missing some fields. Please ensure that every listed project contains an owner and a matrix_room_id.";
 
 pub const ISSUE_MUST_EXIST_MESSAGE: &str =
 	"Every pull request must address an issue.";
