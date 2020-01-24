@@ -36,7 +36,6 @@ async fn require_reviewers(
 		users.dedup_by_key(|u| &u.login);
 		users.len()
 	};
-	dbg!(reviewer_count);
 
 	let owner_or_delegate_requested = reviews
 		.iter()
