@@ -28,8 +28,7 @@ impl GithubBot {
 		Ok(futures::future::join_all(
 			re.captures_iter(body)
 				.filter_map(|cap| {
-					cap.get(1)
-						.and_then(|x| dbg!(x.as_str()).parse::<i64>().ok())
+					cap.get(1).and_then(|x| x.as_str().parse::<i64>().ok())
 				})
 				.map(|num| {
 					self.client.get(format!(
@@ -125,7 +124,7 @@ impl GithubBot {
 	pub async fn assign_issue<A, B>(
 		&self,
 		repo_name: A,
-		issue_id: i64,
+		issue_number: i64,
 		assignee_login: B,
 	) -> Result<()>
 	where
@@ -133,10 +132,11 @@ impl GithubBot {
 		B: AsRef<str>,
 	{
 		let url = format!(
-			"{base_url}/{repo}/issues/{issue_id}/assignees",
-			base_url = &self.organization.repos_url,
+			"{base_url}/repos/{owner}/{repo}/issues/{issue_number}/assignees",
+			base_url = Self::BASE_URL,
+			owner = &self.organization.login,
 			repo = repo_name.as_ref(),
-			issue_id = issue_id
+			issue_number = issue_number
 		);
 		self.client
 			.post_response(

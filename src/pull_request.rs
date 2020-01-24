@@ -13,6 +13,7 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 async fn require_reviewers(
+	db: &Arc<RwLock<DB>>,
 	pull_request: &github::PullRequest,
 	github_bot: &GithubBot,
 	matrix_bot: &MatrixBot,
@@ -21,6 +22,11 @@ async fn require_reviewers(
 	reviews: &[github::Review],
 	requested_reviewers: &github::RequestedReviewers,
 ) -> Result<()> {
+	let pr_html_url =
+		pull_request.html_url.as_ref().context(error::MissingData)?;
+
+	log::info!("Requiring reviewers on {}", pr_html_url);
+
 	let reviewer_count = {
 		let mut users = reviews
 			.iter()
@@ -45,23 +51,34 @@ async fn require_reviewers(
 			.login,
 	);
 
-	let pr_html_url =
-		pull_request.html_url.as_ref().context(error::MissingData)?;
-
 	if !author_info.is_owner_or_delegate && !owner_or_delegate_requested {
+		log::info!(
+			"Requesting a review on {} from the project owner.",
+			pr_html_url
+		);
 		let github_login = process_info.owner_or_delegate();
 		if let Some(matrix_id) = github_to_matrix.get(github_login) {
 			matrix_bot.send_private_message(
+				db,
 				&matrix_id,
 				&REQUEST_DELEGATED_REVIEW_MESSAGE.replace("{1}", &pr_html_url),
 			)?;
 			github_bot
 				.request_reviews(&pull_request, &[github_login.as_ref()])
 				.await?;
+		} else {
+			log::error!(
+                "Couldn't send a message to {}; either their Github or Matrix handle is not set in Bamboo",
+                &github_login
+            );
 		}
 	} else if reviewer_count < MIN_REVIEWERS {
 		// post a message in the project's Riot channel, requesting a review;
 		// repeat this message every 24 hours until a reviewer is assigned.
+		log::info!(
+			"Requesting a review on {} from the project room.",
+			pr_html_url
+		);
 		matrix_bot.send_to_room(
 			&process_info.matrix_room_id,
 			&REQUESTING_REVIEWS_MESSAGE.replace("{1}", &pr_html_url),
@@ -88,6 +105,7 @@ async fn author_is_core_unassigned(
 		.issue_not_assigned_ping()
 		.and_then(|ping| ping.elapsed().ok())
 		.ticks(ISSUE_NOT_ASSIGNED_PING_PERIOD);
+	log::info!("Author of {} is a core developer and the issue has been unassigned for {:?} days.", pull_request.title.as_ref().context(error::MissingData)?, days);
 	match days {
 		// notify the the issue assignee and project
 		// owner through a PM
@@ -137,6 +155,10 @@ fn author_is_core_unassigned_ticks_none(
 	pull_request: &github::PullRequest,
 	issue: &github::Issue,
 ) -> Result<()> {
+	log::info!(
+		"Author of {} is a core developer but the issue is unassigned to them.",
+		pull_request.title.as_ref().context(error::MissingData)?
+	);
 	let pr_html_url =
 		pull_request.html_url.as_ref().context(error::MissingData)?;
 	let issue_html_url = issue.html_url.as_ref().context(error::MissingData)?;
@@ -147,6 +169,7 @@ fn author_is_core_unassigned_ticks_none(
 			.and_then(|matrix_id| matrix::parse_id(matrix_id))
 		{
 			matrix_bot.send_private_message(
+				db,
 				&matrix_id,
 				&ISSUE_ASSIGNEE_NOTIFICATION
 					.replace("{1}", &pr_html_url)
@@ -161,7 +184,7 @@ fn author_is_core_unassigned_ticks_none(
 					),
 			)?;
 		} else {
-			log::warn!(
+			log::error!(
                 "Couldn't send a message to {}; either their Github or Matrix handle is not set in Bamboo",
                 &assignee.login
             );
@@ -172,6 +195,7 @@ fn author_is_core_unassigned_ticks_none(
 		.and_then(|matrix_id| matrix::parse_id(matrix_id))
 	{
 		matrix_bot.send_private_message(
+			db,
 			matrix_id,
 			&ISSUE_ASSIGNEE_NOTIFICATION
 				.replace("{1}", &pr_html_url)
@@ -186,7 +210,7 @@ fn author_is_core_unassigned_ticks_none(
 				),
 		)?;
 	} else {
-		log::warn!(
+		log::error!(
             "Couldn't send a message to the project owner; either their Github or Matrix handle is not set in Bamboo"
         );
 	}
@@ -201,6 +225,7 @@ fn author_is_core_unassigned_ticks_passed(
 	pull_request: &github::PullRequest,
 	issue: &github::Issue,
 ) -> Result<()> {
+	log::info!("Author of {} is a core developer and the issue is still unassigned to them.", pull_request.title.as_ref().context(error::MissingData)?);
 	let pr_html_url =
 		pull_request.html_url.as_ref().context(error::MissingData)?;
 	let issue_html_url = issue.html_url.as_ref().context(error::MissingData)?;
@@ -237,6 +262,7 @@ async fn author_is_core_unassigned_ticks_expired(
 	repo: &github::Repository,
 	pull_request: &github::PullRequest,
 ) -> Result<()> {
+	log::info!("Author of {} is a core developer and the issue is still unassigned to them, so the PR will be closed.", pull_request.title.as_ref().context(error::MissingData)?);
 	if local_state.actions_taken() & PullRequestCoreDevAuthorIssueNotAssigned72h
 		== NoAction
 	{
@@ -295,12 +321,13 @@ async fn handle_status(
 					.and_then(|matrix_id| matrix::parse_id(matrix_id))
 				{
 					matrix_bot.send_private_message(
+						db,
 						matrix_id,
 						&STATUS_FAILURE_NOTIFICATION
 							.replace("{1}", &format!("{}", pr_html_url)),
 					)?;
 				} else {
-					log::warn!("Couldn't send a message to the project owner; either their Github or Matrix handle is not set in Bamboo");
+					log::error!("Couldn't send a message to the project owner; either their Github or Matrix handle is not set in Bamboo");
 				}
 			}
 		}
@@ -323,7 +350,7 @@ async fn handle_pull_request_with_issue_and_project(
 	local_state: &mut LocalState,
 	github_bot: &GithubBot,
 	matrix_bot: &MatrixBot,
-	core_devs: &[github::User],
+	_core_devs: &[github::User],
 	github_to_matrix: &HashMap<String, String>,
 	process_info: &process::ProcessInfo,
 	repo: &github::Repository,
@@ -335,13 +362,13 @@ async fn handle_pull_request_with_issue_and_project(
 ) -> Result<()> {
 	let author = pull_request.user.as_ref().context(error::MissingData)?;
 	let author_info = process_info.author_info(&author.login);
-	let _author_is_core = core_devs.iter().any(|u| u.id == author.id);
 	let author_is_assignee = issue
 		.assignee
 		.as_ref()
 		.map_or(false, |issue_assignee| issue_assignee.id == author.id);
 	if author_is_assignee {
 		require_reviewers(
+			db,
 			&pull_request,
 			github_bot,
 			matrix_bot,
@@ -352,13 +379,13 @@ async fn handle_pull_request_with_issue_and_project(
 		)
 		.await?;
 	} else {
-		let issue_id = issue.id.context(error::MissingData)?;
 		if author_info.is_special() {
 			// assign the issue to the author
 			github_bot
-				.assign_issue(&repo.name, issue_id, &author.login)
+				.assign_issue(&repo.name, issue.number, &author.login)
 				.await?;
 			require_reviewers(
+				db,
 				&pull_request,
 				github_bot,
 				matrix_bot,
@@ -404,6 +431,7 @@ async fn handle_pull_request_with_issue_and_project(
 }
 
 fn send_needs_project_message(
+	db: &Arc<RwLock<DB>>,
 	matrix_bot: &MatrixBot,
 	github_to_matrix: &HashMap<String, String>,
 	github_login: &str,
@@ -414,7 +442,12 @@ fn send_needs_project_message(
         issue_title = pull_request.title,
         repo_name = repo.name
     );
-	matrix_bot.message_mapped_or_default(github_to_matrix, &github_login, &msg)
+	matrix_bot.message_mapped_or_default(
+		db,
+		github_to_matrix,
+		&github_login,
+		&msg,
+	)
 }
 
 async fn author_core_no_project(
@@ -437,6 +470,7 @@ async fn author_core_no_project(
 			local_state
 				.update_issue_no_project_ping(Some(SystemTime::now()), db)?;
 			send_needs_project_message(
+				db,
 				matrix_bot,
 				github_to_matrix,
 				&author.login,
@@ -494,6 +528,7 @@ async fn author_unknown_no_project(
 			local_state
 				.update_issue_no_project_ping(Some(SystemTime::now()), db)?;
 			send_needs_project_message(
+				db,
 				matrix_bot,
 				github_to_matrix,
 				&author.login,
@@ -579,6 +614,7 @@ pub async fn handle_pull_request(
 				if author_info.is_special() {
 					// owners and whitelisted devs can open prs without an attached issue.
 					require_reviewers(
+						db,
 						&pull_request,
 						github_bot,
 						matrix_bot,
