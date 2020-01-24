@@ -629,7 +629,7 @@ pub async fn handle_pull_request(
 				let issue = issues.first().unwrap();
 				if let Some((_, card)) = issue_actor_and_project_card(
 					&repo.name,
-					issue.number.context(error::MissingData)?,
+					issue.number,
 					github_bot,
 				)
 				.await?

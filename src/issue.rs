@@ -104,7 +104,7 @@ async fn author_core_no_project(
 							.as_ref()
 							.context(error::MissingData)?
 							.name,
-						issue.number.context(error::MissingData)?,
+						issue.number,
 					)
 					.await?;
 				github_bot
@@ -165,7 +165,7 @@ async fn author_unknown_no_project(
 						.as_ref()
 						.context(error::MissingData)?
 						.name,
-					issue.number.context(error::MissingData)?,
+					issue.number,
 				)
 				.await?;
 			github_bot
@@ -466,12 +466,8 @@ pub async fn handle_issue(
 	if projects.is_empty() {
 		// there are no projects matching those listed in Process.toml so do nothing
 	} else {
-		match issue_actor_and_project_card(
-			&repo.name,
-			issue.number.context(error::MissingData)?,
-			github_bot,
-		)
-		.await?
+		match issue_actor_and_project_card(&repo.name, issue.number, github_bot)
+			.await?
 		{
 			None => {
 				log::info!(

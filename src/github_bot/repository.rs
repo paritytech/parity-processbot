@@ -39,18 +39,20 @@ mod tests {
 			dotenv::var("PRIVATE_KEY_PATH").expect("PRIVATE_KEY_PATH");
 		let private_key = std::fs::read(&private_key_path)
 			.expect("Couldn't find private key.");
+		let test_repo_name =
+			dotenv::var("TEST_REPO_NAME").expect("TEST_REPO_NAME");
 
 		let mut rt = tokio::runtime::Runtime::new().expect("runtime");
 		rt.block_on(async {
 			let github_bot =
 				GithubBot::new(private_key).await.expect("github_bot");
-			assert!(github_bot.repository("parity-processbot").await.is_ok());
+			assert!(github_bot.repository(&test_repo_name).await.is_ok());
 			assert!(github_bot
 				.repositories()
 				.await
 				.expect("repositories")
 				.iter()
-				.any(|repo| repo.name == "parity-processbot"));
+				.any(|repo| repo.name == test_repo_name));
 		});
 	}
 }

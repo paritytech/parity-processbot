@@ -98,6 +98,8 @@ mod tests {
 			dotenv::var("PRIVATE_KEY_PATH").expect("PRIVATE_KEY_PATH");
 		let private_key = std::fs::read(&private_key_path)
 			.expect("Couldn't find private key.");
+		let test_repo_name =
+			dotenv::var("TEST_REPO_NAME").expect("TEST_REPO_NAME");
 
 		let mut rt = tokio::runtime::Runtime::new().expect("runtime");
 		rt.block_on(async {
@@ -105,22 +107,22 @@ mod tests {
 				GithubBot::new(private_key).await.expect("github_bot");
 			let created_pr = github_bot
 				.create_pull_request(
-					"parity-processbot",
-					"testing pr",
-					"this is a test",
-					"testing_branch",
-					"other_testing_branch",
+					&test_repo_name,
+					&"testing pr".to_owned(),
+					&"this is a test".to_owned(),
+					&"testing_branch".to_owned(),
+					&"other_testing_branch".to_owned(),
 				)
 				.await
 				.expect("create_pull_request");
 			let status = dbg!(github_bot
-				.status("parity-processbot", &created_pr)
+				.status(&test_repo_name, &created_pr)
 				.await
 				.expect("statuses"));
-			assert!(status.state == github::StatusState::Success);
+			assert!(status.state != github::StatusState::Failure);
 			github_bot
 				.close_pull_request(
-					"parity-processbot",
+					&test_repo_name,
 					created_pr.number.expect("created pr number"),
 				)
 				.await
@@ -136,12 +138,14 @@ mod tests {
 			dotenv::var("PRIVATE_KEY_PATH").expect("PRIVATE_KEY_PATH");
 		let private_key = std::fs::read(&private_key_path)
 			.expect("Couldn't find private key.");
+		let test_repo_name =
+			dotenv::var("TEST_REPO_NAME").expect("TEST_REPO_NAME");
 		let mut rt = tokio::runtime::Runtime::new().expect("runtime");
 		rt.block_on(async {
 			let github_bot =
 				GithubBot::new(private_key).await.expect("github_bot");
 			let _contents = github_bot
-				.contents("parity-processbot", "README.md")
+				.contents(&test_repo_name, "README.md")
 				.await
 				.expect("contents");
 		});

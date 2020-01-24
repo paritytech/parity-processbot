@@ -151,7 +151,7 @@ impl GithubBot {
 		&self,
 		repo_name: A,
 		issue_number: i64,
-	) -> Result<()>
+	) -> Result<github::Issue>
 	where
 		A: AsRef<str>,
 	{
@@ -164,8 +164,10 @@ impl GithubBot {
 		);
 		self.client
 			.patch_response(&url, &serde_json::json!({ "state": "closed" }))
+			.await?
+			.json()
 			.await
-			.map(|_| ())
+			.context(error::Http)
 	}
 }
 
@@ -182,21 +184,23 @@ mod tests {
 			dotenv::var("PRIVATE_KEY_PATH").expect("PRIVATE_KEY_PATH");
 		let private_key = std::fs::read(&private_key_path)
 			.expect("Couldn't find private key.");
+		let test_repo_name =
+			dotenv::var("TEST_REPO_NAME").expect("TEST_REPO_NAME");
 
 		let mut rt = tokio::runtime::Runtime::new().expect("runtime");
 		rt.block_on(async {
 			let github_bot =
 				GithubBot::new(private_key).await.expect("github_bot");
 			let repo = github_bot
-				.repository("parity-processbot")
+				.repository(&test_repo_name)
 				.await
 				.expect("repository");
 			let created_issue = github_bot
 				.create_issue(
-					"parity-processbot",
-					"testing issue",
-					"this is a test",
-					"sjeohp",
+					&test_repo_name,
+					&"testing issue".to_owned(),
+					&"this is a test".to_owned(),
+					&"sjeohp".to_owned(),
 				)
 				.await
 				.expect("create_issue");
@@ -208,22 +212,19 @@ mod tests {
 				.map_or(false, |t| t == "testing issue")));
 			github_bot
 				.create_issue_comment(
-					"parity-processbot",
-					created_issue.number.expect("created issue id"),
-					"testing comment",
+					&test_repo_name,
+					created_issue.number,
+					&"testing comment".to_owned(),
 				)
 				.await
 				.expect("create_issue_comment");
 			let created_pr = github_bot
 				.create_pull_request(
-					"parity-processbot",
-					"testing pr",
-					&format!(
-						"Fixes #{}",
-						created_issue.number.expect("created issue number")
-					),
-					"testing_branch",
-					"other_testing_branch",
+					&test_repo_name,
+					&"testing pr".to_owned(),
+					&format!("Fixes #{}", created_issue.number,),
+					&"testing_branch".to_owned(),
+					&"other_testing_branch".to_owned(),
 				)
 				.await
 				.expect("create_pull_request");
@@ -233,23 +234,20 @@ mod tests {
 				.expect("issue");
 			assert!(pr_issues.iter().any(|x| x.number == created_issue.number));
 			github_bot
-				.close_issue(
-					"parity-processbot",
-					created_issue.number.expect("created issue number"),
-				)
+				.close_issue(&test_repo_name, created_issue.number)
 				.await
 				.expect("close_pull_request");
-			let issues = github_bot
+			let issues = dbg!(github_bot
 				.repository_issues(&repo)
 				.await
-				.expect("pull_requests");
+				.expect("repo issues"));
 			assert!(!issues.iter().any(|pr| pr
 				.title
 				.as_ref()
 				.map_or(false, |t| t == "testing issue")));
 			github_bot
 				.close_pull_request(
-					"parity-processbot",
+					&test_repo_name,
 					created_pr.number.expect("created pr number"),
 				)
 				.await

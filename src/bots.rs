@@ -53,7 +53,7 @@ pub async fn update(
 							// if issue.pull_request.is_some() then this issue is a pull
 							// request, which we treat differently
 							if issue.pull_request.is_none() {
-								handle_issue(
+								match handle_issue(
 									db,
 									github_bot,
 									matrix_bot,
@@ -63,12 +63,23 @@ pub async fn update(
 									&repo,
 									&issue,
 								)
-								.await?;
+								.await
+								{
+									Err(e) => {
+										log::error!(
+                                            "Error handling issue #{issue_number} in repo {repo_name}: {error}",
+                                            issue_number = issue.number,
+                                            repo_name = repo.name,
+                                            error = e
+                                        );
+									}
+									_ => {}
+								}
 							}
 						}
 
 						for pr in github_bot.pull_requests(&repo).await? {
-							handle_pull_request(
+							match handle_pull_request(
 								db,
 								github_bot,
 								matrix_bot,
@@ -78,7 +89,18 @@ pub async fn update(
 								&repo,
 								&pr,
 							)
-							.await?;
+							.await
+							{
+								Err(e) => {
+									log::error!(
+                                        "Error handling pull request #{issue_number} in repo {repo_name}: {error}",
+                                        issue_number = pr.number.unwrap(),
+                                        repo_name = repo.name,
+                                        error = e
+                                    );
+								}
+								_ => {}
+							}
 						}
 					} else {
 						matrix_bot.send_to_default(

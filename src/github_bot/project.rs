@@ -141,6 +141,8 @@ mod tests {
 			dotenv::var("PRIVATE_KEY_PATH").expect("PRIVATE_KEY_PATH");
 		let private_key = std::fs::read(&private_key_path)
 			.expect("Couldn't find private key.");
+		let test_repo_name =
+			dotenv::var("TEST_REPO_NAME").expect("TEST_REPO_NAME");
 
 		let mut rt = tokio::runtime::Runtime::new().expect("runtime");
 		rt.block_on(async {
@@ -148,16 +150,16 @@ mod tests {
 				GithubBot::new(private_key).await.expect("github_bot");
 			let created_issue = dbg!(github_bot
 				.create_issue(
-					"parity-processbot",
-					"testing issue",
-					"this is a test",
-					"sjeohp",
+					&test_repo_name,
+					&"testing issue".to_owned(),
+					&"this is a test".to_owned(),
+					&"sjeohp".to_owned(),
 				)
 				.await
 				.expect("create_issue"));
 
 			let projects = github_bot
-				.projects("parity-processbot")
+				.projects(&test_repo_name)
 				.await
 				.expect("projects");
 			let project = projects.first().expect("projects first");
@@ -188,13 +190,7 @@ mod tests {
 			);
 
 			let project_card = github_bot
-				.active_project_event(
-					"parity-processbot",
-					created_issue
-						.number
-						.context(error::MissingData)
-						.expect("created issue number"),
-				)
+				.active_project_event(&test_repo_name, created_issue.number)
 				.await
 				.expect("active_project_event")
 				.expect("active_project_event option")
@@ -215,10 +211,7 @@ mod tests {
 				.expect("delete_project_card");
 
 			github_bot
-				.close_issue(
-					"parity-processbot",
-					created_issue.number.expect("created issue number"),
-				)
+				.close_issue(&test_repo_name, created_issue.number)
 				.await
 				.expect("close_pull_request");
 		});

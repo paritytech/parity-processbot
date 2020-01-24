@@ -248,6 +248,7 @@ pub struct RequestedReviewers {
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Issue {
+	pub number: i64,
 	pub id: Option<i64>,
 	pub node_id: Option<String>,
 	pub html_url: Option<String>,
@@ -255,7 +256,6 @@ pub struct Issue {
 	pub body: Option<String>,
 	pub title: Option<String>,
 	pub state: Option<String>,
-	pub number: Option<i64>,
 	pub labels: Vec<Label>,
 	pub assignee: Option<User>,
 	pub assignees: Vec<User>,

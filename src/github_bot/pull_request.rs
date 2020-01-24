@@ -105,22 +105,24 @@ mod tests {
 			dotenv::var("PRIVATE_KEY_PATH").expect("PRIVATE_KEY_PATH");
 		let private_key = std::fs::read(&private_key_path)
 			.expect("Couldn't find private key.");
+		let test_repo_name =
+			dotenv::var("TEST_REPO_NAME").expect("TEST_REPO_NAME");
 
 		let mut rt = tokio::runtime::Runtime::new().expect("runtime");
 		rt.block_on(async {
 			let github_bot =
 				GithubBot::new(private_key).await.expect("github_bot");
 			let repo = github_bot
-				.repository("parity-processbot")
+				.repository(&test_repo_name)
 				.await
 				.expect("repository");
 			let created = github_bot
 				.create_pull_request(
-					"parity-processbot",
-					"testing pr",
-					"this is a test",
-					"testing_branch",
-					"other_testing_branch",
+					&test_repo_name,
+					&"testing pr".to_owned(),
+					&"this is a test".to_owned(),
+					&"testing_branch".to_owned(),
+					&"other_testing_branch".to_owned(),
 				)
 				.await
 				.expect("create_pull_request");
@@ -134,7 +136,7 @@ mod tests {
 				.map_or(false, |x| x == "testing pr")));
 			github_bot
 				.close_pull_request(
-					"parity-processbot",
+					&test_repo_name,
 					created.number.expect("created pr number"),
 				)
 				.await
