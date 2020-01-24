@@ -24,3 +24,12 @@ cargo build
 ```
 cargo test
 ```
+
+To unit test the GithubBot: 
+```
+cargo test -- --ignored --test-threads=1
+```
+The `parity-processbot` app should be installed for the relevant organization and
+`.env` should contain a valid `PRIVATE_KEY_PATH` and `TESTING_REPO_NAME`. Branch 
+`testing_branch` should be ready to merge into `other_testing_branch`. 
+

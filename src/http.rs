@@ -89,7 +89,7 @@ impl Client {
 		post: post_response,
 		put: put_response,
 		patch: patch_response,
-				delete: delete_response
+		delete: delete_response
 	}
 
 	pub async fn request(
@@ -159,9 +159,15 @@ impl Client {
 				header::ACCEPT,
 				"application/vnd.github.starfox-preview+json",
 			)
+			.header(
+				header::ACCEPT,
+				"application/vnd.github.inertia-preview+json",
+			)
 			.header(header::USER_AGENT, "parity-processbot/0.0.1")
 			.build()
 			.context(error::Http)?;
+
+		dbg!(&request);
 
 		handle_response(
 			self.client.execute(request).await.context(error::Http)?,

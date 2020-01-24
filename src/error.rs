@@ -19,6 +19,7 @@ pub enum Error {
 	},
 
 	/// Data requested was not found or valid.
+	#[snafu(display("Backtrace:\n{}", backtrace))]
 	MissingData {
 		backtrace: Backtrace,
 	},
@@ -34,6 +35,20 @@ pub enum Error {
 	#[snafu(display("Source: {}\nBacktrace:\n{}", source, backtrace))]
 	Json {
 		source: serde_json::Error,
+		backtrace: Backtrace,
+	},
+
+	/// An error occurred while parsing TOML.
+	#[snafu(display("Source: {}\nBacktrace:\n{}", source, backtrace))]
+	Toml {
+		source: toml::de::Error,
+		backtrace: Backtrace,
+	},
+
+	/// An error occurred while parsing TOML.
+	#[snafu(display("Source: {}\nBacktrace:\n{}", source, backtrace))]
+	Base64 {
+		source: base64::DecodeError,
 		backtrace: Backtrace,
 	},
 

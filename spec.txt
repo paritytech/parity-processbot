@@ -1,0 +1,35 @@
+- projects should have a backlog column
+
+PULL REQUESTS
+0 projects : do nothing
+1 projects : 
+- no issue attached :
+- - author is owner/delegate/whitelist : 
+- - - require reviewers
+- - - handle status 
+- - else : 
+- - - comment and close
+- else (issue attached) :
+- - issue assigned to author :
+- - - require reviewers
+- - else (issue not assigned author) :
+- - - author is owner/delegate/whitelist : 
+- - - - assign issue to author
+- - - author is core dev :
+- - - - message assignee and owner/delegate 
+- - - - after 24hrs message project room
+- - - - after further 48hrs (72hrs total) close PR
+- - - else (author owner/delegate/whitelist/core : 
+- - - - do nothing
+- - handle status
+>1 projects : 
+- no issue attached :
+- else (issue attached) :
+- - issue should be attached to a project
+
+
+REQUIRE REVIEWER
+owner/delegate not yet requested :
+- - message and request review from owner/delegate
+
+HANDLE STATUS

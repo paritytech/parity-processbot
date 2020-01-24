@@ -1,3 +1,5 @@
+pub const GITHUB_TO_MATRIX_KEY: &str = "GITHUB_TO_MATRIX";
+
 /*
  * Ping periods measured in seconds
  */
@@ -9,8 +11,12 @@ pub const ISSUE_NO_PROJECT_ACTION_AFTER_NPINGS: u64 = 9;
 pub const ISSUE_UNCONFIRMED_PROJECT_PING_PERIOD: u64 = 3600 * 8;
 pub const MIN_REVIEWERS: usize = 2;
 
-pub const FALLBACK_ROOM_ID: &str = "!aenJixaHcSKbJOWxYk:matrix.parity.io";
+pub const TEMP_FALLBACK_ROOM_ID: &str = "!aenJixaHcSKbJOWxYk:matrix.parity.io";
 pub const PROJECT_BACKLOG_COLUMN_NAME: &str = "backlog";
+pub const PROJECT_NEEDS_BACKLOG_MESSAGE: &str = "{1} needs a backlog column.";
+pub const PUBLIC_MISSING_PROJECT_FIELDS_NOTIFICATION: &str = "Process.toml for repo {1} is missing some fields. Please ensure that every project lists an owner and a matrix_room_id.";
+pub const MISMATCHED_PROCESS_FILE: &str = "Process.toml for repo {1} lists projects that do not exist in the repo, so it will be treated as invalid.";
+pub const MALFORMED_PROCESS_FILE: &str = "Process.toml for repo {1} is malformed or missing some fields. Please ensure that every listed project contains an owner and a matrix_room_id.";
 
 pub const ISSUE_MUST_EXIST_MESSAGE: &str =
 	"Every pull request must address an issue.";
@@ -27,5 +33,3 @@ pub const STATUS_FAILURE_NOTIFICATION: &str = "{1} has failed status checks.";
 pub const REQUEST_DELEGATED_REVIEW_MESSAGE: &str = "{1} needs your review in the next 72 hours, as you are the owner or delegated reviewer.";
 
 pub const CORE_SORTING_REPO: &str = "core-sorting";
-
-pub const PUBLIC_MISSING_PROJECT_FIELDS_NOTIFICATION: &str = "The Projects.toml file at {1} is missing some fields. Please ensure that every project lists an owner and a matrix_room_id.";

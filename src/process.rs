@@ -1,11 +1,22 @@
-pub type ProjectInfoMap = std::collections::HashMap<String, ProjectInfo>;
+use crate::{error, github, Result};
+use snafu::{OptionExt, ResultExt};
 
-#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
-pub struct ProjectInfo {
+pub type ProcessInfoMap = std::collections::HashMap<String, ProcessInfo>;
+
+#[derive(serde::Deserialize, serde::Serialize)]
+struct ProcessInfoTemp {
 	owner: Option<String>,
 	delegated_reviewer: Option<String>,
+	whitelist: Option<Vec<String>>,
+	matrix_room_id: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct ProcessInfo {
+	owner: String,
+	delegated_reviewer: Option<String>,
 	pub whitelist: Option<Vec<String>>,
-	pub matrix_room_id: Option<String>,
+	pub matrix_room_id: String,
 }
 
 #[derive(Default, Debug, Clone, Copy)]
@@ -20,9 +31,9 @@ impl AuthorInfo {
 	}
 }
 
-impl ProjectInfo {
-	pub fn owner_or_delegate(&self) -> Option<&String> {
-		self.delegated_reviewer.as_ref().or(self.owner.as_ref())
+impl ProcessInfo {
+	pub fn owner_or_delegate(&self) -> &String {
+		self.delegated_reviewer.as_ref().unwrap_or(&self.owner)
 	}
 
 	pub fn author_info(&self, login: &str) -> AuthorInfo {
@@ -37,7 +48,7 @@ impl ProjectInfo {
 	}
 	/// Checks if the owner of the project matches the login given.
 	pub fn is_owner(&self, login: &str) -> bool {
-		self.owner.as_deref().map_or(false, |owner| owner == login)
+		&self.owner == login
 	}
 
 	/// Checks if the delegated reviewer matches the login given.
@@ -61,13 +72,26 @@ impl ProjectInfo {
 	}
 }
 
-pub fn projects_from_table(tab: toml::value::Table) -> ProjectInfoMap {
-	tab.into_iter()
+pub fn process_from_contents(
+	c: github::Contents,
+) -> Result<impl Iterator<Item = (String, ProcessInfo)>> {
+	base64::decode(&c.content.replace("\n", ""))
+		.context(error::Base64)
+		.and_then(|s| {
+			toml::from_slice::<toml::value::Table>(&s).context(error::Toml)
+		})
+		.and_then(process_from_table)
+		.map(|p| p.into_iter())
+}
+
+pub fn process_from_table(tab: toml::value::Table) -> Result<ProcessInfoMap> {
+	let temp = tab
+		.into_iter()
 		.filter_map(|(key, val)| match val {
 			toml::value::Value::Table(ref tab) => Some((
 				key,
-				ProjectInfo {
-					owner: val
+				ProcessInfoTemp {
+					owner: tab
 						.get("owner")
 						.and_then(toml::value::Value::as_str)
 						.map(str::to_owned),
@@ -92,5 +116,36 @@ pub fn projects_from_table(tab: toml::value::Table) -> ProjectInfoMap {
 			)),
 			_ => None,
 		})
-		.collect()
+		.collect::<Vec<(String, ProcessInfoTemp)>>();
+	if temp
+		.iter()
+		.any(|(_, p)| p.owner.is_none() || p.matrix_room_id.is_none())
+	{
+		None.context(error::MissingData)
+	} else {
+		Ok(temp
+			.into_iter()
+			.map(
+				|(
+					k,
+					ProcessInfoTemp {
+						owner,
+						delegated_reviewer,
+						whitelist,
+						matrix_room_id,
+					},
+				)| {
+					(
+						k,
+						ProcessInfo {
+							owner: owner.unwrap(),
+							delegated_reviewer,
+							whitelist,
+							matrix_room_id: matrix_room_id.unwrap(),
+						},
+					)
+				},
+			)
+			.collect::<ProcessInfoMap>())
+	}
 }
