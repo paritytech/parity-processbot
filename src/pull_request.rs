@@ -22,6 +22,11 @@ async fn require_reviewers(
 	reviews: &[github::Review],
 	requested_reviewers: &github::RequestedReviewers,
 ) -> Result<()> {
+	let pr_html_url =
+		pull_request.html_url.as_ref().context(error::MissingData)?;
+
+	log::info!("Requiring reviewers on {}", pr_html_url);
+
 	let reviewer_count = {
 		let mut users = reviews
 			.iter()
@@ -31,6 +36,7 @@ async fn require_reviewers(
 		users.dedup_by_key(|u| &u.login);
 		users.len()
 	};
+	dbg!(reviewer_count);
 
 	let owner_or_delegate_requested = reviews
 		.iter()
@@ -46,10 +52,11 @@ async fn require_reviewers(
 			.login,
 	);
 
-	let pr_html_url =
-		pull_request.html_url.as_ref().context(error::MissingData)?;
-
 	if !author_info.is_owner_or_delegate && !owner_or_delegate_requested {
+		log::info!(
+			"Requesting a review on {} from the project owner.",
+			pr_html_url
+		);
 		let github_login = process_info.owner_or_delegate();
 		if let Some(matrix_id) = github_to_matrix.get(github_login) {
 			matrix_bot.send_private_message(
@@ -60,10 +67,19 @@ async fn require_reviewers(
 			github_bot
 				.request_reviews(&pull_request, &[github_login.as_ref()])
 				.await?;
+		} else {
+			log::error!(
+                "Couldn't send a message to {}; either their Github or Matrix handle is not set in Bamboo",
+                &github_login
+            );
 		}
 	} else if reviewer_count < MIN_REVIEWERS {
 		// post a message in the project's Riot channel, requesting a review;
 		// repeat this message every 24 hours until a reviewer is assigned.
+		log::info!(
+			"Requesting a review on {} from the project room.",
+			pr_html_url
+		);
 		matrix_bot.send_to_room(
 			&process_info.matrix_room_id,
 			&REQUESTING_REVIEWS_MESSAGE.replace("{1}", &pr_html_url),
@@ -90,6 +106,7 @@ async fn author_is_core_unassigned(
 		.issue_not_assigned_ping()
 		.and_then(|ping| ping.elapsed().ok())
 		.ticks(ISSUE_NOT_ASSIGNED_PING_PERIOD);
+	log::info!("Author of {} is a core developer and the issue has been unassigned for {:?} days.", pull_request.title.as_ref().context(error::MissingData)?, days);
 	match days {
 		// notify the the issue assignee and project
 		// owner through a PM
@@ -139,6 +156,10 @@ fn author_is_core_unassigned_ticks_none(
 	pull_request: &github::PullRequest,
 	issue: &github::Issue,
 ) -> Result<()> {
+	log::info!(
+		"Author of {} is a core developer but the issue is unassigned to them.",
+		pull_request.title.as_ref().context(error::MissingData)?
+	);
 	let pr_html_url =
 		pull_request.html_url.as_ref().context(error::MissingData)?;
 	let issue_html_url = issue.html_url.as_ref().context(error::MissingData)?;
@@ -205,6 +226,7 @@ fn author_is_core_unassigned_ticks_passed(
 	pull_request: &github::PullRequest,
 	issue: &github::Issue,
 ) -> Result<()> {
+	log::info!("Author of {} is a core developer and the issue is still unassigned to them.", pull_request.title.as_ref().context(error::MissingData)?);
 	let pr_html_url =
 		pull_request.html_url.as_ref().context(error::MissingData)?;
 	let issue_html_url = issue.html_url.as_ref().context(error::MissingData)?;
@@ -241,6 +263,7 @@ async fn author_is_core_unassigned_ticks_expired(
 	repo: &github::Repository,
 	pull_request: &github::PullRequest,
 ) -> Result<()> {
+	log::info!("Author of {} is a core developer and the issue is still unassigned to them, so the PR will be closed.", pull_request.title.as_ref().context(error::MissingData)?);
 	if local_state.actions_taken() & PullRequestCoreDevAuthorIssueNotAssigned72h
 		== NoAction
 	{

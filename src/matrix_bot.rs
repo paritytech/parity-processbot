@@ -55,23 +55,22 @@ impl MatrixBot {
 		user_id: &str,
 		msg: &str,
 	) -> Result<()> {
-		if let Some(existing_room) =
-			db.read().get_pinned(user_id).context(error::Db)?
+		let db = db.write();
+		if let Some(room_id) = db
+			.get_pinned(user_id)
+			.context(error::Db)?
+			.and_then(|v| String::from_utf8(v.to_vec()).ok())
 		{
-			let room_id = String::from_utf8(existing_room.to_vec())
-				.expect("invalid room id stored in db");
 			matrix::send_message(
 				&self.homeserver,
 				&self.access_token,
 				&room_id,
 				msg,
-			)
+			)?
 		} else {
 			matrix::create_room(&self.homeserver, &self.access_token).and_then(
 				|matrix::CreateRoomResponse { room_id }| {
-					db.write()
-						.put(user_id, room_id.as_bytes())
-						.context(error::Db)?;
+					db.put(user_id, room_id.as_bytes()).context(error::Db)?;
 					matrix::invite(
 						&self.homeserver,
 						&self.access_token,
@@ -85,8 +84,9 @@ impl MatrixBot {
 						msg,
 					)
 				},
-			)
+			)?
 		}
+		Ok(())
 	}
 
 	pub fn send_to_room(&self, room_id: &str, msg: &str) -> Result<()> {

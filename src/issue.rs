@@ -542,8 +542,6 @@ pub async fn handle_issue(
 			Some((actor, card)) => {
 				let project: github::Project =
 					github_bot.project(&card).await?;
-				dbg!(&card);
-				dbg!(&project);
 				let project_column: github::ProjectColumn =
 					github_bot.project_column(&card).await?;
 
