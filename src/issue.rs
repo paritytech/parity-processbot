@@ -302,6 +302,7 @@ async fn author_non_special_project_state_unconfirmed(
 					.and_then(|matrix_id| matrix::parse_id(matrix_id))
 				{
 					matrix_bot.send_private_message(
+                        db,
 						&matrix_id,
 						&ISSUE_REVERT_PROJECT_NOTIFICATION
 							.replace("{1}", &issue_html_url),
@@ -379,6 +380,7 @@ async fn author_non_special_project_state_denied(
 		.and_then(|matrix_id| matrix::parse_id(matrix_id))
 	{
 		matrix_bot.send_private_message(
+			db,
 			&matrix_id,
 			&ISSUE_REVERT_PROJECT_NOTIFICATION.replace("{1}", &issue_html_url),
 		)?;
@@ -540,6 +542,8 @@ pub async fn handle_issue(
 			Some((actor, card)) => {
 				let project: github::Project =
 					github_bot.project(&card).await?;
+				dbg!(&card);
+				dbg!(&project);
 				let project_column: github::ProjectColumn =
 					github_bot.project_column(&card).await?;
 
