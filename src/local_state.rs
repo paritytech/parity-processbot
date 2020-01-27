@@ -1,12 +1,11 @@
 // TODO: Move bitflags to use `bitflags` crate.
 #![allow(non_upper_case_globals)]
 use crate::db::DBEntry;
-use crate::Result;
+use crate::{github, Result};
 use parking_lot::RwLock;
 use rocksdb::DB;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
-use std::time::SystemTime;
+use std::{collections::HashMap, sync::Arc, time::SystemTime};
 
 /// Bitflag indicating no action has been taken
 pub const NoAction: u32 = 0b00000000;
@@ -44,6 +43,12 @@ pub struct LocalState {
 	issue_confirm_project_ping: Option<SystemTime>,
 	issue_project: Option<IssueProject>,
 	last_confirmed_issue_project: Option<IssueProject>,
+	reviews_requested_ping: Option<SystemTime>,
+	reviews_requested_npings: u64,
+	reviews: HashMap<String, github::ReviewState>,
+	reviews_requested: HashMap<String, SystemTime>,
+	private_review_reminder_npings: HashMap<String, u64>,
+	public_review_reminder_npings: HashMap<String, u64>,
 }
 
 impl Default for LocalState {
@@ -58,6 +63,12 @@ impl Default for LocalState {
 			issue_confirm_project_ping: None,
 			issue_project: None,
 			last_confirmed_issue_project: None,
+			reviews_requested_ping: None,
+			reviews_requested_npings: 0,
+			reviews: HashMap::new(),
+			reviews_requested: HashMap::new(),
+			private_review_reminder_npings: HashMap::new(),
+			public_review_reminder_npings: HashMap::new(),
 		}
 	}
 }
@@ -164,6 +175,102 @@ impl LocalState {
 		db: &Arc<RwLock<DB>>,
 	) -> Result<()> {
 		self.last_confirmed_issue_project = x;
+		self.update(db, &self.key)
+	}
+
+	pub fn reviews_requested_ping(&self) -> Option<&SystemTime> {
+		self.reviews_requested_ping.as_ref()
+	}
+
+	pub fn update_reviews_requested_ping(
+		&mut self,
+		x: Option<SystemTime>,
+		db: &Arc<RwLock<DB>>,
+	) -> Result<()> {
+		self.reviews_requested_ping = x;
+		self.update(db, &self.key)
+	}
+
+	pub fn reviews_requested_npings(&self) -> u64 {
+		self.reviews_requested_npings
+	}
+
+	pub fn update_reviews_requested_npings(
+		&mut self,
+		x: u64,
+		db: &Arc<RwLock<DB>>,
+	) -> Result<()> {
+		self.reviews_requested_npings = x;
+		self.update(db, &self.key)
+	}
+
+	pub fn review_from_user(
+		&self,
+		user_login: &str,
+	) -> Option<&github::ReviewState> {
+		self.reviews.get(user_login)
+	}
+
+	pub fn update_review(
+		&mut self,
+		user_login: String,
+		review: github::ReviewState,
+		db: &Arc<RwLock<DB>>,
+	) -> Result<()> {
+		self.reviews.insert(user_login, review);
+		self.update(db, &self.key)
+	}
+
+	pub fn review_requested_from_user(
+		&self,
+		user_login: &str,
+	) -> Option<&SystemTime> {
+		self.reviews_requested.get(user_login)
+	}
+
+	pub fn update_review_requested(
+		&mut self,
+		user_login: String,
+		t: SystemTime,
+		db: &Arc<RwLock<DB>>,
+	) -> Result<()> {
+		self.reviews_requested.insert(user_login, t);
+		self.update(db, &self.key)
+	}
+
+	pub fn private_review_reminder_npings(
+		&self,
+		user_login: &str,
+	) -> Option<&u64> {
+		self.private_review_reminder_npings.get(user_login)
+	}
+
+	pub fn update_private_review_reminder_npings(
+		&mut self,
+		user_login: String,
+		npings: u64,
+		db: &Arc<RwLock<DB>>,
+	) -> Result<()> {
+		self.private_review_reminder_npings
+			.insert(user_login, npings);
+		self.update(db, &self.key)
+	}
+
+	pub fn public_review_reminder_npings(
+		&self,
+		user_login: &str,
+	) -> Option<&u64> {
+		self.public_review_reminder_npings.get(user_login)
+	}
+
+	pub fn update_public_review_reminder_npings(
+		&mut self,
+		user_login: String,
+		npings: u64,
+		db: &Arc<RwLock<DB>>,
+	) -> Result<()> {
+		self.public_review_reminder_npings
+			.insert(user_login, npings);
 		self.update(db, &self.key)
 	}
 }

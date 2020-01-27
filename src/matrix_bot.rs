@@ -28,6 +28,27 @@ impl MatrixBot {
 		)
 	}
 
+	pub fn message_mapped(
+		&self,
+		db: &Arc<RwLock<DB>>,
+		github_to_matrix: &HashMap<String, String>,
+		github_login: &str,
+		msg: &str,
+	) -> Result<()> {
+		if let Some(matrix_id) = github_to_matrix
+			.get(github_login)
+			.and_then(|matrix_id| matrix::parse_id(matrix_id))
+		{
+			self.send_private_message(db, &matrix_id, msg)
+		} else {
+			log::warn!(
+                "Couldn't send a message to {}; either their Github or Matrix handle is not set in Bamboo",
+                github_login
+            );
+            Ok(())
+		}
+	}
+
 	pub fn message_mapped_or_default(
 		&self,
 		db: &Arc<RwLock<DB>>,

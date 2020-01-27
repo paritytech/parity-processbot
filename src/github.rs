@@ -234,7 +234,7 @@ pub struct Review {
 	pub user: User,
 	pub body: Option<String>,
 	pub commit_id: String,
-	pub state: Option<String>,
+	pub state: Option<ReviewState>,
 	pub pull_request_url: String,
 	#[serde(rename = "_links")]
 	pub links: Links,
@@ -461,12 +461,20 @@ pub struct Status {
 	pub creator: Option<User>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum StatusState {
 	Failure,
 	Pending,
 	Success,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ReviewState {
+	Approved,
+	Pending,
+	ChangesRequested,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]

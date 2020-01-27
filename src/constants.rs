@@ -10,6 +10,9 @@ pub const ISSUE_NO_PROJECT_NON_CORE_PING_PERIOD: u64 = 60 * 15;
 pub const ISSUE_NO_PROJECT_ACTION_AFTER_NPINGS: u64 = 9;
 pub const ISSUE_UNCONFIRMED_PROJECT_PING_PERIOD: u64 = 3600 * 8;
 pub const MIN_REVIEWERS: usize = 2;
+pub const REQUEST_REVIEWS_PERIOD: u64 = 3600 * 24;
+pub const PRIVATE_REVIEW_REMINDER_PERIOD: u64 = 3600 * 12;
+pub const PUBLIC_REVIEW_REMINDER_PERIOD: u64 = 3600 * 24;
 
 pub const TEMP_FALLBACK_ROOM_ID: &str = "!aenJixaHcSKbJOWxYk:matrix.parity.io";
 pub const PROJECT_BACKLOG_COLUMN_NAME: &str = "backlog";
@@ -31,5 +34,7 @@ pub const ISSUE_REVERT_PROJECT_NOTIFICATION: &str = "The change you made to {1} 
 pub const REQUESTING_REVIEWS_MESSAGE: &str = "{1} is in need of reviewers.";
 pub const STATUS_FAILURE_NOTIFICATION: &str = "{1} has failed status checks.";
 pub const REQUEST_DELEGATED_REVIEW_MESSAGE: &str = "{1} needs your review in the next 72 hours, as you are the owner or delegated reviewer.";
+pub const PRIVATE_REVIEW_REMINDER_MESSAGE: &str = "{1} needs your review.";
+pub const PUBLIC_REVIEW_REMINDER_MESSAGE: &str = "@{2}, please review {1}.";
 
 pub const CORE_SORTING_REPO: &str = "core-sorting";

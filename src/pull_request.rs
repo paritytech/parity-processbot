@@ -5,6 +5,7 @@ use crate::{
 	github_bot::GithubBot, issue::issue_actor_and_project_card, matrix,
 	matrix_bot::MatrixBot, process, Result,
 };
+use itertools::Itertools;
 use parking_lot::RwLock;
 use rocksdb::DB;
 use snafu::OptionExt;
@@ -12,8 +13,123 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::SystemTime;
 
+fn public_reviews_request(
+	db: &Arc<RwLock<DB>>,
+	local_state: &mut LocalState,
+	matrix_bot: &MatrixBot,
+	process_info: &process::ProcessInfo,
+	pull_request: &github::PullRequest,
+) -> Result<()> {
+	let pr_html_url =
+		pull_request.html_url.as_ref().context(error::MissingData)?;
+	log::info!(
+		"Requesting a review on {} from the project room.",
+		pr_html_url
+	);
+	let ticks = local_state
+		.reviews_requested_ping()
+		.and_then(|ping| ping.elapsed().ok())
+		.ticks(REQUEST_REVIEWS_PERIOD);
+	match ticks {
+		None => {
+			local_state
+				.update_reviews_requested_ping(Some(SystemTime::now()), db)?;
+			local_state.update_reviews_requested_npings(1, db)?;
+			matrix_bot.send_to_room(
+				&process_info.matrix_room_id,
+				&REQUESTING_REVIEWS_MESSAGE.replace("{1}", &pr_html_url),
+			)?;
+		}
+		Some(0) => {}
+		Some(i) => {
+			if i > local_state.reviews_requested_npings() {
+				local_state.update_reviews_requested_npings(i, db)?;
+				matrix_bot.send_to_room(
+					&process_info.matrix_room_id,
+					&REQUESTING_REVIEWS_MESSAGE.replace("{1}", &pr_html_url),
+				)?;
+			}
+		}
+	}
+	Ok(())
+}
+
+fn review_reminder(
+	db: &Arc<RwLock<DB>>,
+	local_state: &mut LocalState,
+	matrix_bot: &MatrixBot,
+	github_to_matrix: &HashMap<String, String>,
+	process_info: &process::ProcessInfo,
+	pull_request: &github::PullRequest,
+	user: &github::User,
+) -> Result<()> {
+	let pr_html_url =
+		pull_request.html_url.as_ref().context(error::MissingData)?;
+	let elapsed = local_state
+		.review_requested_from_user(&user.login)
+		.and_then(|t| t.elapsed().ok());
+	{
+		let private_ticks = elapsed.ticks(PRIVATE_REVIEW_REMINDER_PERIOD);
+		match private_ticks {
+            None => {
+                local_state.update_review_requested(user.login.clone(), SystemTime::now(), db)?;
+                local_state.update_private_review_reminder_npings(user.login.clone(), 1, db)?;
+                matrix_bot.message_mapped(
+                    db,
+                    github_to_matrix,
+                    &user.login,
+                    &PRIVATE_REVIEW_REMINDER_MESSAGE
+                        .replace("{1}", &pr_html_url),
+                )?;
+            }
+            Some(0) => {},
+            Some(i) => {
+                if &i > local_state.private_review_reminder_npings(&user.login).expect("should never set review_requested without also review_reminder_npings") {
+                    local_state.update_private_review_reminder_npings(user.login.clone(), i, db)?;
+                    matrix_bot.message_mapped(
+                        db,
+                        github_to_matrix,
+                        &user.login,
+                        &PRIVATE_REVIEW_REMINDER_MESSAGE
+                            .replace("{1}", &pr_html_url),
+                    )?;
+                }
+            }
+        }
+	}
+	{
+		let public_ticks = elapsed.ticks(PUBLIC_REVIEW_REMINDER_PERIOD);
+		match public_ticks {
+            None => {
+                local_state.update_review_requested(user.login.clone(), SystemTime::now(), db)?;
+                local_state.update_public_review_reminder_npings(user.login.clone(), 1, db)?;
+                matrix_bot.send_to_room(
+                    &process_info.matrix_room_id,
+                    &PUBLIC_REVIEW_REMINDER_MESSAGE
+                        .replace("{1}", &pr_html_url)
+                        .replace("{2}", &user.login),
+                )?;
+            }
+            Some(0) => {},
+            Some(i) => {
+                if &i > local_state.public_review_reminder_npings(&user.login).expect("should never set review_requested without also review_reminder_npings") {
+                    local_state.update_public_review_reminder_npings(user.login.clone(), i, db)?;
+                    matrix_bot.send_to_room(
+                        &process_info.matrix_room_id,
+                        &PUBLIC_REVIEW_REMINDER_MESSAGE
+                            .replace("{1}", &pr_html_url)
+                            .replace("{2}", &user.login),
+                    )?;
+                }
+            }
+        }
+	}
+	Ok(())
+}
+
 async fn require_reviewers(
 	db: &Arc<RwLock<DB>>,
+	local_state: &mut LocalState,
 	pull_request: &github::PullRequest,
 	github_bot: &GithubBot,
 	matrix_bot: &MatrixBot,
@@ -26,6 +142,33 @@ async fn require_reviewers(
 		pull_request.html_url.as_ref().context(error::MissingData)?;
 
 	log::info!("Requiring reviewers on {}", pr_html_url);
+
+	for review in reviews.iter().dedup_by(|x, y| x.user.login == y.user.login) {
+		if local_state.review_from_user(&review.user.login).is_none() {
+			local_state.update_review(
+				review.user.login.clone(),
+				review.state.unwrap(),
+				db,
+			)?;
+		}
+	}
+
+	for user in requested_reviewers.users.iter() {
+		match local_state.review_from_user(&user.login) {
+			None | Some(github::ReviewState::Pending) => {
+				review_reminder(
+					db,
+					local_state,
+					matrix_bot,
+                    github_to_matrix,
+					process_info,
+					pull_request,
+					user,
+				)?;
+			},
+            _ => {},
+		}
+	}
 
 	let reviewer_count = {
 		let mut users = reviews
@@ -52,6 +195,8 @@ async fn require_reviewers(
 	);
 
 	if !author_info.is_owner_or_delegate && !owner_or_delegate_requested {
+		// author is not the owner/delegate and a review from the owner/delegate has not yet been
+		// requested. request a review from the owner/delegate.
 		log::info!(
 			"Requesting a review on {} from the project owner.",
 			pr_html_url
@@ -75,16 +220,14 @@ async fn require_reviewers(
 	} else if reviewer_count < MIN_REVIEWERS {
 		// post a message in the project's Riot channel, requesting a review;
 		// repeat this message every 24 hours until a reviewer is assigned.
-		log::info!(
-			"Requesting a review on {} from the project room.",
-			pr_html_url
-		);
-		matrix_bot.send_to_room(
-			&process_info.matrix_room_id,
-			&REQUESTING_REVIEWS_MESSAGE.replace("{1}", &pr_html_url),
+		public_reviews_request(
+			db,
+			local_state,
+			matrix_bot,
+			process_info,
+			pull_request,
 		)?;
 	} else {
-		// do nothing
 	}
 
 	Ok(())
@@ -301,7 +444,7 @@ async fn handle_status(
 	let owner_or_delegate_approved = reviews
 		.iter()
 		.find(|r| &r.user.login == owner_login)
-		.map_or(false, |r| r.state.as_deref() == Some("APPROVED"));
+		.map_or(false, |r| r.state == Some(github::ReviewState::Approved));
 
 	match status.state {
 		github::StatusState::Failure => {
@@ -369,6 +512,7 @@ async fn handle_pull_request_with_issue_and_project(
 	if author_is_assignee {
 		require_reviewers(
 			db,
+			local_state,
 			&pull_request,
 			github_bot,
 			matrix_bot,
@@ -386,6 +530,7 @@ async fn handle_pull_request_with_issue_and_project(
 				.await?;
 			require_reviewers(
 				db,
+				local_state,
 				&pull_request,
 				github_bot,
 				matrix_bot,
@@ -615,6 +760,7 @@ pub async fn handle_pull_request(
 					// owners and whitelisted devs can open prs without an attached issue.
 					require_reviewers(
 						db,
+						&mut local_state,
 						&pull_request,
 						github_bot,
 						matrix_bot,

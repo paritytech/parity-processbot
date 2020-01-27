@@ -6,18 +6,6 @@ use serde::{de::DeserializeOwned, Serialize};
 use snafu::ResultExt;
 use std::sync::Arc;
 
-pub enum CommitType {
-	Update,
-	Delete,
-	None,
-}
-
-impl Default for CommitType {
-	fn default() -> CommitType {
-		CommitType::None
-	}
-}
-
 pub trait DBEntry: Serialize + DeserializeOwned + Default {
 	/// Add key to self.
 	fn with_key(self, k: Vec<u8>) -> Self;
