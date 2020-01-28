@@ -1,35 +1,87 @@
-- projects should have a backlog column
+REPO REQUIREMENTS 
+- Process.toml ->
+	keys matching project names
+	must specify 'owner'
+	must specify 'matrix_room_id'
+	must specify 'whitelist' devs array (can be empty)
+	optionally specify 'delegated_reviewer'
+- projects should have a 'backlog' column
+
+REQUIRE REVIEWERS
+author is NOT owner/delegate AND review from owner/delegate has not been requested ->
+	private message owner/delegate asking for review
+	request review from owner/delegate on github
+reviewers / requested reviewers less than threshold (2) ->
+	message project room requesting reviews every 24h
+review is pending ->
+	private message reviewer every 12h
+	after 72h public message reviewer every 24h
+
+CHECK STATUS
+status is failure ->
+	private message author every 24h
+status is success AND owner/delegate approved ->
+	merge pull request
+	[TODO delete branch]
+status is pending ->
+	do nothing
 
 PULL REQUESTS
-0 projects : do nothing
-1 projects : 
-- no issue attached :
-- - author is owner/delegate/whitelist : 
-- - - require reviewers
-- - - handle status 
-- - else : 
-- - - comment and close
-- else (issue attached) :
-- - issue assigned to author :
-- - - require reviewers
-- - else (issue not assigned author) :
-- - - author is owner/delegate/whitelist : 
-- - - - assign issue to author
-- - - author is core dev :
-- - - - message assignee and owner/delegate 
-- - - - after 24hrs message project room
-- - - - after further 48hrs (72hrs total) close PR
-- - - else (author owner/delegate/whitelist/core : 
-- - - - do nothing
-- - handle status
->1 projects : 
-- no issue attached :
-- else (issue attached) :
-- - issue should be attached to a project
-
-
-REQUIRE REVIEWER
-owner/delegate not yet requested :
-- - message and request review from owner/delegate
-
-HANDLE STATUS
+0 projects ->
+	do nothing
+1 project -> 
+	assume sole project is the relevant one [is this correct?]
+	0 issues ->
+		author is special ->
+			REQUIRE REVIEWERS
+			CHECK STATUS
+		author is NOT special ->
+			comment and close pull request
+	1+ issues ->
+		use first mentioned issue [TODO consider all issues]
+		author is issue assignee ->
+			REQUIRE REVIEWERS
+			CHECK STATUS
+		author is NOT issue assignee ->
+			author is special ->
+				assign issue to author
+				REQUIRE REVIEWERS
+				CHECK STATUS
+			author is NOT special ->
+				treat external and core devs the same [is this correct?]
+				private message issue assignee and project owner/delegate
+				after 24h public message project room
+				after 72h close pull request
+1+ projects ->
+	0 issues ->
+		author is special in any project ->
+			private message author requiring issue & project
+			after 3d close pull request
+		author is NOT special in any project -> 
+			comment and close pull request
+	1+ issues ->
+		use first mentioned issue [TODO consider all issues]
+		issue OR pull request has a project attached ->
+			project is listed in Process.toml ->
+				author is issue assignee ->
+					REQUIRE REVIEWERS
+					CHECK STATUS
+				author is NOT issue assignee ->
+					author is special ->
+						assign issue to author
+						REQUIRE REVIEWERS
+						CHECK STATUS
+					author is NOT special ->
+						treat external and core devs the same [is this correct?]
+						private message issue assignee and project owner/delegate requiring issue assignment
+						after 24h public message project room
+						after 72h close pull request
+			project is NOT listed in Process.toml -> 
+				do nothing [is this correct?]
+		neither issue NOR pull request has a project attached -> 
+			author is special/core -> 
+				private message author requiring project
+				after 3d close pull request
+			author is NOT special/core ->
+				private message author requiring project
+				after 15m close pull request

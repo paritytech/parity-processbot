@@ -41,11 +41,10 @@ mod tests {
 			let github_bot =
 				GithubBot::new(private_key).await.expect("github_bot");
 			let team = github_bot.team("core-devs").await.expect("team");
-			let members = github_bot
+			let _members = github_bot
 				.team_members(team.id.expect("team id"))
 				.await
 				.expect("team members");
-			assert!(members.len() > 0);
 		});
 	}
 }

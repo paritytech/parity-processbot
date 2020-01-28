@@ -147,12 +147,16 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 	let mut interval =
 		tokio::time::interval(Duration::from_secs(config.tick_secs));
 
+	let mut bot =
+		bots::Bot::new(db, github_bot, matrix_bot, vec![], HashMap::new());
+
 	loop {
 		interval.tick().await;
 
-		let core_devs = github_bot
+		let core_devs = bot
+			.github_bot
 			.team_members(
-				github_bot
+				bot.github_bot
 					.team("core-devs")
 					.await?
 					.id
@@ -160,7 +164,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 			)
 			.await?;
 
-		let github_to_matrix = db
+		let github_to_matrix = bot
+			.db
 			.read()
 			.get(&constants::GITHUB_TO_MATRIX_KEY)
 			.context(error::Db)?
@@ -172,13 +177,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 				"github_to_matrix should always be in the db by this time",
 			)?;
 
-		bots::update(
-			&db,
-			&github_bot,
-			&matrix_bot,
-			&core_devs,
-			&github_to_matrix,
-		)
-		.await?;
+		bot.core_devs = core_devs;
+		bot.github_to_matrix = github_to_matrix;
+		bot.update().await?;
 	}
 }

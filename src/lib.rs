@@ -13,5 +13,8 @@ pub mod matrix;
 pub mod matrix_bot;
 pub mod process;
 pub mod pull_request;
+pub mod review;
+pub mod status;
+pub mod user;
 
 pub type Result<T> = std::result::Result<T, error::Error>;
