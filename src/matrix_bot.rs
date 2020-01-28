@@ -45,7 +45,7 @@ impl MatrixBot {
                 "Couldn't send a message to {}; either their Github or Matrix handle is not set in Bamboo",
                 github_login
             );
-            Ok(())
+			Ok(())
 		}
 	}
 

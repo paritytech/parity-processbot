@@ -233,11 +233,12 @@ pub struct Review {
 	pub html_url: Option<String>,
 	pub user: User,
 	pub body: Option<String>,
-	pub commit_id: String,
+	pub commit_id: Option<String>,
 	pub state: Option<ReviewState>,
-	pub pull_request_url: String,
+	pub pull_request_url: Option<String>,
+	pub submitted_at: Option<chrono::DateTime<chrono::Utc>>,
 	#[serde(rename = "_links")]
-	pub links: Links,
+	pub links: Option<Links>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]

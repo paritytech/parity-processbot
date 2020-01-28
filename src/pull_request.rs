@@ -143,15 +143,14 @@ async fn require_reviewers(
 
 	log::info!("Requiring reviewers on {}", pr_html_url);
 
-	for review in reviews.iter().dedup_by(|x, y| x.user.login == y.user.login) {
-		if local_state.review_from_user(&review.user.login).is_none() {
-			local_state.update_review(
-				review.user.login.clone(),
-				review.state.unwrap(),
-				db,
-			)?;
-		}
+	for review in reviews.iter().sorted_by_key(|r| r.submitted_at) {
+		local_state.update_review(
+			review.user.login.clone(),
+			review.state.unwrap(),
+			db,
+		)?;
 	}
+    // TODO check for code change and repeat
 
 	for user in requested_reviewers.users.iter() {
 		match local_state.review_from_user(&user.login) {
@@ -160,13 +159,13 @@ async fn require_reviewers(
 					db,
 					local_state,
 					matrix_bot,
-                    github_to_matrix,
+					github_to_matrix,
 					process_info,
 					pull_request,
 					user,
 				)?;
-			},
-            _ => {},
+			}
+			_ => {}
 		}
 	}
 
@@ -227,8 +226,7 @@ async fn require_reviewers(
 			process_info,
 			pull_request,
 		)?;
-	} else {
-	}
+    }
 
 	Ok(())
 }
@@ -441,8 +439,7 @@ async fn handle_status(
 		pull_request.html_url.as_ref().context(error::MissingData)?;
 
 	let owner_login = process_info.owner_or_delegate();
-	let owner_or_delegate_approved = reviews
-		.iter()
+	let owner_or_delegate_approved = reviews.iter().sorted_by_key(|r| r.submitted_at).rev()
 		.find(|r| &r.user.login == owner_login)
 		.map_or(false, |r| r.state == Some(github::ReviewState::Approved));
 
