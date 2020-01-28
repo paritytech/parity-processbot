@@ -143,6 +143,8 @@ mod tests {
 			.expect("Couldn't find private key.");
 		let test_repo_name =
 			dotenv::var("TEST_REPO_NAME").expect("TEST_REPO_NAME");
+		let project_backlog_column_name =
+			dotenv::var("project_backlog_column_name").expect("project_backlog_column_name");
 
 		let mut rt = tokio::runtime::Runtime::new().expect("runtime");
 		rt.block_on(async {
@@ -166,7 +168,7 @@ mod tests {
 			let backlog_column = github_bot
 				.project_column_by_name(
 					project,
-					crate::constants::PROJECT_BACKLOG_COLUMN_NAME,
+					project_backlog_column_name,
 				)
 				.await
 				.expect("project_column_by_name")

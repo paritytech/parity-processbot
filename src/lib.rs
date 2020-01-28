@@ -1,5 +1,6 @@
 pub mod bamboo;
 pub mod bots;
+pub mod config;
 pub mod constants;
 pub mod db;
 pub mod duration_ticks;

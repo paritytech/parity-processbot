@@ -1,8 +1,7 @@
 use crate::db::*;
 use crate::local_state::*;
 use crate::{
-	bots, constants::*, duration_ticks::DurationTicks, error, github,
-	issue::issue_actor_and_project_card, matrix,
+	bots, constants::*, duration_ticks::DurationTicks, error, github, matrix,
 	process, Result,
 };
 use snafu::OptionExt;
@@ -20,7 +19,7 @@ impl bots::Bot {
 		let days = local_state
 			.issue_not_assigned_ping()
 			.and_then(|ping| ping.elapsed().ok())
-			.ticks(ISSUE_NOT_ASSIGNED_PING_PERIOD);
+			.ticks(self.config.issue_not_assigned_to_pr_author_ping);
 		log::info!(
 			"The issue addressed by {} has been unassigned for {:?} days.",
 			pull_request.title.as_ref().context(error::MissingData)?,
@@ -74,10 +73,13 @@ impl bots::Bot {
 			pull_request.html_url.as_ref().context(error::MissingData)?;
 		let issue_html_url =
 			issue.html_url.as_ref().context(error::MissingData)?;
-		local_state
-			.update_issue_not_assigned_ping(Some(SystemTime::now()), &self.db)?;
+		local_state.update_issue_not_assigned_ping(
+			Some(SystemTime::now()),
+			&self.db,
+		)?;
 		if let Some(assignee) = &issue.assignee {
-			if let Some(matrix_id) = self.github_to_matrix
+			if let Some(matrix_id) = self
+				.github_to_matrix
 				.get(&assignee.login)
 				.and_then(|matrix_id| matrix::parse_id(matrix_id))
 			{
@@ -276,8 +278,8 @@ impl bots::Bot {
 		)
 	}
 
-	async fn author_core_no_project(
-        &self,
+	async fn pr_author_core_no_project(
+		&self,
 		local_state: &mut LocalState,
 		pull_request: &github::PullRequest,
 		repo: &github::Repository,
@@ -286,7 +288,7 @@ impl bots::Bot {
 		let since = local_state
 			.issue_no_project_ping()
 			.and_then(|ping| ping.elapsed().ok());
-		let ticks = since.ticks(ISSUE_NO_PROJECT_CORE_PING_PERIOD);
+		let ticks = since.ticks(self.config.no_project_author_is_core_ping);
 		match ticks {
 			None => {
 				// send a message to the author
@@ -302,7 +304,9 @@ impl bots::Bot {
 			}
 			Some(0) => {}
 			Some(i) => {
-				if i >= ISSUE_NO_PROJECT_ACTION_AFTER_NPINGS {
+				if i >= self.config.no_project_close_pr
+					/ self.config.no_project_author_is_core_ping
+				{
 					// If after 3 days there is still no project
 					// attached, close the pr
 					self.github_bot
@@ -329,7 +333,7 @@ impl bots::Bot {
 		Ok(())
 	}
 
-	async fn author_unknown_no_project(
+	async fn pr_author_unknown_no_project(
 		&self,
 		local_state: &mut LocalState,
 		pull_request: &github::PullRequest,
@@ -340,7 +344,7 @@ impl bots::Bot {
 			.issue_no_project_ping()
 			.and_then(|ping| ping.elapsed().ok());
 
-		let ticks = since.ticks(ISSUE_NO_PROJECT_NON_CORE_PING_PERIOD);
+		let ticks = since.ticks(self.config.no_project_author_not_core_ping);
 		match ticks {
 			None => {
 				// send a message to the author
@@ -371,7 +375,7 @@ impl bots::Bot {
 	}
 
 	pub async fn handle_pull_request(
-        &self,
+		&self,
 		projects: &[(Option<github::Project>, process::ProcessInfo)],
 		repo: &github::Repository,
 		pull_request: &github::PullRequest,
@@ -468,7 +472,7 @@ impl bots::Bot {
 				if projects.iter().any(|(_, p)| p.is_special(&author.login)) {
 					// author is special so notify them that the pr needs an issue and project
 					// attached or it will be closed.
-					self.author_core_no_project(
+					self.pr_author_core_no_project(
 						&mut local_state,
 						pull_request,
 						repo,
@@ -495,16 +499,14 @@ impl bots::Bot {
 			} else {
 				// TODO consider all mentioned issues here
 				let issue = issues.first().unwrap();
-				if let Some((_, card)) = issue_actor_and_project_card(
+				if let Some((_, card)) = self.issue_actor_and_project_card(
 					&repo.name,
 					issue.number,
-					&self.github_bot,
 				)
 				.await?
-				.or(issue_actor_and_project_card(
+				.or(self.issue_actor_and_project_card(
 					&repo.name,
 					pull_request.number.context(error::MissingData)?,
-					&self.github_bot,
 				)
 				.await?)
 				{
@@ -568,14 +570,14 @@ impl bots::Bot {
 					if author_is_core || author_is_special {
 						// author is a core developer or special of at least one
 						// project in the repo
-						self.author_core_no_project(
+						self.pr_author_core_no_project(
 							&mut local_state,
 							pull_request,
 							repo,
 						)
 						.await?;
 					} else {
-						self.author_unknown_no_project(
+						self.pr_author_unknown_no_project(
 							&mut local_state,
 							pull_request,
 							repo,

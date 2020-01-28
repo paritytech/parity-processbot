@@ -1,9 +1,6 @@
 use crate::db::*;
 use crate::local_state::*;
-use crate::{
-	bots, constants::*, error, github, matrix,
-	process, Result,
-};
+use crate::{bots, constants::*, error, github, matrix, process, Result};
 use itertools::Itertools;
 use snafu::OptionExt;
 use std::time::SystemTime;
@@ -37,7 +34,7 @@ impl bots::Bot {
 					true,
 					|ping_time| {
 						ping_time.elapsed().ok().map_or(true, |elapsed| {
-							elapsed.as_secs() > STATUS_FAILURE_PING_PERIOD
+							elapsed.as_secs() > self.config.status_failure_ping
 						})
 					},
 				);

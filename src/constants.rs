@@ -1,21 +1,3 @@
-pub const GITHUB_TO_MATRIX_KEY: &str = "GITHUB_TO_MATRIX";
-
-/*
- * Ping periods measured in seconds
- */
-pub const STATUS_FAILURE_PING_PERIOD: u64 = 3600 * 24;
-pub const ISSUE_NOT_ASSIGNED_PING_PERIOD: u64 = 3600 * 24;
-pub const ISSUE_NO_PROJECT_CORE_PING_PERIOD: u64 = 3600 * 8;
-pub const ISSUE_NO_PROJECT_NON_CORE_PING_PERIOD: u64 = 60 * 15;
-pub const ISSUE_NO_PROJECT_ACTION_AFTER_NPINGS: u64 = 9;
-pub const ISSUE_UNCONFIRMED_PROJECT_PING_PERIOD: u64 = 3600 * 8;
-pub const MIN_REVIEWERS: usize = 2;
-pub const REQUEST_REVIEWS_PERIOD: u64 = 3600 * 24;
-pub const PRIVATE_REVIEW_REMINDER_PERIOD: u64 = 3600 * 12;
-pub const PUBLIC_REVIEW_REMINDER_PERIOD: u64 = 3600 * 24;
-
-pub const TEMP_FALLBACK_ROOM_ID: &str = "!aenJixaHcSKbJOWxYk:matrix.parity.io";
-pub const PROJECT_BACKLOG_COLUMN_NAME: &str = "backlog";
 pub const PROJECT_NEEDS_BACKLOG_MESSAGE: &str = "{1} needs a backlog column.";
 pub const PUBLIC_MISSING_PROJECT_FIELDS_NOTIFICATION: &str = "Process.toml for repo {1} is missing some fields. Please ensure that every project lists an owner and a matrix_room_id.";
 pub const MISMATCHED_PROCESS_FILE: &str = "Process.toml for repo {1} lists projects that do not exist in the repo, so it will be treated as invalid.";

@@ -1,7 +1,7 @@
 use crate::local_state::*;
 use crate::{
-	bots, constants::*, duration_ticks::DurationTicks, error, github,
-	process, Result,
+	bots, constants::*, duration_ticks::DurationTicks, error, github, process,
+	Result,
 };
 use itertools::Itertools;
 use snafu::OptionExt;
@@ -23,7 +23,7 @@ impl bots::Bot {
 		let ticks = local_state
 			.reviews_requested_ping()
 			.and_then(|ping| ping.elapsed().ok())
-			.ticks(REQUEST_REVIEWS_PERIOD);
+			.ticks(self.config.review_request_ping);
 		match ticks {
 			None => {
 				local_state.update_reviews_requested_ping(
@@ -65,7 +65,8 @@ impl bots::Bot {
 			.and_then(|t| t.elapsed().ok());
 		// private message reminder every 12h
 		{
-			let private_ticks = elapsed.ticks(PRIVATE_REVIEW_REMINDER_PERIOD);
+			let private_ticks =
+				elapsed.ticks(self.config.private_review_reminder_ping);
 			match private_ticks {
             None => {
                 local_state.update_review_requested(user.login.clone(), SystemTime::now(), &self.db)?;
@@ -96,7 +97,8 @@ impl bots::Bot {
 
 		// after 72h public message reminder every 24h
 		{
-			let public_ticks = elapsed.ticks(PUBLIC_REVIEW_REMINDER_PERIOD);
+			let public_ticks =
+				elapsed.ticks(self.config.public_review_reminder_ping);
 			match public_ticks {
             None => {
                 local_state.update_review_requested(user.login.clone(), SystemTime::now(), &self.db)?;
@@ -211,7 +213,7 @@ impl bots::Bot {
 			}
 		}
 
-		if reviewer_count < MIN_REVIEWERS {
+		if reviewer_count < self.config.min_reviewers {
 			// post a message in the project's Riot channel, requesting a review;
 			// repeat this message every 24 hours until a reviewer is assigned.
 			self.public_reviews_request(

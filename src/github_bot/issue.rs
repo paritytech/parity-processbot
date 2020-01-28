@@ -63,26 +63,23 @@ impl GithubBot {
 			.await
 	}
 
-	pub async fn create_issue<A>(
+	pub async fn create_issue(
 		&self,
-		repo_name: A,
-		title: A,
-		body: A,
-		assignee: A,
-	) -> Result<github::Issue>
-	where
-		A: AsRef<str>,
-	{
+		repo_name: &str,
+		title: &str,
+		body: &str,
+		assignee: &str,
+	) -> Result<github::Issue> {
 		let url = format!(
 			"{base_url}/repos/{owner}/{repo}/issues",
 			base_url = Self::BASE_URL,
 			owner = self.organization.login,
-			repo = repo_name.as_ref(),
+			repo = repo_name,
 		);
 		let params = serde_json::json!({
-						"title": title.as_ref(),
-						"body": body.as_ref(),
-						"assignee": assignee.as_ref(),
+						"title": title,
+						"body": body,
+						"assignee": assignee,
 		});
 		self.client
 			.post_response(&url, &params)
