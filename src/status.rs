@@ -20,13 +20,11 @@ impl bots::Bot {
 			pull_request.html_url.as_ref().context(error::MissingData)?;
 
 		// the `mergeable` key is only returned with an individual GET request
-		let pull_request = self.github_bot.pull_request(repo, pr_number).await?;
+		let pull_request =
+			self.github_bot.pull_request(repo, pr_number).await?;
 
 		if pull_request.mergeable.unwrap_or(false) {
-			log::info!(
-				"{} is mergeable; checking status.",
-				pr_html_url
-			);
+			log::info!("{} is mergeable; checking status.", pr_html_url);
 
 			let owner_login = process_info.owner_or_delegate();
 			let owner_or_delegate_approved = reviews
