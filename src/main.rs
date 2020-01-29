@@ -16,7 +16,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn run() -> Result<(), Box<dyn std::error::Error>> {
-	let config = config::Config::from_env();
+	let config = config::MainConfig::from_env();
 	env_logger::from_env(env_logger::Env::default().default_filter_or("info"))
 		.init();
 
@@ -87,7 +87,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 	});
 
 	let mut interval =
-		tokio::time::interval(Duration::from_secs(config.tick_secs));
+		tokio::time::interval(Duration::from_secs(config.main_tick_secs));
 
 	let mut bot =
 		bots::Bot::new(db, github_bot, matrix_bot, vec![], HashMap::new());

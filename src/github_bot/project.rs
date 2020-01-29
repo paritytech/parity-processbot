@@ -144,8 +144,8 @@ mod tests {
 		let test_repo_name =
 			dotenv::var("TEST_REPO_NAME").expect("TEST_REPO_NAME");
 		let project_backlog_column_name =
-			dotenv::var("project_backlog_column_name")
-				.expect("project_backlog_column_name");
+			dotenv::var("PROJECT_BACKLOG_COLUMN_NAME")
+				.expect("PROJECT_BACKLOG_COLUMN_NAME");
 
 		let mut rt = tokio::runtime::Runtime::new().expect("runtime");
 		rt.block_on(async {
