@@ -304,10 +304,10 @@ impl bots::Bot {
 			}
 			Some(0) => {}
 			Some(i) => {
-				if i >= self.config.no_project_close_pr
+				if i >= self.config.no_project_author_is_core_close_pr
 					/ self.config.no_project_author_is_core_ping
 				{
-					// If after 3 days there is still no project
+					// If after some timeout there is still no project
 					// attached, close the pr
 					self.github_bot
 						.close_pull_request(
@@ -344,7 +344,8 @@ impl bots::Bot {
 			.issue_no_project_ping()
 			.and_then(|ping| ping.elapsed().ok());
 
-		let ticks = since.ticks(self.config.no_project_author_not_core_ping);
+		let ticks =
+			since.ticks(self.config.no_project_author_not_core_close_pr);
 		match ticks {
 			None => {
 				// send a message to the author
@@ -360,7 +361,7 @@ impl bots::Bot {
 			}
 			Some(0) => {}
 			Some(_) => {
-				// If after 15 minutes there is still no project
+				// If after some timeout there is still no project
 				// attached, close the pull request
 				self.github_bot
 					.close_pull_request(

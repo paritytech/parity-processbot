@@ -62,18 +62,17 @@ pub struct BotConfig {
 	/// seconds between pings
 	pub no_project_author_is_core_ping: u64,
 	/// seconds between pings
-	pub no_project_author_not_core_ping: u64,
+	pub no_project_author_is_core_close_pr: u64,
 	/// seconds between pings
-	pub unconfirmed_project_ping: u64,
+	pub no_project_author_not_core_close_pr: u64,
+	/// seconds between pings
+	pub unconfirmed_project_timeout: u64,
 	/// seconds between pings
 	pub review_request_ping: u64,
 	/// seconds between pings
 	pub private_review_reminder_ping: u64,
 	/// seconds between pings
 	pub public_review_reminder_ping: u64,
-
-	/// seconds before action
-	pub no_project_close_pr: u64,
 	/// mininum number of reviewers
 	pub min_reviewers: usize,
 	/// matrix room id to be used when missing project details
@@ -92,56 +91,72 @@ impl BotConfig {
 				.expect("STATUS_FAILURE_PING")
 				.parse::<u64>()
 				.expect("failed parsing STATUS_FAILURE_PING"),
+
 			issue_not_assigned_to_pr_author_ping: dotenv::var(
 				"ISSUE_NOT_ASSIGNED_TO_PR_AUTHOR_PING",
 			)
 			.expect("ISSUE_NOT_ASSIGNED_TO_PR_AUTHOR_PING")
 			.parse::<u64>()
 			.expect("failed parsing ISSUE_NOT_ASSIGNED_TO_PR_AUTHOR_PING"),
+
 			no_project_author_is_core_ping: dotenv::var(
 				"NO_PROJECT_AUTHOR_IS_CORE_PING",
 			)
 			.expect("NO_PROJECT_AUTHOR_IS_CORE_PING")
 			.parse::<u64>()
 			.expect("failed parsing NO_PROJECT_AUTHOR_IS_CORE_PING"),
-			no_project_author_not_core_ping: dotenv::var(
-				"NO_PROJECT_AUTHOR_NOT_CORE_PING",
+
+			no_project_author_is_core_close_pr: dotenv::var(
+				"NO_PROJECT_AUTHOR_IS_CORE_CLOSE_PR",
 			)
-			.expect("NO_PROJECT_AUTHOR_NOT_CORE_PING")
+			.expect("NO_PROJECT_AUTHOR_IS_CORE_CLOSE_PR")
 			.parse::<u64>()
-			.expect("failed parsing NO_PROJECT_AUTHOR_NOT_CORE_PING"),
-			unconfirmed_project_ping: dotenv::var("UNCONFIRMED_PROJECT_PING")
-				.expect("UNCONFIRMED_PROJECT_PING")
-				.parse::<u64>()
-				.expect("failed parsing UNCONFIRMED_PROJECT_PING"),
+			.expect("failed parsing NO_PROJECT_AUTHOR_IS_CORE_CLOSE_PR"),
+
+			no_project_author_not_core_close_pr: dotenv::var(
+				"NO_PROJECT_AUTHOR_NOT_CORE_CLOSE_PR",
+			)
+			.expect("NO_PROJECT_AUTHOR_NOT_CORE_CLOSE_PR")
+			.parse::<u64>()
+			.expect("failed parsing NO_PROJECT_AUTHOR_NOT_CORE_CLOSE_PR"),
+
+			unconfirmed_project_timeout: dotenv::var(
+				"UNCONFIRMED_PROJECT_TIMEOUT",
+			)
+			.expect("UNCONFIRMED_PROJECT_TIMEOUT")
+			.parse::<u64>()
+			.expect("failed parsing UNCONFIRMED_PROJECT_TIMEOUT"),
+
 			review_request_ping: dotenv::var("REVIEW_REQUEST_PING")
 				.expect("REVIEW_REQUEST_PING")
 				.parse::<u64>()
 				.expect("failed parsing REVIEW_REQUEST_PING"),
+
 			private_review_reminder_ping: dotenv::var(
 				"PRIVATE_REVIEW_REMINDER_PING",
 			)
 			.expect("PRIVATE_REVIEW_REMINDER_PING")
 			.parse::<u64>()
 			.expect("failed parsing PRIVATE_REVIEW_REMINDER_PING"),
+
 			public_review_reminder_ping: dotenv::var(
 				"PUBLIC_REVIEW_REMINDER_PING",
 			)
 			.expect("PUBLIC_REVIEW_REMINDER_PING")
 			.parse::<u64>()
 			.expect("failed parsing PUBLIC_REVIEW_REMINDER_PING"),
-			no_project_close_pr: dotenv::var("NO_PROJECT_CLOSE_PR")
-				.expect("NO_PROJECT_CLOSE_PR")
-				.parse::<u64>()
-				.expect("failed parsing NO_PROJECT_CLOSE_PR"),
+
 			min_reviewers: dotenv::var("MIN_REVIEWERS")
 				.expect("MIN_REVIEWERS")
 				.parse::<usize>()
 				.expect("failed parsing MIN_REVIEWERS"),
+
 			fallback_room_id: dotenv::var("FALLBACK_ROOM_ID")
 				.expect("FALLBACK_ROOM_ID"),
+
 			core_sorting_repo_name: dotenv::var("CORE_SORTING_REPO_NAME")
 				.expect("CORE_SORTING_REPO_NAME"),
+
 			project_backlog_column_name: dotenv::var(
 				"PROJECT_BACKLOG_COLUMN_NAME",
 			)

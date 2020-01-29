@@ -94,10 +94,10 @@ impl bots::Bot {
 			}
 			Some(0) => {}
 			Some(i) => {
-				if i >= self.config.no_project_close_pr
+				if i >= self.config.no_project_author_is_core_close_pr
 					/ self.config.no_project_author_is_core_ping
 				{
-					// If after 3 days there is still no project
+					// If after some timeout there is still no project
 					// attached, move the issue to Core Sorting
 					// repository
 					self.github_bot
@@ -144,7 +144,8 @@ impl bots::Bot {
 		let issue_html_url =
 			issue.html_url.as_ref().context(error::MissingData)?;
 
-		let ticks = since.ticks(self.config.no_project_author_not_core_ping);
+		let ticks =
+			since.ticks(self.config.no_project_author_not_core_close_pr);
 
 		match ticks {
 			None => {
@@ -160,7 +161,7 @@ impl bots::Bot {
 			}
 			Some(0) => {}
 			_ => {
-				// If after 15 minutes there is still no project
+				// If after some timeout there is still no project
 				// attached, move the issue to Core Sorting
 				// repository.
 				self.github_bot
@@ -283,7 +284,7 @@ impl bots::Bot {
 			let ticks = local_state
 				.issue_confirm_project_ping()
 				.and_then(|t| t.elapsed().ok())
-				.ticks(self.config.unconfirmed_project_ping);
+				.ticks(self.config.unconfirmed_project_timeout);
 
 			match ticks.expect("don't know how long to wait for confirmation; shouldn't ever allow issue_project_state to be set without updating issue_confirm_project_ping") {
 			0 => {}
