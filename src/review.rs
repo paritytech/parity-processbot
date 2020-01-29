@@ -60,29 +60,18 @@ impl bots::Bot {
 	) -> Result<()> {
 		let pr_html_url =
 			pull_request.html_url.as_ref().context(error::MissingData)?;
-		let elapsed = local_state
-			.review_requested_from_user(&user.login)
-			.and_then(|t| t.elapsed().ok());
-		// private message reminder every 12h
+
+		// private message reminder
 		{
+			let elapsed = local_state
+				.private_review_requested_from_user(&user.login)
+				.and_then(|t| t.elapsed().ok());
 			let private_ticks =
 				elapsed.ticks(self.config.private_review_reminder_ping);
 			match private_ticks {
-            None => {
-                local_state.update_review_requested(user.login.clone(), SystemTime::now(), &self.db)?;
-                local_state.update_private_review_reminder_npings(user.login.clone(), 1, &self.db)?;
-                self.matrix_bot.message_mapped(
-                    &self.db,
-                    &self.github_to_matrix,
-                    &user.login,
-                    &PRIVATE_REVIEW_REMINDER_MESSAGE
-                        .replace("{1}", &pr_html_url),
-                )?;
-            }
-            Some(0) => {},
-            Some(i) => {
-                if &i > local_state.private_review_reminder_npings(&user.login).expect("should never set review_requested without also review_reminder_npings") {
-                    local_state.update_private_review_reminder_npings(user.login.clone(), i, &self.db)?;
+                None => {
+                    local_state.update_private_review_requested(user.login.clone(), SystemTime::now(), &self.db)?;
+                    local_state.update_private_review_reminder_npings(user.login.clone(), 1, &self.db)?;
                     self.matrix_bot.message_mapped(
                         &self.db,
                         &self.github_to_matrix,
@@ -91,39 +80,56 @@ impl bots::Bot {
                             .replace("{1}", &pr_html_url),
                     )?;
                 }
-            }
-        }
-		}
-
-		// after 72h public message reminder every 24h
-		{
-			let public_ticks =
-				elapsed.ticks(self.config.public_review_reminder_ping);
-			match public_ticks {
-            None => {
-                local_state.update_review_requested(user.login.clone(), SystemTime::now(), &self.db)?;
-                local_state.update_public_review_reminder_npings(user.login.clone(), 1, &self.db)?;
-                self.matrix_bot.send_to_room(
-                    &process_info.matrix_room_id,
-                    &PUBLIC_REVIEW_REMINDER_MESSAGE
-                        .replace("{1}", &pr_html_url)
-                        .replace("{2}", &user.login),
-                )?;
-            }
-            Some(0) => {},
-            Some(i) => {
-                if &i > local_state.public_review_reminder_npings(&user.login).expect("should never set review_requested without also review_reminder_npings") {
-                    local_state.update_public_review_reminder_npings(user.login.clone(), i, &self.db)?;
-                    self.matrix_bot.send_to_room(
-                        &process_info.matrix_room_id,
-                        &PUBLIC_REVIEW_REMINDER_MESSAGE
-                            .replace("{1}", &pr_html_url)
-                            .replace("{2}", &user.login),
-                    )?;
+                Some(0) => {},
+                Some(i) => {
+                    if &i > local_state.private_review_reminder_npings(&user.login).expect("should never set review_requested without also review_reminder_npings") {
+                        local_state.update_private_review_reminder_npings(user.login.clone(), i, &self.db)?;
+                        self.matrix_bot.message_mapped(
+                            &self.db,
+                            &self.github_to_matrix,
+                            &user.login,
+                            &PRIVATE_REVIEW_REMINDER_MESSAGE
+                                .replace("{1}", &pr_html_url),
+                        )?;
+                    }
                 }
             }
-        }
 		}
+
+		// public message reminder after some delay
+		{
+			let elapsed = local_state
+				.public_review_requested_from_user(&user.login)
+				.and_then(|t| t.elapsed().ok());
+			let delay_ticks =
+				elapsed.ticks(self.config.public_review_reminder_delay);
+			match delay_ticks {
+				Some(1..=std::u64::MAX) => {
+					let public_ticks =
+						elapsed.ticks(self.config.public_review_reminder_ping);
+					match public_ticks {
+                        None => {
+                            local_state.update_public_review_requested(user.login.clone(), SystemTime::now(), &self.db)?;
+                            local_state.update_public_review_reminder_npings(user.login.clone(), 1, &self.db)?;
+                        }
+                        Some(0) => {},
+                        Some(i) => {
+                            if &i > local_state.public_review_reminder_npings(&user.login).expect("should never set review_requested without also review_reminder_npings") {
+                                local_state.update_public_review_reminder_npings(user.login.clone(), i, &self.db)?;
+                                self.matrix_bot.send_to_room(
+                                    &process_info.matrix_room_id,
+                                    &PUBLIC_REVIEW_REMINDER_MESSAGE
+                                        .replace("{1}", &pr_html_url)
+                                        .replace("{2}", &user.login),
+                                )?;
+                            }
+                        }
+                    }
+				}
+				_ => {}
+			}
+		}
+
 		Ok(())
 	}
 

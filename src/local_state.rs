@@ -46,8 +46,9 @@ pub struct LocalState {
 	reviews_requested_ping: Option<SystemTime>,
 	reviews_requested_npings: u64,
 	reviews: HashMap<String, github::ReviewState>,
-	reviews_requested: HashMap<String, SystemTime>,
+	private_reviews_requested: HashMap<String, SystemTime>,
 	private_review_reminder_npings: HashMap<String, u64>,
+	public_reviews_requested: HashMap<String, SystemTime>,
 	public_review_reminder_npings: HashMap<String, u64>,
 }
 
@@ -66,8 +67,9 @@ impl Default for LocalState {
 			reviews_requested_ping: None,
 			reviews_requested_npings: 0,
 			reviews: HashMap::new(),
-			reviews_requested: HashMap::new(),
+			private_reviews_requested: HashMap::new(),
 			private_review_reminder_npings: HashMap::new(),
+			public_reviews_requested: HashMap::new(),
 			public_review_reminder_npings: HashMap::new(),
 		}
 	}
@@ -221,20 +223,20 @@ impl LocalState {
 		self.update(db, &self.key)
 	}
 
-	pub fn review_requested_from_user(
+	pub fn private_review_requested_from_user(
 		&self,
 		user_login: &str,
 	) -> Option<&SystemTime> {
-		self.reviews_requested.get(user_login)
+		self.private_reviews_requested.get(user_login)
 	}
 
-	pub fn update_review_requested(
+	pub fn update_private_review_requested(
 		&mut self,
 		user_login: String,
 		t: SystemTime,
 		db: &Arc<RwLock<DB>>,
 	) -> Result<()> {
-		self.reviews_requested.insert(user_login, t);
+		self.private_reviews_requested.insert(user_login, t);
 		self.update(db, &self.key)
 	}
 
@@ -253,6 +255,23 @@ impl LocalState {
 	) -> Result<()> {
 		self.private_review_reminder_npings
 			.insert(user_login, npings);
+		self.update(db, &self.key)
+	}
+
+	pub fn public_review_requested_from_user(
+		&self,
+		user_login: &str,
+	) -> Option<&SystemTime> {
+		self.public_reviews_requested.get(user_login)
+	}
+
+	pub fn update_public_review_requested(
+		&mut self,
+		user_login: String,
+		t: SystemTime,
+		db: &Arc<RwLock<DB>>,
+	) -> Result<()> {
+		self.public_reviews_requested.insert(user_login, t);
 		self.update(db, &self.key)
 	}
 

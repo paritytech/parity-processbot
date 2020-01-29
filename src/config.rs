@@ -73,6 +73,8 @@ pub struct BotConfig {
 	pub private_review_reminder_ping: u64,
 	/// seconds between pings
 	pub public_review_reminder_ping: u64,
+	/// seconds before public review reminders begin
+	pub public_review_reminder_delay: u64,
 	/// mininum number of reviewers
 	pub min_reviewers: usize,
 	/// matrix room id to be used when missing project details
@@ -145,6 +147,13 @@ impl BotConfig {
 			.expect("PUBLIC_REVIEW_REMINDER_PING")
 			.parse::<u64>()
 			.expect("failed parsing PUBLIC_REVIEW_REMINDER_PING"),
+
+			public_review_reminder_delay: dotenv::var(
+				"PUBLIC_REVIEW_REMINDER_DELAY",
+			)
+			.expect("PUBLIC_REVIEW_REMINDER_DELAY")
+			.parse::<u64>()
+			.expect("failed parsing PUBLIC_REVIEW_REMINDER_DELAY"),
 
 			min_reviewers: dotenv::var("MIN_REVIEWERS")
 				.expect("MIN_REVIEWERS")
