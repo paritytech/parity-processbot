@@ -210,6 +210,7 @@ pub struct PullRequest {
 	pub created_at: Option<chrono::DateTime<chrono::Utc>>,
 	pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
 	pub closed_at: Option<String>,
+	pub mergeable: Option<bool>,
 	pub merged_at: Option<String>,
 	pub merge_commit_sha: Option<String>,
 	pub assignee: Option<User>,

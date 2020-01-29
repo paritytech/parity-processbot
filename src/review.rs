@@ -144,7 +144,7 @@ impl bots::Bot {
 		let pr_html_url =
 			pull_request.html_url.as_ref().context(error::MissingData)?;
 
-		log::info!("Requiring reviewers on {}", pr_html_url);
+		log::info!("Checking if reviews required on {}", pr_html_url);
 
 		for review in reviews.iter().sorted_by_key(|r| r.submitted_at) {
 			local_state.update_review(

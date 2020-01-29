@@ -63,7 +63,7 @@ impl GithubBot {
 			base_url = Self::BASE_URL,
 			owner = self.organization.login,
 			repo = repo_name,
-			sha = &pull_request.head.as_ref().context(error::MissingData)?.sha,
+			sha = &pull_request.merge_commit_sha.as_ref().context(error::MissingData)?,
 		);
 		self.client.get(url).await
 	}

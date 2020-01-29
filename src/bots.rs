@@ -71,12 +71,8 @@ impl Bot {
 							)>>();
 
 						if projects_with_process.len() > 0 {
-							for issue in self
-								.github_bot
-								.repository_issues(&repo)
-								.await?
-								.iter()
-								.skip(1)
+							for issue in
+								self.github_bot.repository_issues(&repo).await?
 							{
 								// if issue.pull_request.is_some() then this issue is a pull
 								// request, which we treat differently

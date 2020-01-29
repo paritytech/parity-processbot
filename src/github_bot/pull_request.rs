@@ -15,6 +15,23 @@ impl GithubBot {
 			.await
 	}
 
+	/// Returns a single pull request.
+	pub async fn pull_request(
+		&self,
+		repo: &github::Repository,
+		pull_number: i64,
+	) -> Result<github::PullRequest> {
+		self.client
+			.get(format!(
+				"{base_url}/repos/{owner}/{repo}/pulls/{pull_number}",
+				base_url = Self::BASE_URL,
+				owner = self.organization.login,
+				repo = repo.name,
+				pull_number = pull_number
+			))
+			.await
+	}
+
 	/// Creates a new pull request to merge `head` into `base`.
 	pub async fn create_pull_request<A>(
 		&self,
