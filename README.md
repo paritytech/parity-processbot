@@ -77,7 +77,7 @@ pull request author or publicly to the default channel if the author's Matrix ha
 
 `NO_PROJECT_AUTHOR_NOT_CORE_CLOSE_PR`: Seconds before closing a pull request opened by an external developer that has no project attached.
 
-`UNCONFIRMED_PROJECT_TIMEOUT`: Seconds before reverting an unconfirmed change of project by a non-whitelisted developer (currently unimplemented).
+`PROJECT_CONFIRMATION_TIMEOUT`: Seconds before reverting an unconfirmed change of project by a non-whitelisted developer (currently unimplemented).
 
 `MIN_REVIEWERS`: Minimum number of reviewers needed before a pull request can be accepted.
 
