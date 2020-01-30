@@ -88,10 +88,7 @@ mod tests {
 				.any(|x| x.login == "sjeohp"));
 			github_bot.reviews(&created).await.expect("reviews");
 			github_bot
-				.close_pull_request(
-					&test_repo_name,
-					created.number.expect("created pr number"),
-				)
+				.close_pull_request(&test_repo_name, created.number)
 				.await
 				.expect("close_pull_request");
 		});

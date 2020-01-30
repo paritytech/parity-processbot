@@ -219,7 +219,7 @@ mod tests {
 				.create_pull_request(
 					&test_repo_name,
 					&"testing pr".to_owned(),
-					&format!("Fixes #{}", created_issue.number,),
+					&format!("Fixes #{}", created_issue.number),
 					&"testing_branch".to_owned(),
 					&"other_testing_branch".to_owned(),
 				)
@@ -243,10 +243,7 @@ mod tests {
 				.as_ref()
 				.map_or(false, |t| t == "testing issue")));
 			github_bot
-				.close_pull_request(
-					&test_repo_name,
-					created_pr.number.expect("created pr number"),
-				)
+				.close_pull_request(&test_repo_name, created_pr.number)
 				.await
 				.expect("close_pull_request");
 		});

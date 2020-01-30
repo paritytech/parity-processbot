@@ -13,7 +13,8 @@ pub const ISSUE_ASSIGNEE_NOTIFICATION: &str = "{1} addressing {2} has been opene
 pub const ISSUE_CONFIRM_PROJECT_MESSAGE: &str = "{issue_url} has been attached to the project {project_url}. For this change to be accepted, the project owner or a whitelisted developer must reply, \"confirm {issue_id} {project_id}\", in this channel within the next {4} hours.";
 pub const ISSUE_REVERT_PROJECT_NOTIFICATION: &str = "The change you made to {1} (attaching a project) has been denied or gone unconfirmed for too long, and so has been reverted. Changes require confirmation from the project owner or a whitelisted developer.";
 
-pub const REQUESTING_REVIEWS_MESSAGE: &str = "{1} is in need of reviewers.";
+pub const REQUESTING_REVIEWS_MESSAGE: &str =
+	"@{author}, {pr_url} is in need of reviewers.";
 pub const STATUS_FAILURE_NOTIFICATION: &str = "{1} has failed status checks.";
 pub const REQUEST_DELEGATED_REVIEW_MESSAGE: &str = "{1} needs your review in the next 72 hours, as you are the owner or delegated reviewer.";
 pub const PRIVATE_REVIEW_REMINDER_MESSAGE: &str = "{1} needs your review.";

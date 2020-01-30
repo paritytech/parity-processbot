@@ -57,16 +57,17 @@ impl GithubBot {
 		&self,
 		repo_name: &str,
 		pull_request: &github::PullRequest,
-	) -> Result<github::Status> {
+	) -> Result<github::CombinedStatus> {
 		let url = format!(
 			"{base_url}/repos/{owner}/{repo}/commits/{sha}/status",
 			base_url = Self::BASE_URL,
 			owner = self.organization.login,
 			repo = repo_name,
-			sha = &pull_request
-				.merge_commit_sha
-				.as_ref()
-				.context(error::MissingData)?,
+			sha = &pull_request.head.sha
+//            &pull_request
+//				.merge_commit_sha
+//				.as_ref()
+//				.context(error::MissingData)?,
 		);
 		self.client.get(url).await
 	}
@@ -118,16 +119,13 @@ mod tests {
 				)
 				.await
 				.expect("create_pull_request");
-			let status = dbg!(github_bot
+			let status = github_bot
 				.status(&test_repo_name, &created_pr)
 				.await
-				.expect("statuses"));
+				.expect("statuses");
 			assert!(status.state != github::StatusState::Failure);
 			github_bot
-				.close_pull_request(
-					&test_repo_name,
-					created_pr.number.expect("created pr number"),
-				)
+				.close_pull_request(&test_repo_name, created_pr.number)
 				.await
 				.expect("close_pull_request");
 		});

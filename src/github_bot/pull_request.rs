@@ -65,23 +65,19 @@ impl GithubBot {
 	}
 
 	/// Merges a pull request.
-	pub async fn merge_pull_request<A>(
+	pub async fn merge_pull_request(
 		&self,
-		repo_name: A,
-		pull_number: i64,
-	) -> Result<()>
-	where
-		A: AsRef<str>,
-	{
+		repo_name: &str,
+		pull_request: &github::PullRequest,
+	) -> Result<()> {
 		let url = format!(
-			"{base_url}/repos/{owner}/{repo}/pulls/{pull_number}/merge",
+			"{base_url}/repos/{owner}/{repo}/merges",
 			base_url = Self::BASE_URL,
 			owner = self.organization.login,
-			repo = repo_name.as_ref(),
-			pull_number = pull_number
+			repo = repo_name,
 		);
 		self.client
-			.put_response(&url, &serde_json::json!({}))
+			.post_response(&url, &serde_json::json!({ "base": pull_request.base.ref_field, "head": pull_request.head.sha })) 
 			.await
 			.map(|_| ())
 	}
@@ -152,10 +148,7 @@ mod tests {
 				.as_ref()
 				.map_or(false, |x| x == "testing pr")));
 			github_bot
-				.close_pull_request(
-					&test_repo_name,
-					created.number.expect("created pr number"),
-				)
+				.close_pull_request(&test_repo_name, created.number)
 				.await
 				.expect("close_pull_request");
 			let prs = github_bot

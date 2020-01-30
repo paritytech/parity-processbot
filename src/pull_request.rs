@@ -89,14 +89,7 @@ impl bots::Bot {
 					&ISSUE_ASSIGNEE_NOTIFICATION
 						.replace("{1}", &pr_html_url)
 						.replace("{2}", &issue_html_url)
-						.replace(
-							"{3}",
-							&pull_request
-								.user
-								.as_ref()
-								.context(error::MissingData)?
-								.login,
-						),
+						.replace("{3}", &pull_request.user.login),
 				)?;
 			} else {
 				log::error!(
@@ -116,14 +109,7 @@ impl bots::Bot {
 				&ISSUE_ASSIGNEE_NOTIFICATION
 					.replace("{1}", &pr_html_url)
 					.replace("{2}", &issue_html_url)
-					.replace(
-						"{3}",
-						&pull_request
-							.user
-							.as_ref()
-							.context(error::MissingData)?
-							.login,
-					),
+					.replace("{3}", &pull_request.user.login),
 			)?;
 		} else {
 			log::error!(
@@ -159,14 +145,7 @@ impl bots::Bot {
 				&ISSUE_ASSIGNEE_NOTIFICATION
 					.replace("{1}", &pr_html_url)
 					.replace("{2}", &issue_html_url)
-					.replace(
-						"{3}",
-						&pull_request
-							.user
-							.as_ref()
-							.context(error::MissingData)?
-							.login,
-					),
+					.replace("{3}", &pull_request.user.login),
 			)?;
 		}
 		Ok(())
@@ -189,10 +168,7 @@ impl bots::Bot {
 				&self.db,
 			)?;
 			self.github_bot
-				.close_pull_request(
-					&repo.name,
-					pull_request.number.context(error::MissingData)?,
-				)
+				.close_pull_request(&repo.name, pull_request.number)
 				.await?;
 		}
 		Ok(())
@@ -205,11 +181,11 @@ impl bots::Bot {
 		repo: &github::Repository,
 		pull_request: &github::PullRequest,
 		issue: &github::Issue,
-		status: &github::Status,
+		status: &github::CombinedStatus,
 		reviews: &[github::Review],
 		requested_reviewers: &github::RequestedReviewers,
 	) -> Result<()> {
-		let author = pull_request.user.as_ref().context(error::MissingData)?;
+		let author = &pull_request.user;
 		if author.is_assignee(issue) {
 			self.require_reviewers(
 				local_state,
@@ -284,7 +260,7 @@ impl bots::Bot {
 		pull_request: &github::PullRequest,
 		repo: &github::Repository,
 	) -> Result<()> {
-		let author = pull_request.user.as_ref().context(error::MissingData)?;
+		let author = &pull_request.user;
 		let since = local_state
 			.issue_no_project_ping()
 			.and_then(|ping| ping.elapsed().ok());
@@ -310,10 +286,7 @@ impl bots::Bot {
 					// If after some timeout there is still no project
 					// attached, close the pr
 					self.github_bot
-						.close_pull_request(
-							&repo.name,
-							pull_request.number.context(error::MissingData)?,
-						)
+						.close_pull_request(&repo.name, pull_request.number)
 						.await?;
 					local_state.delete(&self.db, &local_state.key)?;
 				} else {
@@ -339,7 +312,7 @@ impl bots::Bot {
 		pull_request: &github::PullRequest,
 		repo: &github::Repository,
 	) -> Result<()> {
-		let author = pull_request.user.as_ref().context(error::MissingData)?;
+		let author = &pull_request.user;
 		let since = local_state
 			.issue_no_project_ping()
 			.and_then(|ping| ping.elapsed().ok());
@@ -364,10 +337,7 @@ impl bots::Bot {
 				// If after some timeout there is still no project
 				// attached, close the pull request
 				self.github_bot
-					.close_pull_request(
-						&repo.name,
-						pull_request.number.context(error::MissingData)?,
-					)
+					.close_pull_request(&repo.name, pull_request.number)
 					.await?;
 				local_state.delete(&self.db, &local_state.key)?;
 			}
@@ -382,11 +352,10 @@ impl bots::Bot {
 		pull_request: &github::PullRequest,
 	) -> Result<()> {
 		let pr_id = pull_request.id.context(error::MissingData)?;
-		let pr_number = pull_request.number.context(error::MissingData)?;
 		let db_key = format!("{}", pr_id).into_bytes();
 		let mut local_state = LocalState::get_or_default(&self.db, db_key)?;
 
-		let author = pull_request.user.as_ref().context(error::MissingData)?;
+		let author = &pull_request.user;
 		let author_is_core = self.core_devs.iter().any(|u| u.id == author.id);
 
 		let (reviews, issues, status, requested_reviewers) = futures::try_join!(
@@ -442,12 +411,12 @@ impl bots::Bot {
 					self.github_bot
 						.create_issue_comment(
 							&repo.name,
-							pr_number,
+							pull_request.number,
 							&ISSUE_MUST_EXIST_MESSAGE,
 						)
 						.await?;
 					self.github_bot
-						.close_pull_request(&repo.name, pr_number)
+						.close_pull_request(&repo.name, pull_request.number)
 						.await?;
 				}
 			} else {
@@ -489,12 +458,12 @@ impl bots::Bot {
 					self.github_bot
 						.create_issue_comment(
 							&repo.name,
-							pr_number,
+							pull_request.number,
 							&ISSUE_MUST_BE_VALID_MESSAGE,
 						)
 						.await?;
 					self.github_bot
-						.close_pull_request(&repo.name, pr_number)
+						.close_pull_request(&repo.name, pull_request.number)
 						.await?;
 				}
 			} else {
@@ -507,7 +476,7 @@ impl bots::Bot {
 				.await?
 				.or(self.issue_actor_and_project_card(
 					&repo.name,
-					pull_request.number.context(error::MissingData)?,
+					pull_request.number,
 				)
 				.await?)
 				{

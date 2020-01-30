@@ -185,6 +185,14 @@ pub struct Plan {
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct IssuePullRequest {
+	pub url: Option<String>,
+	pub html_url: Option<String>,
+	pub diff_url: Option<String>,
+	pub patch_url: Option<String>,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PullRequest {
 	pub url: Option<String>,
 	pub id: Option<i64>,
@@ -198,11 +206,11 @@ pub struct PullRequest {
 	pub review_comment_url: Option<String>,
 	pub comments_url: Option<String>,
 	pub statuses_url: Option<String>,
-	pub number: Option<i64>,
+	pub number: i64,
 	pub state: Option<String>,
 	pub locked: Option<bool>,
 	pub title: Option<String>,
-	pub user: Option<User>,
+	pub user: User,
 	pub body: Option<String>,
 	pub labels: Option<Vec<Label>>,
 	pub milestone: Option<Milestone>,
@@ -217,14 +225,34 @@ pub struct PullRequest {
 	pub assignees: Option<Vec<User>>,
 	pub requested_reviewers: Option<Vec<User>>,
 	pub requested_teams: Option<Vec<RequestedTeam>>,
-	pub head: Option<Head>,
-	pub base: Option<Base>,
+	pub head: Head,
+	pub base: Base,
 	#[serde(rename = "_links")]
 	pub links: Option<Links>,
 	pub author_association: Option<String>,
 	pub draft: Option<bool>,
 	#[serde(rename = "repo")]
 	pub repository: Option<Repository>,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Head {
+	pub label: String,
+	#[serde(rename = "ref")]
+	pub ref_field: String,
+	pub sha: String,
+	pub user: User,
+	pub repo: Option<Repository>,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Base {
+	pub label: String,
+	#[serde(rename = "ref")]
+	pub ref_field: String,
+	pub sha: String,
+	pub user: User,
+	pub repo: Option<Repository>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -264,7 +292,7 @@ pub struct Issue {
 	pub milestone: Option<Milestone>,
 	pub locked: Option<bool>,
 	pub active_lock_reason: Option<String>,
-	pub pull_request: Option<PullRequest>,
+	pub pull_request: Option<IssuePullRequest>,
 	pub created_at: String,
 	pub updated_at: String,
 	pub closed_at: Option<String>,
@@ -339,16 +367,6 @@ pub struct RequestedTeam {
 	pub members_url: String,
 	pub repositories_url: String,
 	pub parent: ::serde_json::Value,
-}
-
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Head {
-	pub label: String,
-	#[serde(rename = "ref")]
-	pub ref_field: String,
-	pub sha: String,
-	pub user: User,
-	pub repo: Option<Repository>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -441,14 +459,12 @@ pub struct Permissions {
 	pull: Option<bool>,
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Base {
-	pub label: String,
-	#[serde(rename = "ref")]
-	pub ref_field: String,
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CombinedStatus {
+	pub state: StatusState,
 	pub sha: String,
-	pub user: User,
-	pub repo: Option<Repository>,
+	pub total_count: i64,
+	pub statuses: Vec<Status>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
