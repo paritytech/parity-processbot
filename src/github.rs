@@ -282,7 +282,7 @@ pub struct Issue {
 	pub id: Option<i64>,
 	pub node_id: Option<String>,
 	pub html_url: Option<String>,
-	pub user: Option<User>,
+	pub user: User,
 	pub body: Option<String>,
 	pub title: Option<String>,
 	pub state: Option<String>,

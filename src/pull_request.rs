@@ -28,7 +28,7 @@ impl bots::Bot {
 		match days {
 			// notify the the issue assignee and project
 			// owner through a PM
-			None => self.author_is_core_unassigned_ticks_none(
+			None => self.send_private_issue_reassignment_notification(
 				local_state,
 				process_info,
 				pull_request,
@@ -39,26 +39,23 @@ impl bots::Bot {
 			// if after 24 hours there is no change, then
 			// send a message into the project's Riot
 			// channel
-			Some(1) | Some(2) => self.author_is_core_unassigned_ticks_passed(
-				local_state,
-				process_info,
-				pull_request,
-				issue,
-			),
+			Some(1) | Some(2) => self
+				.send_public_issue_reassignment_notification(
+					local_state,
+					process_info,
+					pull_request,
+					issue,
+				),
 			// if after a further 48 hours there is still no
 			// change, then close the PR.
 			_ => {
-				self.author_is_core_unassigned_ticks_expired(
-					local_state,
-					repo,
-					pull_request,
-				)
-				.await
+				self.close_for_issue_unassigned(local_state, repo, pull_request)
+					.await
 			}
 		}
 	}
 
-	fn author_is_core_unassigned_ticks_none(
+	fn send_private_issue_reassignment_notification(
 		&self,
 		local_state: &mut LocalState,
 		process_info: &process::ProcessInfo,
@@ -86,10 +83,10 @@ impl bots::Bot {
 				self.matrix_bot.send_private_message(
 					&self.db,
 					&matrix_id,
-					&ISSUE_ASSIGNEE_NOTIFICATION
-						.replace("{1}", &pr_html_url)
-						.replace("{2}", &issue_html_url)
-						.replace("{3}", &pull_request.user.login),
+					&PRIVATE_ISSUE_NEEDS_REASSIGNMENT
+						.replace("{pr_url}", &pr_html_url)
+						.replace("{issue_url}", &issue_html_url)
+						.replace("{author}", &pull_request.user.login),
 				)?;
 			} else {
 				log::error!(
@@ -106,10 +103,10 @@ impl bots::Bot {
 			self.matrix_bot.send_private_message(
 				&self.db,
 				matrix_id,
-				&ISSUE_ASSIGNEE_NOTIFICATION
-					.replace("{1}", &pr_html_url)
-					.replace("{2}", &issue_html_url)
-					.replace("{3}", &pull_request.user.login),
+				&PRIVATE_ISSUE_NEEDS_REASSIGNMENT
+					.replace("{pr_url}", &pr_html_url)
+					.replace("{issue_url}", &issue_html_url)
+					.replace("{author}", &pull_request.user.login),
 			)?;
 		} else {
 			log::error!(
@@ -119,7 +116,7 @@ impl bots::Bot {
 		Ok(())
 	}
 
-	fn author_is_core_unassigned_ticks_passed(
+	fn send_public_issue_reassignment_notification(
 		&self,
 		local_state: &mut LocalState,
 		process_info: &process::ProcessInfo,
@@ -142,16 +139,17 @@ impl bots::Bot {
 			)?;
 			self.matrix_bot.send_to_room(
 				&process_info.matrix_room_id,
-				&ISSUE_ASSIGNEE_NOTIFICATION
-					.replace("{1}", &pr_html_url)
-					.replace("{2}", &issue_html_url)
-					.replace("{3}", &pull_request.user.login),
+				&PUBLIC_ISSUE_NEEDS_REASSIGNMENT
+					.replace("{owner}", &process_info.owner_or_delegate())
+					.replace("{pr_url}", &pr_html_url)
+					.replace("{issue_url}", &issue_html_url)
+					.replace("{author}", &pull_request.user.login),
 			)?;
 		}
 		Ok(())
 	}
 
-	async fn author_is_core_unassigned_ticks_expired(
+	async fn close_for_issue_unassigned(
 		&self,
 		local_state: &mut LocalState,
 		repo: &github::Repository,
@@ -292,13 +290,15 @@ impl bots::Bot {
 				} else {
 					local_state.update_issue_no_project_npings(i, &self.db)?;
 					self.matrix_bot.send_to_default(
-						&ISSUE_NO_PROJECT_MESSAGE.replace(
-							"{1}",
-							&pull_request
-								.html_url
-								.as_ref()
-								.context(error::MissingData)?,
-						),
+						&WILL_CLOSE_FOR_NO_PROJECT
+							.replace("{author}", &pull_request.user.login)
+							.replace(
+								"{issue_url}",
+								&pull_request
+									.html_url
+									.as_ref()
+									.context(error::MissingData)?,
+							),
 					)?;
 				}
 			}
@@ -412,8 +412,7 @@ impl bots::Bot {
 						.create_issue_comment(
 							&repo.name,
 							pull_request.number,
-							&ISSUE_MUST_EXIST_MESSAGE,
-						)
+							&CLOSE_FOR_NO_ISSUE)
 						.await?;
 					self.github_bot
 						.close_pull_request(&repo.name, pull_request.number)
@@ -459,7 +458,7 @@ impl bots::Bot {
 						.create_issue_comment(
 							&repo.name,
 							pull_request.number,
-							&ISSUE_MUST_BE_VALID_MESSAGE,
+							&CLOSE_FOR_NO_ISSUE,
 						)
 						.await?;
 					self.github_bot
@@ -529,12 +528,7 @@ impl bots::Bot {
 
 					let author_is_special = projects
 						.iter()
-						.find(|(_, p)| {
-							issue
-								.user
-								.as_ref()
-								.map_or(false, |user| p.is_special(&user.login))
-						})
+						.find(|(_, p)| p.is_special(&issue.user.login))
 						.is_some();
 
 					if author_is_core || author_is_special {

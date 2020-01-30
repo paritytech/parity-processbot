@@ -61,12 +61,12 @@ pub struct BotConfig {
 	pub issue_not_assigned_to_pr_author_ping: u64,
 	/// seconds between pings
 	pub no_project_author_is_core_ping: u64,
-	/// seconds between pings
+	/// seconds before pr gets closed
 	pub no_project_author_is_core_close_pr: u64,
-	/// seconds between pings
+	/// seconds before pr gets closed
 	pub no_project_author_not_core_close_pr: u64,
-	/// seconds between pings
-	pub unconfirmed_project_timeout: u64,
+	/// seconds before unconfirmed change gets reverted
+	pub project_confirmation_timeout: u64,
 	/// seconds between pings
 	pub review_request_ping: u64,
 	/// seconds between pings
@@ -122,12 +122,12 @@ impl BotConfig {
 			.parse::<u64>()
 			.expect("failed parsing NO_PROJECT_AUTHOR_NOT_CORE_CLOSE_PR"),
 
-			unconfirmed_project_timeout: dotenv::var(
-				"UNCONFIRMED_PROJECT_TIMEOUT",
+			project_confirmation_timeout: dotenv::var(
+				"PROJECT_CONFIRMATION_TIMEOUT",
 			)
-			.expect("UNCONFIRMED_PROJECT_TIMEOUT")
+			.expect("PROJECT_CONFIRMATION_TIMEOUT")
 			.parse::<u64>()
-			.expect("failed parsing UNCONFIRMED_PROJECT_TIMEOUT"),
+			.expect("failed parsing PROJECT_CONFIRMATION_TIMEOUT"),
 
 			review_request_ping: dotenv::var("REVIEW_REQUEST_PING")
 				.expect("REVIEW_REQUEST_PING")

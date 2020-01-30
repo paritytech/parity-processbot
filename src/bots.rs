@@ -124,7 +124,7 @@ impl Bot {
 							// Process.toml does not match any repo projects.
 							self.matrix_bot.send_to_default(
 								&MISMATCHED_PROCESS_FILE.replace(
-									"{1}",
+									"{repo_url}",
 									&repo
 										.html_url
 										.as_ref()
@@ -136,7 +136,7 @@ impl Bot {
 						// Process.toml is invalid.
 						self.matrix_bot.send_to_default(
 							&MALFORMED_PROCESS_FILE.replace(
-								"{1}",
+								"{repo_url}",
 								&repo
 									.html_url
 									.as_ref()
@@ -149,9 +149,9 @@ impl Bot {
 				}
 			} else {
 				log::error!(
-				"Error getting projects for repo '{repo_name}'. They may be disabled.",
-				repo_name = repo.name
-			);
+                    "Error getting projects for repo '{repo_name}'. They may be disabled.",
+                    repo_name = repo.name
+                );
 			}
 		}
 		Ok(())

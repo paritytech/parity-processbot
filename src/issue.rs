@@ -31,7 +31,6 @@ impl bots::Bot {
 		local_state: &mut LocalState,
 		issue: &github::Issue,
 		(project, process_info): (&github::Project, &process::ProcessInfo),
-		actor: &github::User,
 	) -> Result<()> {
 		// get the project's backlog column or use the organization-wide default
 		if let Some(backlog_column) = self
@@ -48,7 +47,7 @@ impl bots::Bot {
 			local_state.update_issue_project(
 				Some(IssueProject {
 					state: IssueProjectState::Confirmed,
-					actor_login: actor.login.clone(),
+					actor_login: issue.user.login.clone(),
 					project_column_id: backlog_column.id,
 				}),
 				&self.db,
@@ -68,10 +67,15 @@ impl bots::Bot {
 			);
 			self.matrix_bot.send_to_room(
 				&process_info.matrix_room_id,
-				&PROJECT_NEEDS_BACKLOG_MESSAGE.replace(
-					"{1}",
-					project.html_url.as_ref().context(error::MissingData)?,
-				),
+				&PROJECT_NEEDS_BACKLOG
+					.replace("{owner}", process_info.owner_or_delegate())
+					.replace(
+						"{project_url}",
+						project
+							.html_url
+							.as_ref()
+							.context(error::MissingData)?,
+					),
 			)?;
 		}
 		Ok(())
@@ -93,7 +97,9 @@ impl bots::Bot {
 					&self.db,
 				)?;
 				self.matrix_bot.send_to_default(
-					&ISSUE_NO_PROJECT_MESSAGE.replace("{1}", issue_html_url),
+					&WILL_CLOSE_FOR_NO_PROJECT
+						.replace("{author}", &issue.user.login)
+						.replace("{issue_url}", issue_html_url),
 				)?;
 			}
 			Some(0) => {}
@@ -130,8 +136,9 @@ impl bots::Bot {
 				} else {
 					local_state.update_issue_no_project_npings(i, &self.db)?;
 					self.matrix_bot.send_to_default(
-						&ISSUE_NO_PROJECT_MESSAGE
-							.replace("{1}", issue_html_url),
+						&WILL_CLOSE_FOR_NO_PROJECT
+							.replace("{author}", &issue.user.login)
+							.replace("{issue_url}", issue_html_url),
 					)?;
 				}
 			}
@@ -160,7 +167,9 @@ impl bots::Bot {
 					&self.db,
 				)?;
 				self.matrix_bot.send_to_default(
-					&ISSUE_NO_PROJECT_MESSAGE.replace("{1}", issue_html_url),
+					&WILL_CLOSE_FOR_NO_PROJECT
+						.replace("{author}", &issue.user.login)
+						.replace("{issue_url}", issue_html_url),
 				)?;
 			}
 			Some(0) => {}
@@ -205,7 +214,6 @@ impl bots::Bot {
 		process_info: &process::ProcessInfo,
 		actor: &github::User,
 	) -> Result<()> {
-		let room_id = &process_info.matrix_room_id;
 		local_state.update_issue_confirm_project_ping(
 			Some(SystemTime::now()),
 			&self.db,
@@ -219,8 +227,8 @@ impl bots::Bot {
 			&self.db,
 		)?;
 		self.matrix_bot.send_to_room(
-			&room_id,
-			&ISSUE_CONFIRM_PROJECT_MESSAGE
+			&process_info.matrix_room_id,
+			&PROJECT_CONFIRMATION
 				.replace(
 					"{issue_url}",
 					issue.html_url.as_ref().context(error::MissingData)?,
@@ -233,9 +241,10 @@ impl bots::Bot {
 					"{issue_id}",
 					&format!("{}", issue.id.context(error::MissingData)?),
 				)
+				.replace("{column_id}", &format!("{}", project_column.id))
 				.replace(
-					"{project_column.id}",
-					&format!("{}", project_column.id),
+					"{seconds}",
+					&format!("{}", self.config.project_confirmation_timeout),
 				),
 		)?;
 		Ok(())
@@ -253,8 +262,6 @@ impl bots::Bot {
 		let issue_id = issue.id.context(error::MissingData)?;
 		let issue_html_url =
 			issue.html_url.as_ref().context(error::MissingData)?;
-		let project_html_url =
-			project.html_url.as_ref().context(error::MissingData)?;
 
 		let issue_project =
 			local_state.issue_project().expect("has to be Some here");
@@ -275,20 +282,36 @@ impl bots::Bot {
 			)?;
 			self.matrix_bot.send_to_room(
 				&process_info.matrix_room_id,
-				&ISSUE_CONFIRM_PROJECT_MESSAGE
-					.replace("{issue_url}", issue_html_url)
-					.replace("{project_url}", project_html_url)
-					.replace("{issue_id}", &format!("{}", issue_id))
+				&PROJECT_CONFIRMATION
 					.replace(
-						"{project_column.id}",
-						&format!("{}", project_column.id),
+						"{issue_url}",
+						issue.html_url.as_ref().context(error::MissingData)?,
+					)
+					.replace(
+						"{project_url}",
+						project
+							.html_url
+							.as_ref()
+							.context(error::MissingData)?,
+					)
+					.replace(
+						"{issue_id}",
+						&format!("{}", issue.id.context(error::MissingData)?),
+					)
+					.replace("{column_id}", &format!("{}", project_column.id))
+					.replace(
+						"{seconds}",
+						&format!(
+							"{}",
+							self.config.project_confirmation_timeout
+						),
 					),
 			)?;
 		} else {
 			let ticks = local_state
 				.issue_confirm_project_ping()
 				.and_then(|t| t.elapsed().ok())
-				.ticks(self.config.unconfirmed_project_timeout);
+				.ticks(self.config.project_confirmation_timeout);
 
 			match ticks.expect("don't know how long to wait for confirmation; shouldn't ever allow issue_project_state to be set without updating issue_confirm_project_ping") {
 			0 => {}
@@ -342,8 +365,6 @@ impl bots::Bot {
 		let issue_id = issue.id.context(error::MissingData)?;
 		let issue_html_url =
 			issue.html_url.as_ref().context(error::MissingData)?;
-		let project_html_url =
-			project.html_url.as_ref().context(error::MissingData)?;
 		let denied_id = local_state.issue_project().unwrap().project_column_id;
 
 		if project_column.id != denied_id {
@@ -361,13 +382,29 @@ impl bots::Bot {
 			)?;
 			self.matrix_bot.send_to_room(
 				&process_info.matrix_room_id,
-				&ISSUE_CONFIRM_PROJECT_MESSAGE
-					.replace("{issue_url}", issue_html_url)
-					.replace("{project_url}", project_html_url)
-					.replace("{issue_id}", &format!("{}", issue_id))
+				&PROJECT_CONFIRMATION
 					.replace(
-						"{project_column.id}",
-						&format!("{}", project_column.id),
+						"{issue_url}",
+						issue.html_url.as_ref().context(error::MissingData)?,
+					)
+					.replace(
+						"{project_url}",
+						project
+							.html_url
+							.as_ref()
+							.context(error::MissingData)?,
+					)
+					.replace(
+						"{issue_id}",
+						&format!("{}", issue.id.context(error::MissingData)?),
+					)
+					.replace("{column_id}", &format!("{}", project_column.id))
+					.replace(
+						"{seconds}",
+						&format!(
+							"{}",
+							self.config.project_confirmation_timeout
+						),
 					),
 			)?;
 		} else {
@@ -413,12 +450,6 @@ impl bots::Bot {
 		process_info: &process::ProcessInfo,
 		actor: &github::User,
 	) -> Result<()> {
-		let issue_id = issue.id.context(error::MissingData)?;
-		let issue_html_url =
-			issue.html_url.as_ref().context(error::MissingData)?;
-		let project_html_url =
-			project.html_url.as_ref().context(error::MissingData)?;
-
 		let confirmed_id =
 			local_state.issue_project().unwrap().project_column_id;
 
@@ -452,13 +483,29 @@ impl bots::Bot {
 			)?;
 			self.matrix_bot.send_to_room(
 				&process_info.matrix_room_id,
-				&ISSUE_CONFIRM_PROJECT_MESSAGE
-					.replace("{issue_url}", issue_html_url)
-					.replace("{project_url}", project_html_url)
-					.replace("{issue_id}", &format!("{}", issue_id))
+				&PROJECT_CONFIRMATION
 					.replace(
-						"{project_column.id}",
-						&format!("{}", project_column.id),
+						"{issue_url}",
+						issue.html_url.as_ref().context(error::MissingData)?,
+					)
+					.replace(
+						"{project_url}",
+						project
+							.html_url
+							.as_ref()
+							.context(error::MissingData)?,
+					)
+					.replace(
+						"{issue_id}",
+						&format!("{}", issue.id.context(error::MissingData)?),
+					)
+					.replace("{column_id}", &format!("{}", project_column.id))
+					.replace(
+						"{seconds}",
+						&format!(
+							"{}",
+							self.config.project_confirmation_timeout
+						),
 					),
 			)?;
 		}
@@ -476,10 +523,8 @@ impl bots::Bot {
 		let db_key = issue_id.to_le_bytes().to_vec();
 		let mut local_state = LocalState::get_or_default(&self.db, db_key)?;
 
-		let author_is_core = self
-			.core_devs
-			.iter()
-			.any(|u| issue.user.as_ref().map_or(false, |user| u.id == user.id));
+		let author_is_core =
+			self.core_devs.iter().any(|u| issue.user.id == u.id);
 
 		if projects.is_empty() {
 			// there are no projects matching those listed in Process.toml so do nothing
@@ -500,12 +545,7 @@ impl bots::Bot {
 						.and_then(|ping| ping.elapsed().ok());
 					let special_of_project = projects
 						.iter()
-						.find(|(_, p)| {
-							issue
-								.user
-								.as_ref()
-								.map_or(false, |user| p.is_special(&user.login))
-						})
+						.find(|(_, p)| p.is_special(&issue.user.login))
 						.and_then(|(p, pi)| p.as_ref().map(|p| (p, pi)));
 
 					if projects.len() == 1 && special_of_project.is_some() {
@@ -515,17 +555,12 @@ impl bots::Bot {
 							&mut local_state,
 							issue,
 							special_of_project.expect("checked above"),
-							&issue.user.as_ref().expect("checked above"),
 						)
 						.await?;
 					} else if author_is_core
 						|| projects
 							.iter()
-							.find(|(_, p)| {
-								issue.user.as_ref().map_or(false, |user| {
-									p.is_special(&user.login)
-								})
-							})
+							.find(|(_, p)| p.is_special(&issue.user.login))
 							.is_some()
 					{
 						// author is a core developer or special of at least one

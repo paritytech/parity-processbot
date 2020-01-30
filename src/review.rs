@@ -33,7 +33,9 @@ impl bots::Bot {
 				local_state.update_reviews_requested_npings(1, &self.db)?;
 				self.matrix_bot.send_to_room(
 					&process_info.matrix_room_id,
-					&REQUESTING_REVIEWS_MESSAGE.replace("{1}", &pr_html_url),
+					&REQUESTING_REVIEWS_MESSAGE
+						.replace("{author}", &pull_request.user.login)
+						.replace("{pr_url}", &pr_html_url),
 				)?;
 			}
 			Some(0) => {}
@@ -43,7 +45,8 @@ impl bots::Bot {
 					self.matrix_bot.send_to_room(
 						&process_info.matrix_room_id,
 						&REQUESTING_REVIEWS_MESSAGE
-							.replace("{1}", &pr_html_url),
+							.replace("{author}", &pull_request.user.login)
+							.replace("{pr_url}", &pr_html_url),
 					)?;
 				}
 			}
