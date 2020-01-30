@@ -33,11 +33,15 @@ impl bots::Bot {
 		(project, process_info): (&github::Project, &process::ProcessInfo),
 		actor: &github::User,
 	) -> Result<()> {
+		// get the project's backlog column or use the organization-wide default
 		if let Some(backlog_column) = self
 			.github_bot
 			.project_column_by_name(
 				project,
-				&self.config.project_backlog_column_name,
+				process_info
+					.backlog
+					.as_ref()
+					.unwrap_or(&self.config.project_backlog_column_name),
 			)
 			.await?
 		{

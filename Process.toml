@@ -4,3 +4,4 @@ whitelist = [
 	"XAMPPRocky"
 ]
 matrix_room_id = "!VDLSjvBpNqqgyMDIBO:matrix.parity.io"
+backlog = "backlog"

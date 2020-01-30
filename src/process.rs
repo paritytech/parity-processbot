@@ -9,14 +9,16 @@ struct ProcessInfoTemp {
 	delegated_reviewer: Option<String>,
 	whitelist: Option<Vec<String>>,
 	matrix_room_id: Option<String>,
+	backlog: Option<String>,
 }
 
 #[derive(Clone, Debug)]
 pub struct ProcessInfo {
 	owner: String,
 	delegated_reviewer: Option<String>,
-	pub whitelist: Option<Vec<String>>,
+	pub whitelist: Vec<String>,
 	pub matrix_room_id: String,
+	pub backlog: Option<String>,
 }
 
 #[derive(Default, Debug, Clone, Copy)]
@@ -60,9 +62,7 @@ impl ProcessInfo {
 
 	/// Checks that the login is contained within the whitelist.
 	pub fn is_whitelisted(&self, login: &str) -> bool {
-		self.whitelist.as_ref().map_or(false, |whitelist| {
-			whitelist.iter().any(|user| user == login)
-		})
+		self.whitelist.iter().any(|user| user == login)
 	}
 
 	pub fn is_special(&self, login: &str) -> bool {
@@ -112,6 +112,10 @@ pub fn process_from_table(tab: toml::value::Table) -> Result<ProcessInfoMap> {
 						.get("matrix_room_id")
 						.and_then(toml::value::Value::as_str)
 						.map(str::to_owned),
+					backlog: tab
+						.get("backlog")
+						.and_then(toml::value::Value::as_str)
+						.map(str::to_owned),
 				},
 			)),
 			_ => None,
@@ -133,6 +137,7 @@ pub fn process_from_table(tab: toml::value::Table) -> Result<ProcessInfoMap> {
 						delegated_reviewer,
 						whitelist,
 						matrix_room_id,
+						backlog,
 					},
 				)| {
 					(
@@ -140,8 +145,9 @@ pub fn process_from_table(tab: toml::value::Table) -> Result<ProcessInfoMap> {
 						ProcessInfo {
 							owner: owner.unwrap(),
 							delegated_reviewer,
-							whitelist,
+							whitelist: whitelist.unwrap_or(vec![]),
 							matrix_room_id: matrix_room_id.unwrap(),
+							backlog,
 						},
 					)
 				},
