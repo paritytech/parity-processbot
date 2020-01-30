@@ -4,6 +4,7 @@
 
 A GitHub bot to automate common tasks and processes at Parity.
 
+
 ### Requirements
 
 #### `Process.toml` file
@@ -35,7 +36,9 @@ Must be present in the repository's root directory. If it is absent Processbot w
   - project column to which new issues should be attached
   - will override the organization-wide value specified in `.env` (see below)
 
-#### Project Backlog column
+#### Project & backlog column
+The repository must contain at least one project (matching the `[project-name]` key in `Process.toml`) and that project must contain a column either named `Backlog` or the name specified in `Process.toml`.
+
 
 ### Configuration
 Processbot looks for configuration variables in `.env` in the root directory. Eg. `MATRIX_USER=annoying_bot@parity.io`.
