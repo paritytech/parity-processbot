@@ -16,42 +16,50 @@ impl bots::Bot {
 		pull_request: &github::PullRequest,
 		issue: &github::Issue,
 	) -> Result<()> {
-		let days = local_state
-			.issue_not_assigned_ping()
-			.and_then(|ping| ping.elapsed().ok())
-			.ticks(self.config.issue_not_assigned_to_pr_author_ping);
-		log::info!(
-			"The issue addressed by {} has been unassigned for {:?} days.",
-			pull_request.title.as_ref().context(error::MissingData)?,
-			days
-		);
-		match days {
-			// notify the the issue assignee and project
-			// owner through a PM
-			None => self.send_private_issue_reassignment_notification(
-				local_state,
-				process_info,
-				pull_request,
-				issue,
-			),
-			// do nothing
-			Some(0) => Ok(()),
-			// if after 24 hours there is no change, then
-			// send a message into the project's Riot
-			// channel
-			Some(1) | Some(2) => self
-				.send_public_issue_reassignment_notification(
+		if self.feature_config.pr_issue_assignment {
+			let days = local_state
+				.issue_not_assigned_ping()
+				.and_then(|ping| ping.elapsed().ok())
+				.ticks(self.config.issue_not_assigned_to_pr_author_ping);
+			log::info!(
+				"The issue addressed by {} has been unassigned for {:?} days.",
+				pull_request.title.as_ref().context(error::MissingData)?,
+				days
+			);
+			match days {
+				// notify the the issue assignee and project
+				// owner through a PM
+				None => self.send_private_issue_reassignment_notification(
 					local_state,
 					process_info,
 					pull_request,
 					issue,
 				),
-			// if after a further 48 hours there is still no
-			// change, then close the PR.
-			_ => {
-				self.close_for_issue_unassigned(local_state, repo, pull_request)
+				// do nothing
+				Some(0) => Ok(()),
+				// if after 24 hours there is no change, then
+				// send a message into the project's Riot
+				// channel
+				Some(1) | Some(2) => self
+					.send_public_issue_reassignment_notification(
+						local_state,
+						process_info,
+						pull_request,
+						issue,
+					),
+				// if after a further 48 hours there is still no
+				// change, then close the PR.
+				_ => {
+					self.close_for_issue_unassigned(
+						local_state,
+						repo,
+						pull_request,
+					)
 					.await
+				}
 			}
+		} else {
+			Ok(())
 		}
 	}
 
@@ -195,10 +203,12 @@ impl bots::Bot {
 			.await?;
 		} else {
 			if process_info.is_special(&author.login) {
-				// assign the issue to the author
-				self.github_bot
-					.assign_issue(&repo.name, issue.number, &author.login)
-					.await?;
+				if self.feature_config.pr_issue_assignment {
+					// assign the issue to the author
+					self.github_bot
+						.assign_issue(&repo.name, issue.number, &author.login)
+						.await?;
+				}
 				self.require_reviewers(
 					local_state,
 					&pull_request,
@@ -258,48 +268,51 @@ impl bots::Bot {
 		pull_request: &github::PullRequest,
 		repo: &github::Repository,
 	) -> Result<()> {
-		let author = &pull_request.user;
-		let since = local_state
-			.issue_no_project_ping()
-			.and_then(|ping| ping.elapsed().ok());
-		let ticks = since.ticks(self.config.no_project_author_is_core_ping);
-		match ticks {
-			None => {
-				// send a message to the author
-				local_state.update_issue_no_project_ping(
-					Some(SystemTime::now()),
-					&self.db,
-				)?;
-				self.send_needs_project_message(
-					&author.login,
-					pull_request,
-					repo,
-				)?;
-			}
-			Some(0) => {}
-			Some(i) => {
-				if i >= self.config.no_project_author_is_core_close_pr
-					/ self.config.no_project_author_is_core_ping
-				{
-					// If after some timeout there is still no project
-					// attached, close the pr
-					self.github_bot
-						.close_pull_request(&repo.name, pull_request.number)
-						.await?;
-					local_state.delete(&self.db, &local_state.key)?;
-				} else {
-					local_state.update_issue_no_project_npings(i, &self.db)?;
-					self.matrix_bot.send_to_default(
-						&WILL_CLOSE_FOR_NO_PROJECT
-							.replace("{author}", &pull_request.user.login)
-							.replace(
-								"{issue_url}",
-								&pull_request
-									.html_url
-									.as_ref()
-									.context(error::MissingData)?,
-							),
+		if self.feature_config.pr_project_valid {
+			let author = &pull_request.user;
+			let since = local_state
+				.issue_no_project_ping()
+				.and_then(|ping| ping.elapsed().ok());
+			let ticks = since.ticks(self.config.no_project_author_is_core_ping);
+			match ticks {
+				None => {
+					// send a message to the author
+					local_state.update_issue_no_project_ping(
+						Some(SystemTime::now()),
+						&self.db,
 					)?;
+					self.send_needs_project_message(
+						&author.login,
+						pull_request,
+						repo,
+					)?;
+				}
+				Some(0) => {}
+				Some(i) => {
+					if i >= self.config.no_project_author_is_core_close_pr
+						/ self.config.no_project_author_is_core_ping
+					{
+						// If after some timeout there is still no project
+						// attached, close the pr
+						self.github_bot
+							.close_pull_request(&repo.name, pull_request.number)
+							.await?;
+						local_state.delete(&self.db, &local_state.key)?;
+					} else {
+						local_state
+							.update_issue_no_project_npings(i, &self.db)?;
+						self.matrix_bot.send_to_default(
+							&WILL_CLOSE_FOR_NO_PROJECT
+								.replace("{author}", &pull_request.user.login)
+								.replace(
+									"{issue_url}",
+									&pull_request
+										.html_url
+										.as_ref()
+										.context(error::MissingData)?,
+								),
+						)?;
+					}
 				}
 			}
 		}
@@ -312,34 +325,36 @@ impl bots::Bot {
 		pull_request: &github::PullRequest,
 		repo: &github::Repository,
 	) -> Result<()> {
-		let author = &pull_request.user;
-		let since = local_state
-			.issue_no_project_ping()
-			.and_then(|ping| ping.elapsed().ok());
+		if self.feature_config.pr_project_valid {
+			let author = &pull_request.user;
+			let since = local_state
+				.issue_no_project_ping()
+				.and_then(|ping| ping.elapsed().ok());
 
-		let ticks =
-			since.ticks(self.config.no_project_author_not_core_close_pr);
-		match ticks {
-			None => {
-				// send a message to the author
-				local_state.update_issue_no_project_ping(
-					Some(SystemTime::now()),
-					&self.db,
-				)?;
-				self.send_needs_project_message(
-					&author.login,
-					pull_request,
-					repo,
-				)?;
-			}
-			Some(0) => {}
-			Some(_) => {
-				// If after some timeout there is still no project
-				// attached, close the pull request
-				self.github_bot
-					.close_pull_request(&repo.name, pull_request.number)
-					.await?;
-				local_state.delete(&self.db, &local_state.key)?;
+			let ticks =
+				since.ticks(self.config.no_project_author_not_core_close_pr);
+			match ticks {
+				None => {
+					// send a message to the author
+					local_state.update_issue_no_project_ping(
+						Some(SystemTime::now()),
+						&self.db,
+					)?;
+					self.send_needs_project_message(
+						&author.login,
+						pull_request,
+						repo,
+					)?;
+				}
+				Some(0) => {}
+				Some(_) => {
+					// If after some timeout there is still no project
+					// attached, close the pull request
+					self.github_bot
+						.close_pull_request(&repo.name, pull_request.number)
+						.await?;
+					local_state.delete(&self.db, &local_state.key)?;
+				}
 			}
 		}
 		Ok(())
@@ -401,6 +416,7 @@ impl bots::Bot {
 					)
 					.await?;
 				} else {
+                    if self.feature_config.pr_issue_mention {
 					// leave a message that a corresponding issue must exist for
 					// each PR close the PR
 					log::info!(
@@ -417,6 +433,7 @@ impl bots::Bot {
 					self.github_bot
 						.close_pull_request(&repo.name, pull_request.number)
 						.await?;
+                    }
 				}
 			} else {
 				// TODO consider all mentioned issues here
@@ -448,6 +465,7 @@ impl bots::Bot {
 					)
 					.await?;
 				} else {
+                    if self.feature_config.pr_issue_mention {
 					// the pr does not address an issue and the author is not special, so close it.
 					log::info!(
                         "Closing pull request '{issue_title:?}' as it addresses no issue in repo '{repo_name}'",
@@ -464,6 +482,7 @@ impl bots::Bot {
 					self.github_bot
 						.close_pull_request(&repo.name, pull_request.number)
 						.await?;
+                    }
 				}
 			} else {
 				// TODO consider all mentioned issues here

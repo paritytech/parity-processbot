@@ -4,15 +4,20 @@
 
 A GitHub bot to automate common tasks and processes at Parity.
 
+## Repository Configuration 
 
-### Requirements
+### Project and Backlog 
 
-#### `Process.toml` file
+- the repository must contain at least one project (matching a `[project-name]` key in `Process.toml`) 
+- that project must contain a column named according to the `backlog` field of `Process.toml` below, if the field is included, otherwise named 'Backlog'.
+
+### `Process.toml` file
 Must be present in the repository's root directory. If it is absent Processbot will ignore the repository. 
 
 ##### `Process.toml` *must* contain:
 
 - `[project-name]`:
+  - must match a project in the repository
   - multiple projects can be listed, each with the fields below
 
 - `owner = "github_user_login"`:
@@ -36,11 +41,8 @@ Must be present in the repository's root directory. If it is absent Processbot w
   - project column to which new issues should be attached
   - will override the organization-wide value specified in `.env` (see below)
 
-#### Project & backlog column
-The repository must contain at least one project (matching the `[project-name]` key in `Process.toml`) and that project must contain a column either named `Backlog` or the name specified in `Process.toml`.
+## Processbot Configuration
 
-
-### Configuration
 Processbot looks for configuration variables in `.env` in the root directory. Eg. `MATRIX_USER=annoying_bot@parity.io`.
 
 `PRIVATE_KEY_PATH`: Path to the private key associated with the installed Processbot app.
@@ -68,8 +70,6 @@ Processbot looks for configuration variables in `.env` in the root directory. Eg
 `ISSUE_NOT_ASSIGNED_TO_PR_AUTHOR_PING`: Seconds between notifications that the issue relevant to a pull request has not been assigned to the author of the pull
 request, sent privately to the issue assignee and project owner, then publicly to the project room, via Matrix.
 
-`PROJECT_BACKLOG_COLUMN_NAME`: Name of the project column to which new issues should be attached.
-
 `NO_PROJECT_AUTHOR_IS_CORE_PING`: Seconds between notifications that a pull request opened by a core developer has no project attached, sent privately to the
 pull request author or publicly to the default channel if the author's Matrix handle cannot be found.
 
@@ -89,20 +89,20 @@ pull request author or publicly to the default channel if the author's Matrix ha
 
 `TEST_REPO_NAME`: Name of a Github repository to be used for testing.
 
-### Dependencies
+## Dependencies
 
 Processbot uses `rocksdb` to store state. `rocksdb` will try to build from
 source by default. You can override this option by setting the `ROCKSDB_LIB_DIR`
 environment variable to the directory containing the system rocksdb. This will
 dynamically link to rocksdb. You can enable static linking with `ROCKSDB_STATIC=1`.
 
-### Building
+## Building
 
 ```
 cargo build
 ```
 
-### Testing
+## Testing
 
 ```
 cargo test

@@ -81,8 +81,6 @@ pub struct BotConfig {
 	pub fallback_room_id: String, // TODO remove in favour of Config's default_matrix_room_id
 	/// name of repo for issues without a project
 	pub core_sorting_repo_name: String,
-	/// name of project column to which new issues should be attached
-	pub project_backlog_column_name: String,
 }
 
 impl BotConfig {
@@ -165,11 +163,79 @@ impl BotConfig {
 
 			core_sorting_repo_name: dotenv::var("CORE_SORTING_REPO_NAME")
 				.expect("CORE_SORTING_REPO_NAME"),
-
-			project_backlog_column_name: dotenv::var(
-				"PROJECT_BACKLOG_COLUMN_NAME",
-			)
-			.expect("PROJECT_BACKLOG_COLUMN_NAME"),
 		}
+	}
+}
+
+#[derive(Debug, Clone)]
+pub struct FeatureConfig {
+	/// merge pull requests that pass checks and have necessary approvals
+	pub pr_auto_merge: bool,
+	/// send review requests and reminders via Github and Matrix
+	pub pr_require_reviews: bool,
+	/// ensure pull requests (from non-whitelist authors) explicitly address an issue
+	pub pr_issue_mention: bool,
+	/// ensure pull request authors are assigned to the relevant issues
+	pub pr_issue_assignment: bool,
+	/// ensure pull requests are attached to valid projects
+	pub pr_project_valid: bool,
+	/// ensure issues are attached to valid projects
+	pub issue_project_valid: bool,
+	/// ensure changes to issue project state are confirmed by owner
+	pub issue_project_changes: bool,
+}
+
+impl FeatureConfig {
+	pub fn from_env() -> Self {
+		dotenv::dotenv().ok();
+		Self {
+			pr_auto_merge: dotenv::var("PR_AUTO_MERGE")
+				.expect("PR_AUTO_MERGE")
+				.parse::<bool>()
+				.expect("failed parsing PR_AUTO_MERGE"),
+			pr_require_reviews: dotenv::var("PR_REQUIRE_REVIEWS")
+				.expect("PR_REQUIRE_REVIEWS")
+				.parse::<bool>()
+				.expect("failed parsing PR_REQUIRE_REVIEWS"),
+			pr_issue_mention: dotenv::var("PR_ISSUE_MENTION")
+				.expect("PR_ISSUE_MENTION")
+				.parse::<bool>()
+				.expect("failed parsing PR_ISSUE_MENTION"),
+			pr_issue_assignment: dotenv::var("PR_ISSUE_ASSIGNMENT")
+				.expect("PR_ISSUE_ASSIGNMENT")
+				.parse::<bool>()
+				.expect("failed parsing PR_ISSUE_ASSIGNMENT"),
+			pr_project_valid: dotenv::var("PR_PROJECT_VALID")
+				.expect("PR_PROJECT_VALID")
+				.parse::<bool>()
+				.expect("failed parsing PR_PROJECT_VALID"),
+			issue_project_valid: dotenv::var("ISSUE_PROJECT_VALID")
+				.expect("ISSUE_PROJECT_VALID")
+				.parse::<bool>()
+				.expect("failed parsing ISSUE_PROJECT_VALID"),
+			issue_project_changes: false, // TODO enable field when project management is working
+		}
+	}
+
+	pub fn any(&self) -> bool {
+		self.pr_auto_merge
+			|| self.pr_require_reviews
+			|| self.pr_issue_mention
+			|| self.pr_issue_assignment
+			|| self.pr_project_valid
+			|| self.issue_project_valid
+			|| self.issue_project_changes
+	}
+
+	pub fn any_pr(&self) -> bool {
+		self.pr_auto_merge
+			|| self.pr_require_reviews
+			|| self.pr_issue_mention
+			|| self.pr_issue_assignment
+			|| self.pr_project_valid
+	}
+
+	pub fn any_issue(&self) -> bool {
+		self.issue_project_valid || self.issue_project_changes
 	}
 }

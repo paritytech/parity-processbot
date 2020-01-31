@@ -58,94 +58,103 @@ impl bots::Bot {
 		status: &github::CombinedStatus,
 		reviews: &[github::Review],
 	) -> Result<()> {
-		let pr_html_url =
-			pull_request.html_url.as_ref().context(error::MissingData)?;
+		if self.feature_config.pr_auto_merge {
+			let pr_html_url =
+				pull_request.html_url.as_ref().context(error::MissingData)?;
 
-		// the `mergeable` key is only returned with an individual GET request
-		let pull_request = self
-			.github_bot
-			.pull_request(repo, pull_request.number)
-			.await?;
+			// the `mergeable` key is only returned with an individual GET request
+			let pull_request = self
+				.github_bot
+				.pull_request(repo, pull_request.number)
+				.await?;
 
-		let owner_login = process_info.owner_or_delegate();
+			let owner_login = process_info.owner_or_delegate();
 
-		if pull_request.mergeable.unwrap_or(false) {
-			log::info!("{} is mergeable; checking status.", pr_html_url);
+			if pull_request.mergeable.unwrap_or(false) {
+				log::info!("{} is mergeable; checking status.", pr_html_url);
 
-			if status.total_count > 0 {
-				match status.state {
-					github::StatusState::Failure => {
-						log::info!("{} failed checks.", pr_html_url);
-						// notify PR author by PM every 24 hours
-						let should_ping = local_state
-							.status_failure_ping()
-							.map_or(true, |ping_time| {
-								ping_time.elapsed().ok().map_or(
-									true,
-									|elapsed| {
-										elapsed.as_secs()
-											> self.config.status_failure_ping
-									},
-								)
-							});
+				if status.total_count > 0 {
+					match status.state {
+						github::StatusState::Failure => {
+							log::info!("{} failed checks.", pr_html_url);
+							// notify PR author by PM every 24 hours
+							let should_ping = local_state
+								.status_failure_ping()
+								.map_or(true, |ping_time| {
+									ping_time.elapsed().ok().map_or(
+										true,
+										|elapsed| {
+											elapsed.as_secs()
+												> self
+													.config
+													.status_failure_ping
+										},
+									)
+								});
 
-						if should_ping {
-							local_state.update_status_failure_ping(
-								Some(SystemTime::now()),
-								&self.db,
-							)?;
-							if let Some(ref matrix_id) =
-								self.github_to_matrix.get(owner_login).and_then(
-									|matrix_id| matrix::parse_id(matrix_id),
-								) {
-								self.matrix_bot.send_private_message(
+							if should_ping {
+								local_state.update_status_failure_ping(
+									Some(SystemTime::now()),
 									&self.db,
-									matrix_id,
-									&STATUS_FAILURE_NOTIFICATION.replace(
-										"{1}",
-										&format!("{}", pr_html_url),
-									),
 								)?;
-							} else {
-								log::error!("Couldn't send a message to the project owner; either their Github or Matrix handle is not set in Bamboo");
+								if let Some(ref matrix_id) = self
+									.github_to_matrix
+									.get(owner_login)
+									.and_then(|matrix_id| {
+										matrix::parse_id(matrix_id)
+									}) {
+									self.matrix_bot.send_private_message(
+										&self.db,
+										matrix_id,
+										&STATUS_FAILURE_NOTIFICATION.replace(
+											"{1}",
+											&format!("{}", pr_html_url),
+										),
+									)?;
+								} else {
+									log::error!("Couldn't send a message to the project owner; either their Github or Matrix handle is not set in Bamboo");
+								}
 							}
 						}
+						github::StatusState::Success => {
+							log::info!(
+								"{} passed checks and can be merged.",
+								pr_html_url
+							);
+							local_state
+								.update_status_failure_ping(None, &self.db)?;
+							self.merge_if_approved(
+								local_state,
+								process_info,
+								repo,
+								&pull_request,
+								reviews,
+							)
+							.await?;
+						}
+						github::StatusState::Pending => {
+							log::info!("{} checks are pending.", pr_html_url);
+							local_state
+								.update_status_failure_ping(None, &self.db)?;
+						}
 					}
-					github::StatusState::Success => {
-						log::info!(
-							"{} passed checks and can be merged.",
-							pr_html_url
-						);
-						local_state
-							.update_status_failure_ping(None, &self.db)?;
-						self.merge_if_approved(
-							local_state,
-							process_info,
-							repo,
-							&pull_request,
-							reviews,
-						)
-						.await?;
-					}
-					github::StatusState::Pending => {
-						log::info!("{} checks are pending.", pr_html_url);
-						local_state
-							.update_status_failure_ping(None, &self.db)?;
-					}
+				} else {
+					log::info!(
+						"{} has no checks and can be merged.",
+						pr_html_url
+					);
+					self.merge_if_approved(
+						local_state,
+						process_info,
+						repo,
+						&pull_request,
+						reviews,
+					)
+					.await?;
 				}
 			} else {
-				log::info!("{} has no checks and can be merged.", pr_html_url);
-				self.merge_if_approved(
-					local_state,
-					process_info,
-					repo,
-					&pull_request,
-					reviews,
-				)
-				.await?;
+				log::info!("{} is not mergeable.", pr_html_url);
 			}
-		} else {
-			log::info!("{} is not mergeable.", pr_html_url);
 		}
 		Ok(())
 	}

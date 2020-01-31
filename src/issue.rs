@@ -32,7 +32,7 @@ impl bots::Bot {
 		issue: &github::Issue,
 		(project, process_info): (&github::Project, &process::ProcessInfo),
 	) -> Result<()> {
-		// get the project's backlog column or use the organization-wide default
+		// get the project's backlog column or use the default
 		if let Some(backlog_column) = self
 			.github_bot
 			.project_column_by_name(
@@ -40,7 +40,7 @@ impl bots::Bot {
 				process_info
 					.backlog
 					.as_ref()
-					.unwrap_or(&self.config.project_backlog_column_name),
+					.unwrap_or(&BACKLOG_DEFAULT_NAME.to_owned()),
 			)
 			.await?
 		{
@@ -534,79 +534,82 @@ impl bots::Bot {
 				.await?
 			{
 				None => {
-					log::info!(
-                    "Handling issue '{issue_title}' with no project in repo '{repo_name}'",
-                    issue_title = issue.title.as_ref().unwrap_or(&"".to_owned()),
-                    repo_name = repo.name
-                );
+					if self.feature_config.issue_project_valid {
+						log::info!(
+                        "Handling issue '{issue_title}' with no project in repo '{repo_name}'",
+                        issue_title = issue.title.as_ref().unwrap_or(&"".to_owned()),
+                        repo_name = repo.name
+                    );
 
-					let since = local_state
-						.issue_no_project_ping()
-						.and_then(|ping| ping.elapsed().ok());
-					let special_of_project = projects
-						.iter()
-						.find(|(_, p)| p.is_special(&issue.user.login))
-						.and_then(|(p, pi)| p.as_ref().map(|p| (p, pi)));
-
-					if projects.len() == 1 && special_of_project.is_some() {
-						// repo contains only one project and the author is special
-						// so we can attach it with high confidence
-						self.author_special_attach_only_project(
-							&mut local_state,
-							issue,
-							special_of_project.expect("checked above"),
-						)
-						.await?;
-					} else if author_is_core
-						|| projects
+						let since = local_state
+							.issue_no_project_ping()
+							.and_then(|ping| ping.elapsed().ok());
+						let special_of_project = projects
 							.iter()
 							.find(|(_, p)| p.is_special(&issue.user.login))
-							.is_some()
-					{
-						// author is a core developer or special of at least one
-						// project in the repo
-						self.issue_author_core_no_project(
-							&mut local_state,
-							issue,
-							since,
-						)
-						.await?;
-					} else {
-						// author is neither core developer nor special
-						self.issue_author_unknown_no_project(
-							&mut local_state,
-							issue,
-							since,
-						)
-						.await?;
+							.and_then(|(p, pi)| p.as_ref().map(|p| (p, pi)));
+
+						if projects.len() == 1 && special_of_project.is_some() {
+							// repo contains only one project and the author is special
+							// so we can attach it with high confidence
+							self.author_special_attach_only_project(
+								&mut local_state,
+								issue,
+								special_of_project.expect("checked above"),
+							)
+							.await?;
+						} else if author_is_core
+							|| projects
+								.iter()
+								.find(|(_, p)| p.is_special(&issue.user.login))
+								.is_some()
+						{
+							// author is a core developer or special of at least one
+							// project in the repo
+							self.issue_author_core_no_project(
+								&mut local_state,
+								issue,
+								since,
+							)
+							.await?;
+						} else {
+							// author is neither core developer nor special
+							self.issue_author_unknown_no_project(
+								&mut local_state,
+								issue,
+								since,
+							)
+							.await?;
+						}
 					}
 				}
 				Some((actor, card)) => {
-					let project: github::Project =
-						self.github_bot.project(&card).await?;
-					let project_column: github::ProjectColumn =
-						self.github_bot.project_column(&card).await?;
+					if self.feature_config.issue_project_changes {
+						let project: github::Project =
+							self.github_bot.project(&card).await?;
+						let project_column: github::ProjectColumn =
+							self.github_bot.project_column(&card).await?;
 
-					log::info!(
+						log::info!(
                         "Handling issue '{issue_title}' in project '{project_name}' in repo '{repo_name}'",
                         issue_title = issue.title.as_ref().unwrap_or(&"".to_owned()),
                         project_name = project.name,
                         repo_name = repo.name
-                );
+                    );
 
-					if let Some(process_info) = projects
-						.iter()
-						.find(|(p, _)| {
-							p.as_ref()
-								.map_or(false, |p| &project.name == &p.name)
-						})
-						.map(|(_, p)| p)
-					{
-						if !process_info.is_special(&actor.login) {
-							// TODO check if confirmation has confirmed/denied.
-							// requires parsing messages in project room
+						if let Some(process_info) = projects
+							.iter()
+							.find(|(p, _)| {
+								p.as_ref()
+									.map_or(false, |p| &project.name == &p.name)
+							})
+							.map(|(_, p)| p)
+						{
+							if !process_info.is_special(&actor.login) {
+								// TODO check if confirmation has confirmed/denied.
+								// requires parsing messages in project room
 
-							match local_state.issue_project().map(|p| p.state) {
+								match local_state.issue_project().map(|p| p.state) {
 								None => self
 									.author_non_special_project_state_none(
 										&mut local_state,
@@ -646,12 +649,13 @@ impl bots::Bot {
 										&actor,
 									)?,
 							};
+							} else {
+								// actor is special so allow any change
+							}
 						} else {
-							// actor is special so allow any change
+							// no key in in Process.toml matches the project name
+							// TODO notification here
 						}
-					} else {
-						// no key in in Process.toml matches the project name
-						// TODO notification here
 					}
 				}
 			}
