@@ -16,9 +16,10 @@ impl bots::Bot {
 	) -> Result<()> {
 		let pr_html_url =
 			pull_request.html_url.as_ref().context(error::MissingData)?;
-		log::info!(
-			"Requesting a review on {} from the project room.",
-			pr_html_url
+		log::debug!(
+			"Requesting a review on {} from the project room with ID {}.",
+			pr_html_url,
+			&process_info.matrix_room_id
 		);
 		let ticks = local_state
 			.reviews_requested_ping()
@@ -148,7 +149,7 @@ impl bots::Bot {
 			let pr_html_url =
 				pull_request.html_url.as_ref().context(error::MissingData)?;
 
-			log::info!("Checking if reviews required on {}", pr_html_url);
+			log::debug!("Checking if reviews required on {}", pr_html_url);
 
 			for review in reviews.iter().sorted_by_key(|r| r.submitted_at) {
 				local_state.update_review(
@@ -196,9 +197,10 @@ impl bots::Bot {
 			{
 				// author is not the owner/delegate and a review from the owner/delegate has not yet been
 				// requested. request a review from the owner/delegate.
-				log::info!(
-					"Requesting a review on {} from the project owner.",
-					pr_html_url
+				log::debug!(
+					"Requesting a review on {} from the project owner, {}.",
+					pr_html_url,
+					&process_info.owner_or_delegate(),
 				);
 				let github_login = process_info.owner_or_delegate();
 				if let Some(matrix_id) = self.github_to_matrix.get(github_login)
@@ -217,9 +219,9 @@ impl bots::Bot {
 						.await?;
 				} else {
 					log::error!(
-                "Couldn't send a message to {}; either their Github or Matrix handle is not set in Bamboo",
-                &github_login
-            );
+                        "Couldn't send a message to {}; either their Github or Matrix handle is not set in Bamboo",
+                        &github_login
+                    );
 				}
 			}
 

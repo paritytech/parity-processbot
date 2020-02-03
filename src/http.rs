@@ -167,7 +167,7 @@ impl Client {
 			.build()
 			.context(error::Http)?;
 
-		dbg!(&request);
+		log::debug!("{:?}", &request);
 
 		handle_response(
 			self.client.execute(request).await.context(error::Http)?,

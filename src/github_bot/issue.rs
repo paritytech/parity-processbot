@@ -100,7 +100,6 @@ impl GithubBot {
 		A: AsRef<str>,
 		B: AsRef<str>,
 	{
-		log::info!("Adding comment");
 		let url = format!(
 			"{base}/repos/{org}/{repo}/issues/{issue_number}/comments",
 			base = Self::BASE_URL,
@@ -108,7 +107,6 @@ impl GithubBot {
 			repo = repo_name.as_ref(),
 			issue_number = issue_number
 		);
-		log::info!("POST {}", url);
 		self.client
 			.post_response(
 				&url,

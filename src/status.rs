@@ -36,7 +36,7 @@ impl bots::Bot {
 		if (author_is_owner && core_dev_approvals >= self.config.min_reviewers)
 			|| (!author_is_owner && owner_or_delegate_approved)
 		{
-			log::info!("{} has necessary approvals; merging.", pr_html_url);
+			log::debug!("{} has necessary approvals; merging.", pr_html_url);
 			// merge & delete branch
 			self.github_bot
 				.merge_pull_request(&repo.name, pull_request)
@@ -44,7 +44,7 @@ impl bots::Bot {
 			local_state.delete(&self.db, &local_state.key)?;
 		// TODO delete branch
 		} else {
-			log::info!("{} does not have necessary approvals.", pr_html_url);
+			log::debug!("{} does not have necessary approvals.", pr_html_url);
 		}
 		Ok(())
 	}
@@ -71,12 +71,12 @@ impl bots::Bot {
 			let owner_login = process_info.owner_or_delegate();
 
 			if pull_request.mergeable.unwrap_or(false) {
-				log::info!("{} is mergeable; checking status.", pr_html_url);
+				log::debug!("{} is mergeable; checking status.", pr_html_url);
 
 				if status.total_count > 0 {
 					match status.state {
 						github::StatusState::Failure => {
-							log::info!("{} failed checks.", pr_html_url);
+							log::debug!("{} failed checks.", pr_html_url);
 							// notify PR author by PM every 24 hours
 							let should_ping = local_state
 								.status_failure_ping()
@@ -112,12 +112,15 @@ impl bots::Bot {
 										),
 									)?;
 								} else {
-									log::error!("Couldn't send a message to the project owner; either their Github or Matrix handle is not set in Bamboo");
+									log::error!(
+                                        "Couldn't send a message to {}; either their Github or Matrix handle is not set in Bamboo",
+                                        owner_login
+                                    );
 								}
 							}
 						}
 						github::StatusState::Success => {
-							log::info!(
+							log::debug!(
 								"{} passed checks and can be merged.",
 								pr_html_url
 							);
@@ -133,13 +136,13 @@ impl bots::Bot {
 							.await?;
 						}
 						github::StatusState::Pending => {
-							log::info!("{} checks are pending.", pr_html_url);
+							log::debug!("{} checks are pending.", pr_html_url);
 							local_state
 								.update_status_failure_ping(None, &self.db)?;
 						}
 					}
 				} else {
-					log::info!(
+					log::debug!(
 						"{} has no checks and can be merged.",
 						pr_html_url
 					);
@@ -153,7 +156,7 @@ impl bots::Bot {
 					.await?;
 				}
 			} else {
-				log::info!("{} is not mergeable.", pr_html_url);
+				log::debug!("{} is not mergeable.", pr_html_url);
 			}
 		}
 		Ok(())

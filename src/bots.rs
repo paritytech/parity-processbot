@@ -81,11 +81,11 @@ impl Bot {
 											{
 												Err(e) => {
 													log::error!(
-                                            "Error handling issue #{issue_number} in repo {repo_name}: {error}",
-                                            issue_number = issue.number,
-                                            repo_name = repo.name,
-                                            error = e
-                                        );
+                                                        "Error handling issue #{issue_number} in repo {repo_name}: {error}",
+                                                        issue_number = issue.number,
+                                                        repo_name = repo.name,
+                                                        error = e
+                                                    );
 												}
 												_ => {}
 											}
@@ -109,11 +109,11 @@ impl Bot {
 										{
 											Err(e) => {
 												log::error!(
-                                        "Error handling pull request #{issue_number} in repo {repo_name}: {error}",
-                                        issue_number = pr.number,
-                                        repo_name = repo.name,
-                                        error = e
-                                    );
+                                                    "Error handling pull request #{issue_number} in repo {repo_name}: {error}",
+                                                    issue_number = pr.number,
+                                                    repo_name = repo.name,
+                                                    error = e
+                                                );
 											}
 											_ => {}
 										}

@@ -60,11 +60,6 @@ impl bots::Bot {
 				)
 				.await?;
 		} else {
-			log::warn!(
-				"{project_url} needs a backlog column",
-				project_url =
-					project.html_url.as_ref().context(error::MissingData)?,
-			);
 			self.matrix_bot.send_to_room(
 				&process_info.matrix_room_id,
 				&PROJECT_NEEDS_BACKLOG
@@ -535,11 +530,11 @@ impl bots::Bot {
 			{
 				None => {
 					if self.feature_config.issue_project_valid {
-						log::info!(
-                        "Handling issue '{issue_title}' with no project in repo '{repo_name}'",
-                        issue_title = issue.title.as_ref().unwrap_or(&"".to_owned()),
-                        repo_name = repo.name
-                    );
+						log::debug!(
+                            "Handling issue '{issue_title}' with no project in repo '{repo_name}'",
+                            issue_title = issue.title.as_ref().unwrap_or(&"".to_owned()),
+                            repo_name = repo.name
+                        );
 
 						let since = local_state
 							.issue_no_project_ping()
@@ -590,12 +585,12 @@ impl bots::Bot {
 						let project_column: github::ProjectColumn =
 							self.github_bot.project_column(&card).await?;
 
-						log::info!(
-                        "Handling issue '{issue_title}' in project '{project_name}' in repo '{repo_name}'",
-                        issue_title = issue.title.as_ref().unwrap_or(&"".to_owned()),
-                        project_name = project.name,
-                        repo_name = repo.name
-                    );
+						log::debug!(
+                            "Handling issue '{issue_title}' in project '{project_name}' in repo '{repo_name}'",
+                            issue_title = issue.title.as_ref().unwrap_or(&"".to_owned()),
+                            project_name = project.name,
+                            repo_name = repo.name
+                        );
 
 						if let Some(process_info) = projects
 							.iter()

@@ -17,14 +17,16 @@ impl bots::Bot {
 		issue: &github::Issue,
 	) -> Result<()> {
 		if self.feature_config.pr_issue_assignment {
-			let days = local_state
+			let elapsed = local_state
 				.issue_not_assigned_ping()
-				.and_then(|ping| ping.elapsed().ok())
-				.ticks(self.config.issue_not_assigned_to_pr_author_ping);
-			log::info!(
-				"The issue addressed by {} has been unassigned for {:?} days.",
+				.and_then(|ping| ping.elapsed().ok());
+			let days =
+				elapsed.ticks(self.config.issue_not_assigned_to_pr_author_ping);
+			log::debug!(
+				"Issue {} addressed by {} has been unassigned for {:?} seconds.",
+                issue.html_url.as_ref().context(error::MissingData)?,
 				pull_request.title.as_ref().context(error::MissingData)?,
-				days
+				elapsed
 			);
 			match days {
 				// notify the the issue assignee and project
@@ -70,10 +72,6 @@ impl bots::Bot {
 		pull_request: &github::PullRequest,
 		issue: &github::Issue,
 	) -> Result<()> {
-		log::info!(
-		"Author of {} is a core developer but the issue is unassigned to them.",
-		pull_request.title.as_ref().context(error::MissingData)?
-	);
 		let pr_html_url =
 			pull_request.html_url.as_ref().context(error::MissingData)?;
 		let issue_html_url =
@@ -118,8 +116,8 @@ impl bots::Bot {
 			)?;
 		} else {
 			log::error!(
-            "Couldn't send a message to the project owner; either their Github or Matrix handle is not set in Bamboo"
-        );
+                "Couldn't send a message to {}; either their Github or Matrix handle is not set in Bamboo", &process_info.owner_or_delegate()
+            );
 		}
 		Ok(())
 	}
@@ -131,7 +129,6 @@ impl bots::Bot {
 		pull_request: &github::PullRequest,
 		issue: &github::Issue,
 	) -> Result<()> {
-		log::info!("Author of {} is a core developer and the issue is still unassigned to them.", pull_request.title.as_ref().context(error::MissingData)?);
 		let pr_html_url =
 			pull_request.html_url.as_ref().context(error::MissingData)?;
 		let issue_html_url =
@@ -163,7 +160,10 @@ impl bots::Bot {
 		repo: &github::Repository,
 		pull_request: &github::PullRequest,
 	) -> Result<()> {
-		log::info!("Author of {} is a core developer and the issue is still unassigned to them, so the PR will be closed.", pull_request.title.as_ref().context(error::MissingData)?);
+		log::debug!(
+			"Closing {}",
+			pull_request.title.as_ref().context(error::MissingData)?
+		);
 		if local_state.actions_taken()
 			& PullRequestCoreDevAuthorIssueNotAssigned72h
 			== NoAction
@@ -386,7 +386,7 @@ impl bots::Bot {
 		1 => {
 			// assume the sole project is the relevant one
 			let (project, process_info) = projects.last().unwrap();
-			log::info!(
+			log::debug!(
                 "Handling pull request '{issue_title:?}' in project '{project_name:?}' in repo '{repo_name}'",
                 issue_title = pull_request.title,
                 project_name = project.as_ref().map(|p| &p.name),
@@ -419,7 +419,7 @@ impl bots::Bot {
                     if self.feature_config.pr_issue_mention {
 					// leave a message that a corresponding issue must exist for
 					// each PR close the PR
-					log::info!(
+					log::debug!(
                         "Closing pull request '{issue_title:?}' as it addresses no issue in repo '{repo_name}'",
                         issue_title = pull_request.title,
                         repo_name = repo.name
@@ -467,7 +467,7 @@ impl bots::Bot {
 				} else {
                     if self.feature_config.pr_issue_mention {
 					// the pr does not address an issue and the author is not special, so close it.
-					log::info!(
+					log::debug!(
                         "Closing pull request '{issue_title:?}' as it addresses no issue in repo '{repo_name}'",
                         issue_title = pull_request.title,
                         repo_name = repo.name
@@ -501,7 +501,7 @@ impl bots::Bot {
 					let project: github::Project =
 						self.github_bot.project(&card).await?;
 
-					log::info!(
+					log::debug!(
                         "Handling pull request '{issue_title:?}' in project '{project_name}' in repo '{repo_name}'",
                         issue_title = pull_request.title,
                         project_name = project.name,
@@ -530,8 +530,8 @@ impl bots::Bot {
 					} else {
                         // pull request addresses issue but project not listed in Process.toml
 						// TODO clarify behaviour here
-						log::info!(
-                            "Pull request '{issue_title:?}' in repo '{repo_name}' addresses an issue attached to a project not listed in Process.toml; ignoring",
+						log::debug!(
+                            "Ignoring pull request '{issue_title:?}' in repo '{repo_name}' as it addresses an issue attached to a project not listed in Process.toml",
                             issue_title = pull_request.title,
                             repo_name = repo.name
                         );
@@ -539,7 +539,7 @@ impl bots::Bot {
 				} else {
 					// notify the author that this pr/issue needs a project attached or it will be
 					// closed.
-					log::info!(
+					log::debug!(
                         "Pull request '{issue_title:?}' in repo '{repo_name}' addresses an issue unattached to any project",
                         issue_title = pull_request.title,
                         repo_name = repo.name
