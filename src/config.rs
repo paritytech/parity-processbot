@@ -81,6 +81,8 @@ pub struct BotConfig {
 	pub fallback_room_id: String, // TODO remove in favour of Config's default_matrix_room_id
 	/// name of repo for issues without a project
 	pub core_sorting_repo_name: String,
+	/// matrix room id for sending app logs
+	pub logs_room_id: String,
 }
 
 impl BotConfig {
@@ -163,6 +165,8 @@ impl BotConfig {
 
 			core_sorting_repo_name: dotenv::var("CORE_SORTING_REPO_NAME")
 				.expect("CORE_SORTING_REPO_NAME"),
+
+			logs_room_id: dotenv::var("LOGS_ROOM_ID").expect("LOGS_ROOM_ID"),
 		}
 	}
 }

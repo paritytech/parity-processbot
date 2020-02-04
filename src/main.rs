@@ -29,14 +29,14 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 		&config.matrix_default_channel_id,
 	)?;
 	log::info!(
-		"[+] Connected to matrix homeserver {} as {}",
+		"Connected to matrix homeserver {} as {}",
 		config.matrix_homeserver,
 		config.matrix_user
 	);
 
 	let github_bot =
 		github_bot::GithubBot::new(config.private_key.clone()).await?;
-	log::info!("[+] Connected to github");
+	log::info!("Connected to github");
 
 	// the bamboo queries can take a long time so only wait for it
 	// if github_to_matrix is not in the db. otherwise update it
@@ -47,8 +47,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 		.is_none()
 	{
 		// block on bamboo
-		let github_to_matrix =
-			dbg!(bamboo::github_to_matrix(&config.bamboo_token))?;
+		let github_to_matrix = bamboo::github_to_matrix(&config.bamboo_token)?;
 		db.put(
 			&GITHUB_TO_MATRIX_KEY,
 			serde_json::to_string(&github_to_matrix)

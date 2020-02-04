@@ -17,6 +17,10 @@ pub struct GithubBot {
 impl GithubBot {
 	pub(crate) const BASE_URL: &'static str = "https://api.github.com";
 
+	pub fn organization_login(&self) -> &str {
+		self.organization.login.as_ref()
+	}
+
 	/// This method doesn't use `self`, as we need to use it before we
 	/// initialise `Self`.
 	async fn installations(

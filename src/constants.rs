@@ -32,3 +32,5 @@ pub const PUBLIC_REVIEW_REMINDER_MESSAGE: &str = "@{2}, please review {1}.";
 pub const CORE_SORTING_REPO: &str = "core-sorting";
 
 pub const BACKLOG_DEFAULT_NAME: &str = "backlog";
+
+pub const PROCESS_FILE_NAME: &str = "Process.toml";

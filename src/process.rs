@@ -14,8 +14,8 @@ struct ProcessInfoTemp {
 
 #[derive(Clone, Debug)]
 pub struct ProcessInfo {
-	owner: String,
-	delegated_reviewer: Option<String>,
+	pub owner: String,
+	pub delegated_reviewer: Option<String>,
 	pub whitelist: Vec<String>,
 	pub matrix_room_id: String,
 	pub backlog: Option<String>,
