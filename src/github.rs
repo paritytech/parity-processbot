@@ -118,8 +118,11 @@ pub struct IssueEvent {
 pub struct ProjectCard {
 	pub id: Option<i64>,
 	pub url: Option<String>,
-	pub column_url: Option<String>,
+	pub project_id: Option<i64>,
 	pub project_url: Option<String>,
+	pub column_name: Option<String>,
+	pub previous_column_name: Option<String>,
+	pub column_url: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

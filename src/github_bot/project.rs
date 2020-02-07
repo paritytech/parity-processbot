@@ -30,14 +30,14 @@ impl GithubBot {
 		self.client.get(url).await
 	}
 
-	pub async fn project_column(
-		&self,
-		card: &github::ProjectCard,
-	) -> Result<github::ProjectColumn> {
-		self.client
-			.get(card.column_url.as_ref().context(error::MissingData)?)
-			.await
-	}
+	//	pub async fn project_column(
+	//		&self,
+	//		card: &github::ProjectCard,
+	//	) -> Result<github::ProjectColumn> {
+	//		self.client
+	//			.get(card.column_url.as_ref().context(error::MissingData)?)
+	//			.await
+	//	}
 
 	pub async fn project_columns(
 		&self,

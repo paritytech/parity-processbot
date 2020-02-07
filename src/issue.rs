@@ -221,6 +221,11 @@ impl bots::Bot {
 			}),
 			&self.db,
 		)?;
+		let matrix_id = self
+			.github_to_matrix
+			.get(&process_info.owner)
+			.and_then(|matrix_id| matrix::parse_id(matrix_id))
+			.unwrap_or("the project owner".to_owned());
 		self.matrix_bot.send_to_room(
 			&process_info.matrix_room_id,
 			&PROJECT_CONFIRMATION
@@ -229,9 +234,11 @@ impl bots::Bot {
 					issue.html_url.as_ref().context(error::MissingData)?,
 				)
 				.replace(
-					"{project_url}",
-					project.html_url.as_ref().context(error::MissingData)?,
+					"{column_name}",
+					project_column.name.as_ref().context(error::MissingData)?,
 				)
+				.replace("{project_name}", &project.name)
+				.replace("{owner}", &matrix_id)
 				.replace(
 					"{issue_id}",
 					&format!("{}", issue.id.context(error::MissingData)?),
@@ -582,8 +589,17 @@ impl bots::Bot {
 					if self.feature_config.issue_project_changes {
 						let project: github::Project =
 							self.github_bot.project(&card).await?;
-						let project_column: github::ProjectColumn =
-							self.github_bot.project_column(&card).await?;
+						let project_column: github::ProjectColumn = self
+							.github_bot
+							.project_column_by_name(
+								&project,
+								card.column_name
+									.as_ref()
+									.context(error::MissingData)?,
+							)
+							.await?
+							.context(error::MissingData)?;
+						//							self.github_bot.project_column(&card).await?;
 
 						log::debug!(
                             "Handling issue '{issue_title}' in project '{project_name}' in repo '{repo_name}'",

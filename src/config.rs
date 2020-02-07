@@ -217,7 +217,11 @@ impl FeatureConfig {
 				.expect("ISSUE_PROJECT_VALID")
 				.parse::<bool>()
 				.expect("failed parsing ISSUE_PROJECT_VALID"),
-			issue_project_changes: false, // TODO enable field when project management is working
+			//			issue_project_changes: false, // TODO enable field when project management is working
+			issue_project_changes: dotenv::var("ISSUE_PROJECT_CHANGES")
+				.expect("ISSUE_PROJECT_CHANGES")
+				.parse::<bool>()
+				.expect("failed parsing ISSUE_PROJECT_CHANGES"),
 		}
 	}
 
