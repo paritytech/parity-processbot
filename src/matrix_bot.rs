@@ -10,6 +10,7 @@ pub struct MatrixBot {
 	homeserver: String,
 	access_token: String,
 	default_channel_id: String,
+	silent: bool,
 }
 
 impl MatrixBot {
@@ -18,12 +19,14 @@ impl MatrixBot {
 		username: &str,
 		password: &str,
 		default_channel_id: &str,
+		silent: bool,
 	) -> Result<Self> {
 		matrix::login(homeserver, username, password).map(
 			|matrix::LoginResponse { access_token }| Self {
 				homeserver: homeserver.to_owned(),
 				access_token: access_token,
 				default_channel_id: default_channel_id.to_owned(),
+				silent: silent,
 			},
 		)
 	}
@@ -35,6 +38,9 @@ impl MatrixBot {
 		github_login: &str,
 		msg: &str,
 	) -> Result<()> {
+		if self.silent {
+			return Ok(());
+		};
 		if let Some(matrix_id) = github_to_matrix
 			.get(github_login)
 			.and_then(|matrix_id| matrix::parse_id(matrix_id))
@@ -56,6 +62,9 @@ impl MatrixBot {
 		github_login: &str,
 		msg: &str,
 	) -> Result<()> {
+		if self.silent {
+			return Ok(());
+		};
 		if let Some(matrix_id) = github_to_matrix
 			.get(github_login)
 			.and_then(|matrix_id| matrix::parse_id(matrix_id))
@@ -76,6 +85,9 @@ impl MatrixBot {
 		user_id: &str,
 		msg: &str,
 	) -> Result<()> {
+		if self.silent {
+			return Ok(());
+		};
 		let db = db.write();
 		if let Some(room_id) = db
 			.get_pinned(user_id)
@@ -111,6 +123,9 @@ impl MatrixBot {
 	}
 
 	pub fn send_to_room(&self, room_id: &str, msg: &str) -> Result<()> {
+		if self.silent {
+			return Ok(());
+		};
 		matrix::send_message(
 			&self.homeserver,
 			&self.access_token,
@@ -124,6 +139,9 @@ impl MatrixBot {
 		room_id: Option<&String>,
 		msg: &str,
 	) -> Result<()> {
+		if self.silent {
+			return Ok(());
+		};
 		if let Some(ref room_id) = room_id {
 			self.send_to_room(&room_id, msg)
 		} else {
@@ -132,6 +150,9 @@ impl MatrixBot {
 	}
 
 	pub fn send_to_default(&self, msg: &str) -> Result<()> {
+		if self.silent {
+			return Ok(());
+		};
 		self.send_to_room(&self.default_channel_id, msg)
 	}
 }

@@ -27,6 +27,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 		&config.matrix_user,
 		&config.matrix_password,
 		&config.matrix_default_channel_id,
+		config.matrix_silent,
 	)?;
 	log::info!(
 		"Connected to matrix homeserver {} as {}",

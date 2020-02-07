@@ -14,9 +14,9 @@ pub const PRIVATE_ISSUE_NEEDS_REASSIGNMENT: &str = "{pr_url} addressing {issue_u
 
 pub const PUBLIC_ISSUE_NEEDS_REASSIGNMENT: &str = "@{owner}, {pr_url} addressing {issue_url} has been opened by {author}. Please reassign the issue or close the pull request.";
 
-pub const PROJECT_CONFIRMATION: &str = "{issue_url} has been attached to the project column '{column_name}' in project '{project_name}'. To confirm the change, {owner} or a whitelisted developer should post, \"confirm {issue_id} {column_id}\", in this channel in the next {seconds}.";
+pub const PROJECT_CONFIRMATION: &str = "{issue_url} has been attached to the project column '{column_name}' in project '{project_name}'. To confirm the change, {owner} or a whitelisted developer should post, \"confirm {issue_id} {column_id}\", to this channel in the next {seconds} seconds.";
 
-pub const ISSUE_REVERT_PROJECT_NOTIFICATION: &str = "The change you made to {1} (attaching a project) has been denied or gone unconfirmed for too long, and so has been reverted. Changes require confirmation from the project owner or a whitelisted developer.";
+pub const ISSUE_REVERT_PROJECT_NOTIFICATION: &str = "The change you made to {issue_url} (attaching a project) has been denied or gone unconfirmed for too long, and so has been reverted. Changes require confirmation from the project owner or a whitelisted developer.";
 
 pub const REQUESTING_REVIEWS_MESSAGE: &str =
 	"@{author}, {pr_url} needs reviewers.";

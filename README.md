@@ -57,6 +57,8 @@ Processbot looks for configuration variables in `.env` in the root directory. Eg
 
 `BAMBOO_TICK_SECS`: Seconds between updating data pulled from the BambooHR API. This can take some time and is likely to change only infrequently, so the value should be larger than `MAIN_TICK_SECS`.
 
+`MATRIX_SILENT`: If `true`, do not send Matrix notifications.
+
 `MATRIX_HOMESERVER`: Matrix homeserver.
 
 `MATRIX_USER`: Email address associated with the bot's Matrix user.

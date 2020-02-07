@@ -9,6 +9,8 @@ pub struct MainConfig {
 	pub matrix_default_channel_id: String,
 	pub main_tick_secs: u64,
 	pub bamboo_tick_secs: u64,
+	/// if true then matrix notifications will not be sent
+	pub matrix_silent: bool,
 }
 
 impl MainConfig {
@@ -33,6 +35,10 @@ impl MainConfig {
 			.expect("BAMBOO_TICK_SECS")
 			.parse::<u64>()
 			.expect("parse BAMBOO_TICK_SECS");
+		let matrix_silent = dotenv::var("MATRIX_SILENT")
+			.expect("MATRIX_SILENT")
+			.parse::<bool>()
+			.expect("failed parsing MATRIX_SILENT");
 
 		let private_key_path =
 			dotenv::var("PRIVATE_KEY_PATH").expect("PRIVATE_KEY_PATH");
@@ -49,6 +55,7 @@ impl MainConfig {
 			matrix_default_channel_id,
 			main_tick_secs,
 			bamboo_tick_secs,
+			matrix_silent,
 		}
 	}
 }
@@ -217,11 +224,11 @@ impl FeatureConfig {
 				.expect("ISSUE_PROJECT_VALID")
 				.parse::<bool>()
 				.expect("failed parsing ISSUE_PROJECT_VALID"),
-			//			issue_project_changes: false, // TODO enable field when project management is working
-			issue_project_changes: dotenv::var("ISSUE_PROJECT_CHANGES")
-				.expect("ISSUE_PROJECT_CHANGES")
-				.parse::<bool>()
-				.expect("failed parsing ISSUE_PROJECT_CHANGES"),
+			issue_project_changes: false, // TODO enable field when project management is working
+			                              //			issue_project_changes: dotenv::var("ISSUE_PROJECT_CHANGES")
+			                              //				.expect("ISSUE_PROJECT_CHANGES")
+			                              //				.parse::<bool>()
+			                              //				.expect("failed parsing ISSUE_PROJECT_CHANGES"),
 		}
 	}
 

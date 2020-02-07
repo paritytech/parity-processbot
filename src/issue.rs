@@ -282,6 +282,11 @@ impl bots::Bot {
 				}),
 				&self.db,
 			)?;
+			let matrix_id = self
+				.github_to_matrix
+				.get(&process_info.owner)
+				.and_then(|matrix_id| matrix::parse_id(matrix_id))
+				.unwrap_or("the project owner".to_owned());
 			self.matrix_bot.send_to_room(
 				&process_info.matrix_room_id,
 				&PROJECT_CONFIRMATION
@@ -290,12 +295,14 @@ impl bots::Bot {
 						issue.html_url.as_ref().context(error::MissingData)?,
 					)
 					.replace(
-						"{project_url}",
-						project
-							.html_url
+						"{column_name}",
+						project_column
+							.name
 							.as_ref()
 							.context(error::MissingData)?,
 					)
+					.replace("{project_name}", &project.name)
+					.replace("{owner}", &matrix_id)
 					.replace(
 						"{issue_id}",
 						&format!("{}", issue.id.context(error::MissingData)?),
@@ -382,6 +389,11 @@ impl bots::Bot {
 				}),
 				&self.db,
 			)?;
+			let matrix_id = self
+				.github_to_matrix
+				.get(&process_info.owner)
+				.and_then(|matrix_id| matrix::parse_id(matrix_id))
+				.unwrap_or("the project owner".to_owned());
 			self.matrix_bot.send_to_room(
 				&process_info.matrix_room_id,
 				&PROJECT_CONFIRMATION
@@ -390,12 +402,14 @@ impl bots::Bot {
 						issue.html_url.as_ref().context(error::MissingData)?,
 					)
 					.replace(
-						"{project_url}",
-						project
-							.html_url
+						"{column_name}",
+						project_column
+							.name
 							.as_ref()
 							.context(error::MissingData)?,
 					)
+					.replace("{project_name}", &project.name)
+					.replace("{owner}", &matrix_id)
 					.replace(
 						"{issue_id}",
 						&format!("{}", issue.id.context(error::MissingData)?),
@@ -415,6 +429,7 @@ impl bots::Bot {
 				local_state.last_confirmed_issue_project().cloned(),
 				&self.db,
 			)?;
+			self.github_bot.delete_project_card(denied_id).await?;
 			if let Some(prev_column_id) =
 				local_state.issue_project().map(|p| p.project_column_id)
 			{
@@ -437,7 +452,7 @@ impl bots::Bot {
 				&self.db,
 				&matrix_id,
 				&ISSUE_REVERT_PROJECT_NOTIFICATION
-					.replace("{1}", &issue_html_url),
+					.replace("{issue_url}", &issue_html_url),
 			)?;
 		}
 		Ok(())
@@ -483,6 +498,11 @@ impl bots::Bot {
 				}),
 				&self.db,
 			)?;
+			let matrix_id = self
+				.github_to_matrix
+				.get(&process_info.owner)
+				.and_then(|matrix_id| matrix::parse_id(matrix_id))
+				.unwrap_or("the project owner".to_owned());
 			self.matrix_bot.send_to_room(
 				&process_info.matrix_room_id,
 				&PROJECT_CONFIRMATION
@@ -491,12 +511,14 @@ impl bots::Bot {
 						issue.html_url.as_ref().context(error::MissingData)?,
 					)
 					.replace(
-						"{project_url}",
-						project
-							.html_url
+						"{column_name}",
+						project_column
+							.name
 							.as_ref()
 							.context(error::MissingData)?,
 					)
+					.replace("{project_name}", &project.name)
+					.replace("{owner}", &matrix_id)
 					.replace(
 						"{issue_id}",
 						&format!("{}", issue.id.context(error::MissingData)?),
