@@ -14,11 +14,9 @@ impl bots::Bot {
 		process_info: &process::ProcessInfo,
 		pull_request: &github::PullRequest,
 	) -> Result<()> {
-		let pr_html_url =
-			pull_request.html_url.as_ref().context(error::MissingData)?;
 		log::debug!(
 			"Requesting a review on {} from the project room with ID {}.",
-			pr_html_url,
+			pull_request.html_url,
 			&process_info.matrix_room_id
 		);
 		let ticks = local_state
@@ -36,7 +34,7 @@ impl bots::Bot {
 					&process_info.matrix_room_id,
 					&REQUESTING_REVIEWS_MESSAGE
 						.replace("{author}", &pull_request.user.login)
-						.replace("{pr_url}", &pr_html_url),
+						.replace("{pr_url}", &pull_request.html_url),
 				)?;
 			}
 			Some(0) => {}
@@ -47,7 +45,7 @@ impl bots::Bot {
 						&process_info.matrix_room_id,
 						&REQUESTING_REVIEWS_MESSAGE
 							.replace("{author}", &pull_request.user.login)
-							.replace("{pr_url}", &pr_html_url),
+							.replace("{pr_url}", &pull_request.html_url),
 					)?;
 				}
 			}
@@ -62,9 +60,6 @@ impl bots::Bot {
 		pull_request: &github::PullRequest,
 		user: &github::User,
 	) -> Result<()> {
-		let pr_html_url =
-			pull_request.html_url.as_ref().context(error::MissingData)?;
-
 		// private message reminder
 		{
 			let elapsed = local_state
@@ -81,7 +76,7 @@ impl bots::Bot {
                         &self.github_to_matrix,
                         &user.login,
                         &PRIVATE_REVIEW_REMINDER_MESSAGE
-                            .replace("{1}", &pr_html_url),
+                            .replace("{1}", &pull_request.html_url),
                     )?;
                 }
                 Some(0) => {},
@@ -93,7 +88,7 @@ impl bots::Bot {
                             &self.github_to_matrix,
                             &user.login,
                             &PRIVATE_REVIEW_REMINDER_MESSAGE
-                                .replace("{1}", &pr_html_url),
+                                .replace("{1}", &pull_request.html_url),
                         )?;
                     }
                 }
@@ -123,7 +118,7 @@ impl bots::Bot {
                                 self.matrix_bot.send_to_room(
                                     &process_info.matrix_room_id,
                                     &PUBLIC_REVIEW_REMINDER_MESSAGE
-                                        .replace("{1}", &pr_html_url)
+                                        .replace("{1}", &pull_request.html_url)
                                         .replace("{2}", &user.login),
                                 )?;
                             }
@@ -146,10 +141,10 @@ impl bots::Bot {
 		requested_reviewers: &github::RequestedReviewers,
 	) -> Result<()> {
 		if self.feature_config.pr_require_reviews {
-			let pr_html_url =
-				pull_request.html_url.as_ref().context(error::MissingData)?;
-
-			log::debug!("Checking if reviews required on {}", pr_html_url);
+			log::debug!(
+				"Checking if reviews required on {}",
+				pull_request.html_url
+			);
 
 			for review in reviews.iter().sorted_by_key(|r| r.submitted_at) {
 				local_state.update_review(
@@ -199,7 +194,7 @@ impl bots::Bot {
 				// requested. request a review from the owner/delegate.
 				log::debug!(
 					"Requesting a review on {} from the project owner, {}.",
-					pr_html_url,
+					pull_request.html_url,
 					&process_info.owner_or_delegate(),
 				);
 				let github_login = process_info.owner_or_delegate();
@@ -209,7 +204,7 @@ impl bots::Bot {
 						&self.db,
 						&matrix_id,
 						&REQUEST_DELEGATED_REVIEW_MESSAGE
-							.replace("{1}", &pr_html_url),
+							.replace("{1}", &pull_request.html_url),
 					)?;
 					self.github_bot
 						.request_reviews(

@@ -1,5 +1,154 @@
 use serde::{Deserialize, Serialize};
 
+pub trait GithubIssue {
+	fn number(&self) -> i64;
+	fn id(&self) -> i64;
+	fn html_url(&self) -> &String;
+	fn user(&self) -> &User;
+	fn body(&self) -> Option<&String>;
+	fn title(&self) -> Option<&String>;
+	fn repository(&self) -> Option<&Repository>;
+	fn assignee(&self) -> Option<&User>;
+	fn is_assignee(&self, login: &str) -> bool {
+		self.assignee()
+			.map_or(false, |assignee| assignee.login == login)
+	}
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PullRequest {
+	pub url: Option<String>,
+	pub id: i64,
+	pub node_id: Option<String>,
+	pub html_url: String,
+	pub diff_url: Option<String>,
+	pub patch_url: Option<String>,
+	pub issue_url: Option<String>,
+	pub commits_url: Option<String>,
+	pub review_comments_url: Option<String>,
+	pub review_comment_url: Option<String>,
+	pub comments_url: Option<String>,
+	pub statuses_url: Option<String>,
+	pub number: i64,
+	pub state: Option<String>,
+	pub locked: Option<bool>,
+	pub title: Option<String>,
+	pub user: User,
+	pub body: Option<String>,
+	pub labels: Option<Vec<Label>>,
+	pub milestone: Option<Milestone>,
+	pub active_lock_reason: Option<String>,
+	pub created_at: Option<chrono::DateTime<chrono::Utc>>,
+	pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
+	pub closed_at: Option<String>,
+	pub mergeable: Option<bool>,
+	pub merged_at: Option<String>,
+	pub merge_commit_sha: Option<String>,
+	pub assignee: Option<User>,
+	pub assignees: Option<Vec<User>>,
+	pub requested_reviewers: Option<Vec<User>>,
+	pub requested_teams: Option<Vec<RequestedTeam>>,
+	pub head: Head,
+	pub base: Base,
+	#[serde(rename = "_links")]
+	pub links: Option<Links>,
+	pub author_association: Option<String>,
+	pub draft: Option<bool>,
+	#[serde(rename = "repo")]
+	pub repository: Option<Repository>,
+}
+
+impl GithubIssue for PullRequest {
+	fn number(&self) -> i64 {
+		self.number
+	}
+
+	fn id(&self) -> i64 {
+		self.id
+	}
+
+	fn html_url(&self) -> &String {
+		&self.html_url
+	}
+
+	fn user(&self) -> &User {
+		&self.user
+	}
+
+	fn body(&self) -> Option<&String> {
+		self.body.as_ref()
+	}
+
+	fn title(&self) -> Option<&String> {
+		self.title.as_ref()
+	}
+
+	fn repository(&self) -> Option<&Repository> {
+		self.repository.as_ref()
+	}
+
+	fn assignee(&self) -> Option<&User> {
+		self.assignee.as_ref()
+	}
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Issue {
+	pub number: i64,
+	pub id: i64,
+	pub node_id: Option<String>,
+	pub html_url: String,
+	pub user: User,
+	pub body: Option<String>,
+	pub title: Option<String>,
+	pub state: Option<String>,
+	pub labels: Vec<Label>,
+	pub assignee: Option<User>,
+	pub assignees: Vec<User>,
+	pub milestone: Option<Milestone>,
+	pub locked: Option<bool>,
+	pub active_lock_reason: Option<String>,
+	pub pull_request: Option<IssuePullRequest>,
+	pub created_at: String,
+	pub updated_at: String,
+	pub closed_at: Option<String>,
+	pub repository: Option<Repository>,
+}
+
+impl GithubIssue for Issue {
+	fn number(&self) -> i64 {
+		self.number
+	}
+
+	fn id(&self) -> i64 {
+		self.id
+	}
+
+	fn html_url(&self) -> &String {
+		&self.html_url
+	}
+
+	fn user(&self) -> &User {
+		&self.user
+	}
+
+	fn body(&self) -> Option<&String> {
+		self.body.as_ref()
+	}
+
+	fn title(&self) -> Option<&String> {
+		self.title.as_ref()
+	}
+
+	fn repository(&self) -> Option<&Repository> {
+		self.repository.as_ref()
+	}
+
+	fn assignee(&self) -> Option<&User> {
+		self.assignee.as_ref()
+	}
+}
+
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Organization {
 	pub login: String,
@@ -115,6 +264,18 @@ pub struct IssueEvent {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Comment {
+	pub id: Option<i64>,
+	pub node_id: Option<String>,
+	pub url: Option<String>,
+	pub html_url: Option<String>,
+	pub body: Option<String>,
+	pub user: User,
+	pub created_at: chrono::DateTime<chrono::Utc>,
+	pub updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ProjectCard {
 	pub id: Option<i64>,
 	pub url: Option<String>,
@@ -162,7 +323,7 @@ pub struct ProjectColumn {
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Team {
-	pub id: Option<i64>,
+	pub id: i64,
 	pub node_id: Option<String>,
 	pub url: Option<String>,
 	pub html_url: Option<String>,
@@ -193,49 +354,6 @@ pub struct IssuePullRequest {
 	pub html_url: Option<String>,
 	pub diff_url: Option<String>,
 	pub patch_url: Option<String>,
-}
-
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct PullRequest {
-	pub url: Option<String>,
-	pub id: Option<i64>,
-	pub node_id: Option<String>,
-	pub html_url: Option<String>,
-	pub diff_url: Option<String>,
-	pub patch_url: Option<String>,
-	pub issue_url: Option<String>,
-	pub commits_url: Option<String>,
-	pub review_comments_url: Option<String>,
-	pub review_comment_url: Option<String>,
-	pub comments_url: Option<String>,
-	pub statuses_url: Option<String>,
-	pub number: i64,
-	pub state: Option<String>,
-	pub locked: Option<bool>,
-	pub title: Option<String>,
-	pub user: User,
-	pub body: Option<String>,
-	pub labels: Option<Vec<Label>>,
-	pub milestone: Option<Milestone>,
-	pub active_lock_reason: Option<String>,
-	pub created_at: Option<chrono::DateTime<chrono::Utc>>,
-	pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
-	pub closed_at: Option<String>,
-	pub mergeable: Option<bool>,
-	pub merged_at: Option<String>,
-	pub merge_commit_sha: Option<String>,
-	pub assignee: Option<User>,
-	pub assignees: Option<Vec<User>>,
-	pub requested_reviewers: Option<Vec<User>>,
-	pub requested_teams: Option<Vec<RequestedTeam>>,
-	pub head: Head,
-	pub base: Base,
-	#[serde(rename = "_links")]
-	pub links: Option<Links>,
-	pub author_association: Option<String>,
-	pub draft: Option<bool>,
-	#[serde(rename = "repo")]
-	pub repository: Option<Repository>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -277,29 +395,6 @@ pub struct Review {
 pub struct RequestedReviewers {
 	pub users: Vec<User>,
 	pub teams: Vec<Team>,
-}
-
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Issue {
-	pub number: i64,
-	pub id: Option<i64>,
-	pub node_id: Option<String>,
-	pub html_url: Option<String>,
-	pub user: User,
-	pub body: Option<String>,
-	pub title: Option<String>,
-	pub state: Option<String>,
-	pub labels: Vec<Label>,
-	pub assignee: Option<User>,
-	pub assignees: Vec<User>,
-	pub milestone: Option<Milestone>,
-	pub locked: Option<bool>,
-	pub active_lock_reason: Option<String>,
-	pub pull_request: Option<IssuePullRequest>,
-	pub created_at: String,
-	pub updated_at: String,
-	pub closed_at: Option<String>,
-	pub repository: Option<Repository>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -455,11 +550,51 @@ pub struct Repository {
 	pub network_count: Option<i64>,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Commit {
+	pub url: Option<String>,
+	pub sha: Option<String>,
+	pub node_id: Option<String>,
+	pub html_url: Option<String>,
+	pub comments_url: Option<String>,
+	pub author: User,
+	pub committer: User,
+}
+
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Permissions {
 	admin: Option<bool>,
 	push: Option<bool>,
 	pull: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CheckRuns {
+	pub total_count: i32,
+	pub check_runs: Vec<CheckRun>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CheckRun {
+	pub id: Option<i64>,
+	pub head_sha: Option<String>,
+	pub node_id: Option<String>,
+	pub external_id: Option<String>,
+	pub url: Option<String>,
+	pub html_url: Option<String>,
+	pub details_url: Option<String>,
+	pub status: Option<CheckStatus>,
+	pub conclusion: Option<String>,
+	pub started_at: Option<chrono::DateTime<chrono::Utc>>,
+	pub completed_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CheckStatus {
+	Queued,
+	Completed,
+	InProgress,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

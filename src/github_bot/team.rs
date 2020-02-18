@@ -31,6 +31,8 @@ mod tests {
 	fn test_teams() {
 		dotenv::dotenv().ok();
 
+		let installation = dotenv::var("TEST_INSTALLATION_LOGIN")
+			.expect("TEST_INSTALLATION_LOGIN");
 		let private_key_path =
 			dotenv::var("PRIVATE_KEY_PATH").expect("PRIVATE_KEY_PATH");
 		let private_key = std::fs::read(&private_key_path)
@@ -38,11 +40,12 @@ mod tests {
 
 		let mut rt = tokio::runtime::Runtime::new().expect("runtime");
 		rt.block_on(async {
-			let github_bot =
-				GithubBot::new(private_key).await.expect("github_bot");
+			let github_bot = GithubBot::new(private_key, &installation)
+				.await
+				.expect("github_bot");
 			let team = github_bot.team("core-devs").await.expect("team");
 			let _members = github_bot
-				.team_members(team.id.expect("team id"))
+				.team_members(team.id)
 				.await
 				.expect("team members");
 		});

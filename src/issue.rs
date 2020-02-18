@@ -1,13 +1,38 @@
-use crate::db::*;
-use crate::local_state::*;
 use crate::{
-	bots, constants::*, duration_ticks::DurationTicks, error, github, matrix,
-	process, Result,
+	bots, constants::*, db::*, duration_ticks::DurationTicks, error, github,
+	local_state::*, process, Result,
 };
 use snafu::OptionExt;
 use std::time::{Duration, SystemTime};
 
 impl bots::Bot {
+	pub async fn close_for_missing_issue(
+		&self,
+		combined_process: &process::CombinedProcessInfo,
+		repo: &github::Repository,
+		pull_request: &github::PullRequest,
+	) -> Result<()> {
+		// leave a message that a corresponding issue must exist for
+		// each PR close the PR
+		log::info!(
+                "Closing pull request '{issue_title:?}' as it addresses no issue in repo '{repo_name}'",
+                issue_title = pull_request.title,
+                repo_name = repo.name
+            );
+		self.github_bot
+			.create_issue_comment(
+				&repo.name,
+				pull_request.number,
+				&CLOSE_FOR_NO_ISSUE
+					.replace("{author}", &pull_request.user.login),
+			)
+			.await?;
+		self.github_bot
+			.close_pull_request(&repo.name, pull_request.number)
+			.await?;
+		Ok(())
+	}
+
 	/// Return the project card attached to an issue, if there is one, and the user who attached it
 	pub async fn issue_actor_and_project_card(
 		&self,
@@ -30,7 +55,8 @@ impl bots::Bot {
 		&self,
 		local_state: &mut LocalState,
 		issue: &github::Issue,
-		(project, process_info): (&github::Project, &process::ProcessInfo),
+		process_info: &process::ProcessInfo,
+		project: &github::Project,
 	) -> Result<()> {
 		// get the project's backlog column or use the default
 		if let Some(backlog_column) = self
@@ -55,7 +81,7 @@ impl bots::Bot {
 			self.github_bot
 				.create_project_card(
 					backlog_column.id,
-					issue.id.context(error::MissingData)?,
+					issue.id,
 					github::ProjectCardContentType::Issue,
 				)
 				.await?;
@@ -76,130 +102,7 @@ impl bots::Bot {
 		Ok(())
 	}
 
-	async fn issue_author_core_no_project(
-		&self,
-		local_state: &mut LocalState,
-		issue: &github::Issue,
-		since: Option<Duration>,
-	) -> Result<()> {
-		let issue_html_url =
-			issue.html_url.as_ref().context(error::MissingData)?;
-		let ticks = since.ticks(self.config.no_project_author_is_core_ping);
-		match ticks {
-			None => {
-				local_state.update_issue_no_project_ping(
-					Some(SystemTime::now()),
-					&self.db,
-				)?;
-				self.matrix_bot.send_to_default(
-					&WILL_CLOSE_FOR_NO_PROJECT
-						.replace("{author}", &issue.user.login)
-						.replace("{issue_url}", issue_html_url),
-				)?;
-			}
-			Some(0) => {}
-			Some(i) => {
-				if i >= self.config.no_project_author_is_core_close_pr
-					/ self.config.no_project_author_is_core_ping
-				{
-					// If after some timeout there is still no project
-					// attached, move the issue to Core Sorting
-					// repository
-					self.github_bot
-						.close_issue(
-							&issue
-								.repository
-								.as_ref()
-								.context(error::MissingData)?
-								.name,
-							issue.number,
-						)
-						.await?;
-					self.github_bot
-						.create_issue(
-							&self.config.core_sorting_repo_name,
-							issue.title.as_ref().unwrap_or(&"".to_owned()),
-							issue.body.as_ref().unwrap_or(&"".to_owned()),
-							issue
-								.assignee
-								.as_ref()
-								.map(|a| a.login.as_ref())
-								.unwrap_or(&"".to_owned()),
-						)
-						.await?;
-					local_state.delete(&self.db, &local_state.key)?;
-				} else {
-					local_state.update_issue_no_project_npings(i, &self.db)?;
-					self.matrix_bot.send_to_default(
-						&WILL_CLOSE_FOR_NO_PROJECT
-							.replace("{author}", &issue.user.login)
-							.replace("{issue_url}", issue_html_url),
-					)?;
-				}
-			}
-		}
-		Ok(())
-	}
-
-	async fn issue_author_unknown_no_project(
-		&self,
-		local_state: &mut LocalState,
-		issue: &github::Issue,
-		since: Option<Duration>,
-	) -> Result<()> {
-		let issue_html_url =
-			issue.html_url.as_ref().context(error::MissingData)?;
-
-		let ticks =
-			since.ticks(self.config.no_project_author_not_core_close_pr);
-
-		match ticks {
-			None => {
-				// send a message to the "Core Developers" room
-				// on Riot with the title of the issue and a link.
-				local_state.update_issue_no_project_ping(
-					Some(SystemTime::now()),
-					&self.db,
-				)?;
-				self.matrix_bot.send_to_default(
-					&WILL_CLOSE_FOR_NO_PROJECT
-						.replace("{author}", &issue.user.login)
-						.replace("{issue_url}", issue_html_url),
-				)?;
-			}
-			Some(0) => {}
-			_ => {
-				// If after some timeout there is still no project
-				// attached, move the issue to Core Sorting
-				// repository.
-				self.github_bot
-					.close_issue(
-						&issue
-							.repository
-							.as_ref()
-							.context(error::MissingData)?
-							.name,
-						issue.number,
-					)
-					.await?;
-				self.github_bot
-					.create_issue(
-						&self.config.core_sorting_repo_name,
-						issue.title.as_ref().unwrap_or(&"".to_owned()),
-						issue.body.as_ref().unwrap_or(&"".to_owned()),
-						&issue
-							.assignee
-							.as_ref()
-							.map(|a| a.login.as_ref())
-							.unwrap_or(String::new().as_ref()),
-					)
-					.await?;
-				local_state.delete(&self.db, &local_state.key)?;
-			}
-		}
-		Ok(())
-	}
-
+	/*
 	fn author_non_special_project_state_none(
 		&self,
 		local_state: &mut LocalState,
@@ -348,7 +251,7 @@ impl bots::Bot {
 					.and_then(|matrix_id| matrix::parse_id(matrix_id))
 				{
 					self.matrix_bot.send_private_message(
-                        &self.db,
+						&self.db,
 						&matrix_id,
 						&ISSUE_REVERT_PROJECT_NOTIFICATION
 							.replace("{1}", &issue_html_url),
@@ -538,9 +441,10 @@ impl bots::Bot {
 
 	pub async fn handle_issue(
 		&self,
-		projects: &[(Option<github::Project>, process::ProcessInfo)],
+		combined_process: &process::CombinedProcessInfo,
 		repo: &github::Repository,
 		issue: &github::Issue,
+		projects: &[github::Project],
 	) -> Result<()> {
 		let issue_id = issue.id.context(error::MissingData)?;
 
@@ -550,7 +454,7 @@ impl bots::Bot {
 		let author_is_core =
 			self.core_devs.iter().any(|u| issue.user.id == u.id);
 
-		if projects.is_empty() {
+		if combined_process.len() == 0 {
 			// there are no projects matching those listed in Process.toml so do nothing
 		} else {
 			match self
@@ -560,33 +464,31 @@ impl bots::Bot {
 				None => {
 					if self.feature_config.issue_project_valid {
 						log::debug!(
-                            "Handling issue '{issue_title}' with no project in repo '{repo_name}'",
-                            issue_title = issue.title.as_ref().unwrap_or(&"".to_owned()),
-                            repo_name = repo.name
-                        );
+							"Handling issue '{issue_title}' with no project in repo '{repo_name}'",
+							issue_title = issue.title.as_ref().unwrap_or(&"".to_owned()),
+							repo_name = repo.name
+						);
 
 						let since = local_state
 							.issue_no_project_ping()
 							.and_then(|ping| ping.elapsed().ok());
-						let special_of_project = projects
-							.iter()
-							.find(|(_, p)| p.is_special(&issue.user.login))
-							.and_then(|(p, pi)| p.as_ref().map(|p| (p, pi)));
+						let special_of_project =
+							combined_process.get(&issue.user.login);
 
-						if projects.len() == 1 && special_of_project.is_some() {
+						if combined_process.len() == 1
+							&& special_of_project.is_some()
+						{
 							// repo contains only one project and the author is special
 							// so we can attach it with high confidence
 							self.author_special_attach_only_project(
 								&mut local_state,
 								issue,
 								special_of_project.expect("checked above"),
+								projects.iter().find(|x| x.name == special_of_project.unwrap().project_name).expect("entries in combined_process all match a project"),
 							)
 							.await?;
 						} else if author_is_core
-							|| projects
-								.iter()
-								.find(|(_, p)| p.is_special(&issue.user.login))
-								.is_some()
+							|| combined_process.is_special(&issue.user.login)
 						{
 							// author is a core developer or special of at least one
 							// project in the repo
@@ -607,92 +509,95 @@ impl bots::Bot {
 						}
 					}
 				}
-				Some((actor, card)) => {
-					if self.feature_config.issue_project_changes {
-						let project: github::Project =
-							self.github_bot.project(&card).await?;
-						let project_column: github::ProjectColumn = self
-							.github_bot
-							.project_column_by_name(
-								&project,
-								card.column_name
-									.as_ref()
-									.context(error::MissingData)?,
-							)
-							.await?
-							.context(error::MissingData)?;
-						//							self.github_bot.project_column(&card).await?;
+				Some((_actor, _card)) => {
+					/*
+						if self.feature_config.issue_project_changes {
+							let project: github::Project =
+								self.github_bot.project(&card).await?;
+							let project_column: github::ProjectColumn = self
+								.github_bot
+								.project_column_by_name(
+									&project,
+									card.column_name
+										.as_ref()
+										.context(error::MissingData)?,
+								)
+								.await?
+								.context(error::MissingData)?;
+							//							self.github_bot.project_column(&card).await?;
 
-						log::debug!(
-                            "Handling issue '{issue_title}' in project '{project_name}' in repo '{repo_name}'",
-                            issue_title = issue.title.as_ref().unwrap_or(&"".to_owned()),
-                            project_name = project.name,
-                            repo_name = repo.name
-                        );
+							log::debug!(
+								"Handling issue '{issue_title}' in project '{project_name}' in repo '{repo_name}'",
+								issue_title = issue.title.as_ref().unwrap_or(&"".to_owned()),
+								project_name = project.name,
+								repo_name = repo.name
+							);
 
-						if let Some(process_info) = projects
-							.iter()
-							.find(|(p, _)| {
-								p.as_ref()
-									.map_or(false, |p| &project.name == &p.name)
-							})
-							.map(|(_, p)| p)
-						{
-							if !process_info.is_special(&actor.login) {
-								// TODO check if confirmation has confirmed/denied.
-								// requires parsing messages in project room
+							if let Some(process_info) = projects
+								.iter()
+								.find(|(p, _)| {
+									p.as_ref()
+										.map_or(false, |p| &project.name == &p.name)
+								})
+								.map(|(_, p)| p)
+							{
+								if !process_info.is_special(&actor.login) {
+									// TODO check if confirmation has confirmed/denied.
+									// requires parsing messages in project room
 
-								match local_state.issue_project().map(|p| p.state) {
-								None => self
-									.author_non_special_project_state_none(
-										&mut local_state,
-										issue,
-										&project,
-										&project_column,
-										&process_info,
-										&actor,
-									)?,
-								Some(IssueProjectState::Unconfirmed) => self
-									.author_non_special_project_state_unconfirmed(
-										&mut local_state,
-										issue,
-										&project,
-										&project_column,
-										&process_info,
-										&actor,
-									)
-									.await?,
-								Some(IssueProjectState::Denied) => self
-									.author_non_special_project_state_denied(
-										&mut local_state,
-										issue,
-										&project,
-										&project_column,
-										&process_info,
-										&actor,
-									)
-									.await?,
-								Some(IssueProjectState::Confirmed) => self
-									.author_non_special_project_state_confirmed(
-										&mut local_state,
-										issue,
-										&project,
-										&project_column,
-										&process_info,
-										&actor,
-									)?,
-							};
+									match local_state.issue_project().map(|p| p.state) {
+									None => self
+										.author_non_special_project_state_none(
+											&mut local_state,
+											issue,
+											&project,
+											&project_column,
+											&process_info,
+											&actor,
+										)?,
+									Some(IssueProjectState::Unconfirmed) => self
+										.author_non_special_project_state_unconfirmed(
+											&mut local_state,
+											issue,
+											&project,
+											&project_column,
+											&process_info,
+											&actor,
+										)
+										.await?,
+									Some(IssueProjectState::Denied) => self
+										.author_non_special_project_state_denied(
+											&mut local_state,
+											issue,
+											&project,
+											&project_column,
+											&process_info,
+											&actor,
+										)
+										.await?,
+									Some(IssueProjectState::Confirmed) => self
+										.author_non_special_project_state_confirmed(
+											&mut local_state,
+											issue,
+											&project,
+											&project_column,
+											&process_info,
+											&actor,
+										)?,
+								};
+								} else {
+									// actor is special so allow any change
+								}
 							} else {
-								// actor is special so allow any change
+								// no key in in Process.toml matches the project name
+								// TODO notification here
 							}
-						} else {
-							// no key in in Process.toml matches the project name
-							// TODO notification here
 						}
-					}
+					*/
 				}
 			}
 		}
 		Ok(())
 	}
+		*/
 }

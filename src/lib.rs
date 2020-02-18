@@ -1,3 +1,4 @@
+pub mod auto_merge;
 pub mod bamboo;
 pub mod bots;
 pub mod config;
@@ -13,6 +14,7 @@ pub mod local_state;
 pub mod matrix;
 pub mod matrix_bot;
 pub mod process;
+pub mod project;
 pub mod pull_request;
 pub mod review;
 pub mod status;

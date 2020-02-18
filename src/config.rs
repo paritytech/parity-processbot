@@ -1,5 +1,6 @@
 #[derive(Debug, Clone)]
 pub struct MainConfig {
+	pub installation_login: String,
 	pub db_path: String,
 	pub bamboo_token: String,
 	pub private_key: Vec<u8>,
@@ -17,6 +18,8 @@ impl MainConfig {
 	pub fn from_env() -> Self {
 		dotenv::dotenv().ok();
 
+		let installation_login =
+			dotenv::var("INSTALLATION_LOGIN").expect("INSTALLATION_LOGIN");
 		let db_path = dotenv::var("DB_PATH").expect("DB_PATH");
 		let bamboo_token = dotenv::var("BAMBOO_TOKEN").expect("BAMBOO_TOKEN");
 		let matrix_homeserver =
@@ -46,6 +49,7 @@ impl MainConfig {
 			.expect("Couldn't find private key.");
 
 		Self {
+			installation_login,
 			db_path,
 			bamboo_token,
 			private_key,
@@ -71,7 +75,7 @@ pub struct BotConfig {
 	/// seconds before pr gets closed
 	pub no_project_author_is_core_close_pr: u64,
 	/// seconds before pr gets closed
-	pub no_project_author_not_core_close_pr: u64,
+	pub no_project_author_unknown_close_pr: u64,
 	/// seconds before unconfirmed change gets reverted
 	pub project_confirmation_timeout: u64,
 	/// seconds between pings
@@ -122,12 +126,12 @@ impl BotConfig {
 			.parse::<u64>()
 			.expect("failed parsing NO_PROJECT_AUTHOR_IS_CORE_CLOSE_PR"),
 
-			no_project_author_not_core_close_pr: dotenv::var(
-				"NO_PROJECT_AUTHOR_NOT_CORE_CLOSE_PR",
+			no_project_author_unknown_close_pr: dotenv::var(
+				"NO_PROJECT_AUTHOR_UNKNOWN_CLOSE_PR",
 			)
-			.expect("NO_PROJECT_AUTHOR_NOT_CORE_CLOSE_PR")
+			.expect("NO_PROJECT_AUTHOR_UNKNOWN_CLOSE_PR")
 			.parse::<u64>()
-			.expect("failed parsing NO_PROJECT_AUTHOR_NOT_CORE_CLOSE_PR"),
+			.expect("failed parsing NO_PROJECT_AUTHOR_UNKNOWN_CLOSE_PR"),
 
 			project_confirmation_timeout: dotenv::var(
 				"PROJECT_CONFIRMATION_TIMEOUT",

@@ -33,6 +33,13 @@ pub enum Error {
 
 	/// An error occurred while parsing or serializing JSON.
 	#[snafu(display("Source: {}\nBacktrace:\n{}", source, backtrace))]
+	Utf8 {
+		source: std::string::FromUtf8Error,
+		backtrace: Backtrace,
+	},
+
+	/// An error occurred while parsing or serializing JSON.
+	#[snafu(display("Source: {}\nBacktrace:\n{}", source, backtrace))]
 	Json {
 		source: serde_json::Error,
 		backtrace: Backtrace,

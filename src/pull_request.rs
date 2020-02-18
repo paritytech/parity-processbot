@@ -1,4 +1,3 @@
-use crate::db::*;
 use crate::local_state::*;
 use crate::{
 	bots, constants::*, duration_ticks::DurationTicks, error, github, matrix,
@@ -16,52 +15,44 @@ impl bots::Bot {
 		pull_request: &github::PullRequest,
 		issue: &github::Issue,
 	) -> Result<()> {
-		if self.feature_config.pr_issue_assignment {
-			let elapsed = local_state
-				.issue_not_assigned_ping()
-				.and_then(|ping| ping.elapsed().ok());
-			let days =
-				elapsed.ticks(self.config.issue_not_assigned_to_pr_author_ping);
-			log::debug!(
-				"Issue {} addressed by {} has been unassigned for {:?} seconds.",
-                issue.html_url.as_ref().context(error::MissingData)?,
-				pull_request.title.as_ref().context(error::MissingData)?,
-				elapsed
-			);
-			match days {
-				// notify the the issue assignee and project
-				// owner through a PM
-				None => self.send_private_issue_reassignment_notification(
+		let elapsed = local_state
+			.issue_not_assigned_ping()
+			.and_then(|ping| ping.elapsed().ok());
+		let days =
+			elapsed.ticks(self.config.issue_not_assigned_to_pr_author_ping);
+		log::info!(
+            "Issue {} addressed by {} has been unassigned for at least {:?} seconds.",
+            issue.html_url,
+            pull_request.title.as_ref().context(error::MissingData)?,
+            elapsed
+        );
+		match days {
+			// notify the the issue assignee and project
+			// owner through a PM
+			None => self.send_private_issue_reassignment_notification(
+				local_state,
+				process_info,
+				pull_request,
+				issue,
+			),
+			// do nothing
+			Some(0) => Ok(()),
+			// if after 24 hours there is no change, then
+			// send a message into the project's Riot
+			// channel
+			Some(1) | Some(2) => self
+				.send_public_issue_reassignment_notification(
 					local_state,
 					process_info,
 					pull_request,
 					issue,
 				),
-				// do nothing
-				Some(0) => Ok(()),
-				// if after 24 hours there is no change, then
-				// send a message into the project's Riot
-				// channel
-				Some(1) | Some(2) => self
-					.send_public_issue_reassignment_notification(
-						local_state,
-						process_info,
-						pull_request,
-						issue,
-					),
-				// if after a further 48 hours there is still no
-				// change, then close the PR.
-				_ => {
-					self.close_for_issue_unassigned(
-						local_state,
-						repo,
-						pull_request,
-					)
+			// if after a further 48 hours there is still no
+			// change, then close the PR.
+			_ => {
+				self.close_for_issue_unassigned(local_state, repo, pull_request)
 					.await
-				}
 			}
-		} else {
-			Ok(())
 		}
 	}
 
@@ -72,10 +63,6 @@ impl bots::Bot {
 		pull_request: &github::PullRequest,
 		issue: &github::Issue,
 	) -> Result<()> {
-		let pr_html_url =
-			pull_request.html_url.as_ref().context(error::MissingData)?;
-		let issue_html_url =
-			issue.html_url.as_ref().context(error::MissingData)?;
 		local_state.update_issue_not_assigned_ping(
 			Some(SystemTime::now()),
 			&self.db,
@@ -90,15 +77,15 @@ impl bots::Bot {
 					&self.db,
 					&matrix_id,
 					&PRIVATE_ISSUE_NEEDS_REASSIGNMENT
-						.replace("{pr_url}", &pr_html_url)
-						.replace("{issue_url}", &issue_html_url)
+						.replace("{pr_url}", &pull_request.html_url)
+						.replace("{issue_url}", &issue.html_url)
 						.replace("{author}", &pull_request.user.login),
 				)?;
 			} else {
 				log::error!(
-                "Couldn't send a message to {}; either their Github or Matrix handle is not set in Bamboo",
-                &assignee.login
-            );
+                    "Couldn't send a message to {}; either their Github or Matrix handle is not set in Bamboo",
+                    &assignee.login
+                );
 			}
 		}
 		if let Some(ref matrix_id) = self
@@ -110,13 +97,14 @@ impl bots::Bot {
 				&self.db,
 				matrix_id,
 				&PRIVATE_ISSUE_NEEDS_REASSIGNMENT
-					.replace("{pr_url}", &pr_html_url)
-					.replace("{issue_url}", &issue_html_url)
+					.replace("{pr_url}", &pull_request.html_url)
+					.replace("{issue_url}", &issue.html_url)
 					.replace("{author}", &pull_request.user.login),
 			)?;
 		} else {
 			log::error!(
-                "Couldn't send a message to {}; either their Github or Matrix handle is not set in Bamboo", &process_info.owner_or_delegate()
+                "Couldn't send a message to {}; either their Github or Matrix handle is not set in Bamboo",
+                &process_info.owner_or_delegate()
             );
 		}
 		Ok(())
@@ -129,10 +117,6 @@ impl bots::Bot {
 		pull_request: &github::PullRequest,
 		issue: &github::Issue,
 	) -> Result<()> {
-		let pr_html_url =
-			pull_request.html_url.as_ref().context(error::MissingData)?;
-		let issue_html_url =
-			issue.html_url.as_ref().context(error::MissingData)?;
 		if local_state.actions_taken()
 			& PullRequestCoreDevAuthorIssueNotAssigned24h
 			== NoAction
@@ -146,8 +130,8 @@ impl bots::Bot {
 				&process_info.matrix_room_id,
 				&PUBLIC_ISSUE_NEEDS_REASSIGNMENT
 					.replace("{owner}", &process_info.owner_or_delegate())
-					.replace("{pr_url}", &pr_html_url)
-					.replace("{issue_url}", &issue_html_url)
+					.replace("{pr_url}", &pull_request.html_url)
+					.replace("{issue_url}", &issue.html_url)
 					.replace("{author}", &pull_request.user.login),
 			)?;
 		}
@@ -160,7 +144,7 @@ impl bots::Bot {
 		repo: &github::Repository,
 		pull_request: &github::PullRequest,
 	) -> Result<()> {
-		log::debug!(
+		log::info!(
 			"Closing {}",
 			pull_request.title.as_ref().context(error::MissingData)?
 		);
@@ -176,48 +160,32 @@ impl bots::Bot {
 			self.github_bot
 				.close_pull_request(&repo.name, pull_request.number)
 				.await?;
+			local_state.alive = false;
 		}
 		Ok(())
 	}
 
-	async fn handle_pull_request_with_issue_and_project(
+	pub async fn assign_issue_or_warn(
 		&self,
 		local_state: &mut LocalState,
 		process_info: &process::ProcessInfo,
 		repo: &github::Repository,
 		pull_request: &github::PullRequest,
 		issue: &github::Issue,
-		status: &github::CombinedStatus,
-		reviews: &[github::Review],
-		requested_reviewers: &github::RequestedReviewers,
 	) -> Result<()> {
-		let author = &pull_request.user;
-		if author.is_assignee(issue) {
-			self.require_reviewers(
-				local_state,
-				&pull_request,
-				process_info,
-				&reviews,
-				&requested_reviewers,
-			)
-			.await?;
-		} else {
-			if process_info.is_special(&author.login) {
-				if self.feature_config.pr_issue_assignment {
-					// assign the issue to the author
-					self.github_bot
-						.assign_issue(&repo.name, issue.number, &author.login)
-						.await?;
-				}
-				self.require_reviewers(
-					local_state,
-					&pull_request,
-					process_info,
-					&reviews,
-					&requested_reviewers,
+		if process_info.is_special(&pull_request.user.login) {
+			// assign the issue to the author
+			self.github_bot
+				.assign_issue(
+					&repo.name,
+					issue.number,
+					&pull_request.user.login,
 				)
 				.await?;
-			} else {
+		} else {
+			if !(issue as &dyn github::GithubIssue)
+				.is_assignee(&pull_request.user.login)
+			{
 				// treat external and core devs the same
 				// TODO clarify behaviour
 				self.author_is_core_unassigned(
@@ -230,16 +198,6 @@ impl bots::Bot {
 				.await?;
 			}
 		}
-
-		self.handle_status(
-			local_state,
-			&process_info,
-			&repo,
-			&pull_request,
-			status,
-			&reviews,
-		)
-		.await?;
 
 		Ok(())
 	}
@@ -297,20 +255,14 @@ impl bots::Bot {
 						self.github_bot
 							.close_pull_request(&repo.name, pull_request.number)
 							.await?;
-						local_state.delete(&self.db, &local_state.key)?;
+						local_state.alive = false;
 					} else {
 						local_state
 							.update_issue_no_project_npings(i, &self.db)?;
 						self.matrix_bot.send_to_default(
 							&WILL_CLOSE_FOR_NO_PROJECT
 								.replace("{author}", &pull_request.user.login)
-								.replace(
-									"{issue_url}",
-									&pull_request
-										.html_url
-										.as_ref()
-										.context(error::MissingData)?,
-								),
+								.replace("{issue_url}", &pull_request.html_url),
 						)?;
 					}
 				}
@@ -332,7 +284,7 @@ impl bots::Bot {
 				.and_then(|ping| ping.elapsed().ok());
 
 			let ticks =
-				since.ticks(self.config.no_project_author_not_core_close_pr);
+				since.ticks(self.config.no_project_author_unknown_close_pr);
 			match ticks {
 				None => {
 					// send a message to the author
@@ -353,7 +305,7 @@ impl bots::Bot {
 					self.github_bot
 						.close_pull_request(&repo.name, pull_request.number)
 						.await?;
-					local_state.delete(&self.db, &local_state.key)?;
+					local_state.alive = false;
 				}
 			}
 		}
@@ -362,206 +314,240 @@ impl bots::Bot {
 
 	pub async fn handle_pull_request(
 		&self,
-		projects: &[(Option<github::Project>, process::ProcessInfo)],
+		local_state: &mut LocalState,
+		combined_process: &process::CombinedProcessInfo,
 		repo: &github::Repository,
 		pull_request: &github::PullRequest,
+		status: &github::CombinedStatus,
+		issues: &[github::Issue],
+		requested_reviewers: &github::RequestedReviewers,
+		reviews: &[github::Review],
 	) -> Result<()> {
-		let pr_id = pull_request.id.context(error::MissingData)?;
-		let db_key = format!("{}", pr_id).into_bytes();
-		let mut local_state = LocalState::get_or_default(&self.db, db_key)?;
-
 		let author = &pull_request.user;
 		let author_is_core = self.core_devs.iter().any(|u| u.id == author.id);
 
-		let (reviews, issues, status, requested_reviewers) = futures::try_join!(
-			self.github_bot.reviews(pull_request),
-			self.github_bot.pull_request_issues(repo, pull_request),
-			self.github_bot.status(&repo.name, pull_request),
-			self.github_bot.requested_reviewers(pull_request)
-		)?;
+		match combined_process.len() {
+			0 => {
+				// pull request is not attached to any project, nor are its linked
+				// issues.
+				// notify the author that this pr/issue needs a project attached
+				// or it will be closed.
+				log::info!(
+                    "Pull request '{issue_title:?}' in repo '{repo_name}' is not attached to a project",
+                    issue_title = pull_request.title,
+                    repo_name = repo.name
+                );
 
-		match projects.len() {
-		0 => log::warn!("should never try to handle pull request without projects / process_info"),
+				if author_is_core {
+					self.pr_author_core_no_project(
+						local_state,
+						pull_request,
+						repo,
+					)
+					.await?;
+				} else {
+					self.pr_author_unknown_no_project(
+						local_state,
+						pull_request,
+						repo,
+					)
+					.await?;
+				}
+			}
 
-		1 => {
-			// assume the sole project is the relevant one
-			let (project, process_info) = projects.last().unwrap();
-			log::debug!(
-                "Handling pull request '{issue_title:?}' in project '{project_name:?}' in repo '{repo_name}'",
-                issue_title = pull_request.title,
-                project_name = project.as_ref().map(|p| &p.name),
-                repo_name = repo.name
-            );
+			1 => {
+				// assume the sole project is the relevant one
+				let process_info = combined_process.iter().last().unwrap();
 
-			let author_info = process_info.author_info(&author.login);
+				log::info!(
+                    "Handling pull request '{issue_title:?}' in project '{project_name:?}' in repo '{repo_name}'",
+                    issue_title = pull_request.title,
+                    project_name = process_info.project_name,
+                    repo_name = repo.name
+                );
 
-			if issues.len() == 0 {
-				if author_info.is_special() {
-					// owners and whitelisted devs can open prs without an attached issue.
+				if issues.len() == 0 {
+					if combined_process.is_special(&author.login) {
+						// owners and whitelisted devs can open prs without an attached issue.
+						self.require_reviewers(
+							local_state,
+							&pull_request,
+							&process_info,
+							&reviews,
+							&requested_reviewers,
+						)
+						.await?;
+						self.handle_status(local_state, &pull_request, &status)
+							.await?;
+					} else {
+						if self.feature_config.pr_issue_mention {
+							// leave a message that a corresponding issue must exist for
+							// each PR close the PR
+							log::info!(
+                                "Closing pull request '{issue_title:?}' as it addresses no issue in repo '{repo_name}'",
+                                issue_title = pull_request.title,
+                                repo_name = repo.name
+                            );
+							self.github_bot
+								.create_issue_comment(
+									&repo.name,
+									pull_request.number,
+									&CLOSE_FOR_NO_ISSUE
+										.replace("{author}", &author.login),
+								)
+								.await?;
+							self.github_bot
+								.close_pull_request(
+									&repo.name,
+									pull_request.number,
+								)
+								.await?;
+							local_state.alive = false;
+						}
+					}
+				} else {
+					/*
+					for issue in issues {
+						self.assign_issue_or_warn(
+							local_state,
+							process_info,
+							repo,
+							pull_request,
+							&issue,
+						)
+						.await?;
+					}
+					*/
 					self.require_reviewers(
-						&mut local_state,
+						local_state,
 						&pull_request,
 						process_info,
 						&reviews,
 						&requested_reviewers,
 					)
 					.await?;
-					self.handle_status(
-						&mut local_state,
-						&process_info,
-						&repo,
-						&pull_request,
-						&status,
-						&reviews,
-					)
-					.await?;
-				} else {
-                    if self.feature_config.pr_issue_mention {
-					// leave a message that a corresponding issue must exist for
-					// each PR close the PR
-					log::debug!(
-                        "Closing pull request '{issue_title:?}' as it addresses no issue in repo '{repo_name}'",
-                        issue_title = pull_request.title,
-                        repo_name = repo.name
-                    );
-					self.github_bot
-						.create_issue_comment(
-							&repo.name,
-							pull_request.number,
-							&CLOSE_FOR_NO_ISSUE)
+					self.handle_status(local_state, &pull_request, status)
 						.await?;
-					self.github_bot
-						.close_pull_request(&repo.name, pull_request.number)
-						.await?;
-                    }
 				}
-			} else {
-				// TODO consider all mentioned issues here
-				let issue = issues.first().unwrap();
-				self.handle_pull_request_with_issue_and_project(
-					&mut local_state,
-					process_info,
-					repo,
-					pull_request,
-					&issue,
-					&status,
-					&reviews,
-					&requested_reviewers,
-				)
-				.await?;
 			}
-		}
 
-        // 1+ projects
-		_ => {
-			if issues.len() == 0 {
-				if projects.iter().any(|(_, p)| p.is_special(&author.login)) {
-					// author is special so notify them that the pr needs an issue and project
-					// attached or it will be closed.
-					self.pr_author_core_no_project(
-						&mut local_state,
-						pull_request,
-						repo,
-					)
-					.await?;
-				} else {
-                    if self.feature_config.pr_issue_mention {
-					// the pr does not address an issue and the author is not special, so close it.
-					log::debug!(
-                        "Closing pull request '{issue_title:?}' as it addresses no issue in repo '{repo_name}'",
-                        issue_title = pull_request.title,
-                        repo_name = repo.name
-                    );
-					self.github_bot
-						.create_issue_comment(
-							&repo.name,
-							pull_request.number,
-							&CLOSE_FOR_NO_ISSUE,
-						)
-						.await?;
-					self.github_bot
-						.close_pull_request(&repo.name, pull_request.number)
-						.await?;
-                    }
-				}
-			} else {
-				// TODO consider all mentioned issues here
-				let issue = issues.first().unwrap();
-				if let Some((_, card)) = self.issue_actor_and_project_card(
-					&repo.name,
-					issue.number,
-				)
-				.await?
-				.or(self.issue_actor_and_project_card(
-					&repo.name,
-					pull_request.number,
-				)
-				.await?)
+			// 1+ projects
+			_ => {
+				if let Some(project) = if let Some(card) = self
+					.github_bot
+					.active_project_event(&repo.name, pull_request.number)
+					.await?
+					.and_then(|event| event.project_card)
 				{
-					let project: github::Project =
-						self.github_bot.project(&card).await?;
-
-					log::debug!(
-                        "Handling pull request '{issue_title:?}' in project '{project_name}' in repo '{repo_name}'",
-                        issue_title = pull_request.title,
-                        project_name = project.name,
-                        repo_name = repo.name
-                    );
-
-					if let Some(process_info) = projects
-						.iter()
-						.find(|(p, _)| {
-							p.as_ref()
-								.map_or(false, |p| &p.name == &project.name)
-						})
-						.map(|(_, p)| p)
+					Some(self.github_bot.project(&card).await?)
+				} else {
+					None
+				} {
+					if let Some(process_info) =
+						combined_process.get(&project.name)
 					{
-						self.handle_pull_request_with_issue_and_project(
-							&mut local_state,
-							process_info,
-							repo,
-							pull_request,
-							&issue,
-							&status,
-							&reviews,
-							&requested_reviewers,
-						)
-						.await?;
+						if issues.len() == 0 {
+							if process_info.is_special(&author.login) {
+								// owners and whitelisted devs can open prs without an attached issue.
+								self.require_reviewers(
+									local_state,
+									&pull_request,
+									&process_info,
+									&reviews,
+									&requested_reviewers,
+								)
+								.await?;
+								self.handle_status(
+									local_state,
+									&pull_request,
+									&status,
+								)
+								.await?;
+							} else {
+								if self.feature_config.pr_issue_mention {
+									// leave a message that a corresponding issue must exist for
+									// each PR close the PR
+									log::info!(
+                                        "Closing pull request '{issue_title:?}' as it addresses no issue in repo '{repo_name}'",
+                                        issue_title = pull_request.title,
+                                        repo_name = repo.name
+                                    );
+									self.github_bot
+										.create_issue_comment(
+											&repo.name,
+											pull_request.number,
+											&CLOSE_FOR_NO_ISSUE.replace(
+												"{author}",
+												&author.login,
+											),
+										)
+										.await?;
+									self.github_bot
+										.close_pull_request(
+											&repo.name,
+											pull_request.number,
+										)
+										.await?;
+									local_state.alive = false;
+								}
+							}
+						} else {
+							/*
+							for issue in issues {
+								self.assign_issue_or_warn(
+									local_state,
+									&process_info,
+									repo,
+									pull_request,
+									&issue,
+								)
+								.await?;
+							}
+							*/
+							self.require_reviewers(
+								local_state,
+								&pull_request,
+								&process_info,
+								&reviews,
+								&requested_reviewers,
+							)
+							.await?;
+							self.handle_status(
+								local_state,
+								&pull_request,
+								status,
+							)
+							.await?;
+						}
 					} else {
-                        // pull request addresses issue but project not listed in Process.toml
+						// pull request addresses issue but project not listed
+						// in Process.toml
 						// TODO clarify behaviour here
-						log::debug!(
-                            "Ignoring pull request '{issue_title:?}' in repo '{repo_name}' as it addresses an issue attached to a project not listed in Process.toml",
+						log::info!(
+                            "Ignoring pull request '{issue_title:?}' in repo '{repo_name}' as it is attached to a project not listed in Process.toml",
                             issue_title = pull_request.title,
                             repo_name = repo.name
                         );
 					}
 				} else {
-					// notify the author that this pr/issue needs a project attached or it will be
-					// closed.
-					log::debug!(
-                        "Pull request '{issue_title:?}' in repo '{repo_name}' addresses an issue unattached to any project",
+					// notify the author that this pr/issue needs a project attached
+					// or it will be closed.
+					log::info!(
+                        "Pull request '{issue_title:?}' in repo '{repo_name}' is not attached to a project",
                         issue_title = pull_request.title,
                         repo_name = repo.name
                     );
 
-					let author_is_special = projects
-						.iter()
-						.find(|(_, p)| p.is_special(&issue.user.login))
-						.is_some();
-
-					if author_is_core || author_is_special {
-						// author is a core developer or special of at least one
-						// project in the repo
+					if author_is_core {
 						self.pr_author_core_no_project(
-							&mut local_state,
+							local_state,
 							pull_request,
 							repo,
 						)
 						.await?;
 					} else {
 						self.pr_author_unknown_no_project(
-							&mut local_state,
+							local_state,
 							pull_request,
 							repo,
 						)
@@ -570,7 +556,6 @@ impl bots::Bot {
 				}
 			}
 		}
-	}
 
 		Ok(())
 	}

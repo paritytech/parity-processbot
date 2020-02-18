@@ -114,6 +114,8 @@ mod tests {
 	fn test_pull_requests() {
 		dotenv::dotenv().ok();
 
+		let installation = dotenv::var("TEST_INSTALLATION_LOGIN")
+			.expect("TEST_INSTALLATION_LOGIN");
 		let private_key_path =
 			dotenv::var("PRIVATE_KEY_PATH").expect("PRIVATE_KEY_PATH");
 		let private_key = std::fs::read(&private_key_path)
@@ -123,8 +125,9 @@ mod tests {
 
 		let mut rt = tokio::runtime::Runtime::new().expect("runtime");
 		rt.block_on(async {
-			let github_bot =
-				GithubBot::new(private_key).await.expect("github_bot");
+			let github_bot = GithubBot::new(private_key, &installation)
+				.await
+				.expect("github_bot");
 			let repo = github_bot
 				.repository(&test_repo_name)
 				.await

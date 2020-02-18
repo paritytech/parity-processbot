@@ -33,8 +33,65 @@ pub struct IssueProject {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct LocalStateVec {
+	key: Vec<u8>,
+	v: Vec<LocalState>,
+}
+
+impl LocalStateVec {
+	pub fn get_entry_or_default(&mut self, key: &[u8]) -> &mut LocalState {
+		if self.v.iter().find(|x| x.key == key).is_none() {
+			self.v.push(LocalState::default().with_key(key.to_vec()));
+		}
+		self.v.iter_mut().find(|x| x.key == key).unwrap()
+	}
+
+	pub fn persist(&mut self, db: &Arc<RwLock<DB>>) -> Result<()> {
+		self.update(db, &self.key)
+	}
+
+	pub fn filter<F>(self, f: F) -> LocalStateVec
+	where
+		F: Fn(&LocalState) -> bool,
+	{
+		LocalStateVec {
+			key: self.key,
+			v: self.v.into_iter().filter(f).collect::<Vec<LocalState>>(),
+		}
+	}
+
+	pub fn map<F>(self, f: F) -> LocalStateVec
+	where
+		F: FnMut(LocalState) -> LocalState,
+	{
+		LocalStateVec {
+			key: self.key,
+			v: self.v.into_iter().map(f).collect::<Vec<LocalState>>(),
+		}
+	}
+}
+
+impl DBEntry for LocalStateVec {
+	fn with_key(self, k: Vec<u8>) -> LocalStateVec {
+		let mut s = self;
+		s.key = k;
+		s
+	}
+}
+
+impl Default for LocalStateVec {
+	fn default() -> LocalStateVec {
+		Self {
+			key: vec![],
+			v: vec![],
+		}
+	}
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LocalState {
 	pub key: Vec<u8>,
+	pub alive: bool,
 	actions_taken: u32,
 	status_failure_ping: Option<SystemTime>,
 	issue_not_assigned_ping: Option<SystemTime>,
@@ -56,6 +113,7 @@ impl Default for LocalState {
 	fn default() -> LocalState {
 		LocalState {
 			key: vec![],
+			alive: false,
 			actions_taken: NoAction,
 			issue_not_assigned_ping: None,
 			issue_no_project_ping: None,
@@ -76,6 +134,11 @@ impl Default for LocalState {
 }
 
 impl LocalState {
+	pub fn map_alive(mut self, alive: bool) -> LocalState {
+		self.alive = alive;
+		self
+	}
+
 	pub fn actions_taken(&self) -> u32 {
 		self.actions_taken
 	}

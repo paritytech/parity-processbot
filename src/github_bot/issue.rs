@@ -1,6 +1,6 @@
 use crate::{error, github, Result};
 
-use snafu::{OptionExt, ResultExt};
+use snafu::ResultExt;
 
 use super::GithubBot;
 
@@ -18,12 +18,11 @@ impl GithubBot {
 	}
 
 	/// Returns a list of issues mentioned in the body of a pull request.
-	pub async fn pull_request_issues(
+	pub async fn linked_issues(
 		&self,
 		repo: &github::Repository,
-		pull_request: &github::PullRequest,
+		body: &str,
 	) -> Result<Vec<github::Issue>> {
-		let body = pull_request.body.as_ref().context(error::MissingData)?;
 		let re = Regex::new(r"#([0-9]+)").unwrap();
 		Ok(futures::future::join_all(
 			re.captures_iter(body)
@@ -89,29 +88,43 @@ impl GithubBot {
 			.context(error::Http)
 	}
 
-	/// Adds a comment to an issue.
-	pub async fn create_issue_comment<A, B>(
+	/// Fetches the list of comments on an issue.
+	pub async fn get_issue_comments(
 		&self,
-		repo_name: A,
+		repo_name: &str,
 		issue_number: i64,
-		comment: B,
-	) -> Result<()>
-	where
-		A: AsRef<str>,
-		B: AsRef<str>,
-	{
+	) -> Result<Vec<github::Comment>> {
+		let url = format!(
+			"{base}/repos/{owner}/{repo}/issues/{issue_number}/comments",
+			base = Self::BASE_URL,
+			owner = self.organization.login,
+			repo = repo_name,
+			issue_number = issue_number
+		);
+		self.client
+			.get_response(&url, &serde_json::json!({}))
+			.await?
+			.json()
+			.await
+			.context(error::Http)
+	}
+
+	/// Adds a comment to an issue.
+	pub async fn create_issue_comment(
+		&self,
+		repo_name: &str,
+		issue_number: i64,
+		comment: &str,
+	) -> Result<()> {
 		let url = format!(
 			"{base}/repos/{org}/{repo}/issues/{issue_number}/comments",
 			base = Self::BASE_URL,
 			org = self.organization.login,
-			repo = repo_name.as_ref(),
+			repo = repo_name,
 			issue_number = issue_number
 		);
 		self.client
-			.post_response(
-				&url,
-				&serde_json::json!({ "body": comment.as_ref() }),
-			)
+			.post_response(&url, &serde_json::json!({ "body": comment }))
 			.await
 			.map(|_| ())
 	}
@@ -175,6 +188,8 @@ mod tests {
 	fn test_issues() {
 		dotenv::dotenv().ok();
 
+		let installation = dotenv::var("TEST_INSTALLATION_LOGIN")
+			.expect("TEST_INSTALLATION_LOGIN");
 		let private_key_path =
 			dotenv::var("PRIVATE_KEY_PATH").expect("PRIVATE_KEY_PATH");
 		let private_key = std::fs::read(&private_key_path)
@@ -184,8 +199,9 @@ mod tests {
 
 		let mut rt = tokio::runtime::Runtime::new().expect("runtime");
 		rt.block_on(async {
-			let github_bot =
-				GithubBot::new(private_key).await.expect("github_bot");
+			let github_bot = GithubBot::new(private_key, &installation)
+				.await
+				.expect("github_bot");
 			let repo = github_bot
 				.repository(&test_repo_name)
 				.await
@@ -224,7 +240,10 @@ mod tests {
 				.await
 				.expect("create_pull_request");
 			let pr_issues = github_bot
-				.pull_request_issues(&repo, &created_pr)
+				.linked_issues(
+					&repo,
+					&created_pr.body.expect("created_pr body"),
+				)
 				.await
 				.expect("issue");
 			assert!(pr_issues.iter().any(|x| x.number == created_issue.number));
@@ -232,10 +251,10 @@ mod tests {
 				.close_issue(&test_repo_name, created_issue.number)
 				.await
 				.expect("close_pull_request");
-			let issues = dbg!(github_bot
+			let issues = github_bot
 				.repository_issues(&repo)
 				.await
-				.expect("repo issues"));
+				.expect("repo issues");
 			assert!(!issues.iter().any(|pr| pr
 				.title
 				.as_ref()
