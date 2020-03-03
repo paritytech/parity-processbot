@@ -1,10 +1,8 @@
 use crate::local_state::*;
 use crate::{
-	bots, constants::*, duration_ticks::DurationTicks, error, github, process,
-	Result,
+	bots, constants::*, duration_ticks::DurationTicks, github, process, Result,
 };
 use itertools::Itertools;
-use snafu::OptionExt;
 use std::time::SystemTime;
 
 impl bots::Bot {

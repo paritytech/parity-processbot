@@ -156,26 +156,6 @@ impl Bot {
 					//
 					// CHECK PROJECT / PROCESS
 					//
-					let project_events = &futures::future::join_all(
-						issues.iter().map(|issue| {
-							self.github_bot
-								.active_project_event(&repo.name, issue.number)
-								.map(|x| x.ok().flatten())
-						}),
-					)
-					.await;
-					let issue_projects = issues
-						.iter()
-						.zip(
-							Self::projects_from_project_events(
-								&project_events,
-								&projects,
-							)
-							.into_iter(),
-						)
-						.collect::<Vec<(&github::Issue, Option<github::Project>)>>(
-						);
-
 					let issue_numbers = std::iter::once(pr.number)
 						.chain(issues.iter().map(|issue| issue.number))
 						.collect::<Vec<i64>>();
@@ -234,12 +214,7 @@ impl Bot {
 						// owners and whitelisted devs can open prs without an attached issue.
 					} else if issues.is_empty() {
 						// author is not special and no issue addressed.
-						self.close_for_missing_issue(
-							&combined_process,
-							&repo,
-							&pr,
-						)
-						.await?;
+						self.close_for_missing_issue(&repo, &pr).await?;
 						local_state.alive = false;
 						continue 'issue_loop;
 					}
@@ -247,7 +222,9 @@ impl Bot {
 					//
 					// CHECK ISSUE ASSIGNED CORRECTLY
 					//
-					for (issue, maybe_project) in issue_projects {
+					for (issue, maybe_project) in
+						self.issue_projects(&repo, &issues, &projects).await
+					{
 						if let Some(process_info) = maybe_project
 							.and_then(|proj| combined_process.get(&proj.name))
 						{
@@ -354,6 +331,29 @@ impl Bot {
 			),
 			processes,
 		))
+	}
+
+	pub async fn issue_projects<'a>(
+		&self,
+		repo: &github::Repository,
+		issues: &'a [github::Issue],
+		projects: &[github::Project],
+	) -> Vec<(&'a github::Issue, Option<github::Project>)> {
+		issues
+			.iter()
+			.zip(
+				Self::projects_from_project_events(
+					&futures::future::join_all(issues.iter().map(|issue| {
+						self.github_bot
+							.active_project_event(&repo.name, issue.number)
+							.map(|x| x.ok().flatten())
+					}))
+					.await,
+					&projects,
+				)
+				.into_iter(),
+			)
+			.collect::<_>()
 	}
 
 	pub fn projects_from_project_events(

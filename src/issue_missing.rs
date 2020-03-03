@@ -1,24 +1,18 @@
-use crate::{
-	bots, constants::*, db::*, duration_ticks::DurationTicks, error, github,
-	local_state::*, process, Result,
-};
-use snafu::OptionExt;
-use std::time::{Duration, SystemTime};
+use crate::{bots, constants::*, github, Result};
 
 impl bots::Bot {
 	pub async fn close_for_missing_issue(
 		&self,
-		combined_process: &process::CombinedProcessInfo,
 		repo: &github::Repository,
 		pull_request: &github::PullRequest,
 	) -> Result<()> {
 		// leave a message that a corresponding issue must exist for
-		// each PR close the PR
+		// each PR then close the PR
 		log::info!(
-                "Closing pull request '{issue_title:?}' as it addresses no issue in repo '{repo_name}'",
-                issue_title = pull_request.title,
-                repo_name = repo.name
-            );
+            "Closing pull request '{issue_title:?}' as it addresses no issue in repo '{repo_name}'",
+            issue_title = pull_request.title,
+            repo_name = repo.name
+        );
 		self.github_bot
 			.create_issue_comment(
 				&repo.name,
@@ -33,6 +27,7 @@ impl bots::Bot {
 		Ok(())
 	}
 
+	/*
 	/// Return the project card attached to an issue, if there is one, and the user who attached it
 	pub async fn issue_actor_and_project_card(
 		&self,
@@ -58,6 +53,7 @@ impl bots::Bot {
 		process_info: &process::ProcessInfo,
 		project: &github::Project,
 	) -> Result<()> {
+		use snafu::OptionExt;
 		// get the project's backlog column or use the default
 		if let Some(backlog_column) = self
 			.github_bot
@@ -102,7 +98,6 @@ impl bots::Bot {
 		Ok(())
 	}
 
-	/*
 	fn author_non_special_project_state_none(
 		&self,
 		local_state: &mut LocalState,

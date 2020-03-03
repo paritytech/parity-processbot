@@ -2,7 +2,7 @@ use futures_util::future::FutureExt;
 use snafu::OptionExt;
 
 use crate::{
-	bots, constants::*, db::*, duration_ticks::DurationTicks, error, github,
+	bots, constants::*, duration_ticks::DurationTicks, error, github,
 	local_state::LocalState, Result,
 };
 

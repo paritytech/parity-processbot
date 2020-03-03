@@ -202,6 +202,7 @@ impl bots::Bot {
 		Ok(())
 	}
 
+	/*
 	fn send_needs_project_message(
 		&self,
 		github_login: &str,
@@ -209,9 +210,9 @@ impl bots::Bot {
 		repo: &github::Repository,
 	) -> Result<()> {
 		let msg = format!("Pull request '{issue_title:?}' in repo '{repo_name}' needs a project attached or it will be closed.",
-        issue_title = pull_request.title,
-        repo_name = repo.name
-    );
+		issue_title = pull_request.title,
+		repo_name = repo.name
+	);
 		self.matrix_bot.message_mapped_or_default(
 			&self.db,
 			&self.github_to_matrix,
@@ -333,10 +334,10 @@ impl bots::Bot {
 				// notify the author that this pr/issue needs a project attached
 				// or it will be closed.
 				log::info!(
-                    "Pull request '{issue_title:?}' in repo '{repo_name}' is not attached to a project",
-                    issue_title = pull_request.title,
-                    repo_name = repo.name
-                );
+					"Pull request '{issue_title:?}' in repo '{repo_name}' is not attached to a project",
+					issue_title = pull_request.title,
+					repo_name = repo.name
+				);
 
 				if author_is_core {
 					self.pr_author_core_no_project(
@@ -360,11 +361,11 @@ impl bots::Bot {
 				let process_info = combined_process.iter().last().unwrap();
 
 				log::info!(
-                    "Handling pull request '{issue_title:?}' in project '{project_name:?}' in repo '{repo_name}'",
-                    issue_title = pull_request.title,
-                    project_name = process_info.project_name,
-                    repo_name = repo.name
-                );
+					"Handling pull request '{issue_title:?}' in project '{project_name:?}' in repo '{repo_name}'",
+					issue_title = pull_request.title,
+					project_name = process_info.project_name,
+					repo_name = repo.name
+				);
 
 				if issues.len() == 0 {
 					if combined_process.is_special(&author.login) {
@@ -384,10 +385,10 @@ impl bots::Bot {
 							// leave a message that a corresponding issue must exist for
 							// each PR close the PR
 							log::info!(
-                                "Closing pull request '{issue_title:?}' as it addresses no issue in repo '{repo_name}'",
-                                issue_title = pull_request.title,
-                                repo_name = repo.name
-                            );
+								"Closing pull request '{issue_title:?}' as it addresses no issue in repo '{repo_name}'",
+								issue_title = pull_request.title,
+								repo_name = repo.name
+							);
 							self.github_bot
 								.create_issue_comment(
 									&repo.name,
@@ -468,10 +469,10 @@ impl bots::Bot {
 									// leave a message that a corresponding issue must exist for
 									// each PR close the PR
 									log::info!(
-                                        "Closing pull request '{issue_title:?}' as it addresses no issue in repo '{repo_name}'",
-                                        issue_title = pull_request.title,
-                                        repo_name = repo.name
-                                    );
+										"Closing pull request '{issue_title:?}' as it addresses no issue in repo '{repo_name}'",
+										issue_title = pull_request.title,
+										repo_name = repo.name
+									);
 									self.github_bot
 										.create_issue_comment(
 											&repo.name,
@@ -524,19 +525,19 @@ impl bots::Bot {
 						// in Process.toml
 						// TODO clarify behaviour here
 						log::info!(
-                            "Ignoring pull request '{issue_title:?}' in repo '{repo_name}' as it is attached to a project not listed in Process.toml",
-                            issue_title = pull_request.title,
-                            repo_name = repo.name
-                        );
+							"Ignoring pull request '{issue_title:?}' in repo '{repo_name}' as it is attached to a project not listed in Process.toml",
+							issue_title = pull_request.title,
+							repo_name = repo.name
+						);
 					}
 				} else {
 					// notify the author that this pr/issue needs a project attached
 					// or it will be closed.
 					log::info!(
-                        "Pull request '{issue_title:?}' in repo '{repo_name}' is not attached to a project",
-                        issue_title = pull_request.title,
-                        repo_name = repo.name
-                    );
+						"Pull request '{issue_title:?}' in repo '{repo_name}' is not attached to a project",
+						issue_title = pull_request.title,
+						repo_name = repo.name
+					);
 
 					if author_is_core {
 						self.pr_author_core_no_project(
@@ -559,4 +560,5 @@ impl bots::Bot {
 
 		Ok(())
 	}
+	*/
 }

@@ -9,15 +9,14 @@ pub mod error;
 pub mod github;
 pub mod github_bot;
 pub mod http;
-pub mod issue;
+pub mod issue_assignment;
+pub mod issue_missing;
+pub mod issue_project;
 pub mod local_state;
 pub mod matrix;
 pub mod matrix_bot;
 pub mod process;
-pub mod project;
-pub mod pull_request;
 pub mod review;
 pub mod status;
-pub mod user;
 
 pub type Result<T> = std::result::Result<T, error::Error>;

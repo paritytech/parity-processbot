@@ -1,6 +1,5 @@
-use crate::{bots, constants::*, error, github, process, Result};
+use crate::{bots, constants::*, github, process, Result};
 use itertools::Itertools;
-use snafu::OptionExt;
 
 #[derive(Debug, Clone)]
 pub struct AutoMergeRequest {

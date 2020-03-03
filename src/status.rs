@@ -1,7 +1,4 @@
-use crate::{
-	bots, constants::*, error, github, local_state::*, matrix, Result,
-};
-use snafu::OptionExt;
+use crate::{bots, constants::*, github, local_state::*, matrix, Result};
 use std::time::SystemTime;
 
 impl bots::Bot {
