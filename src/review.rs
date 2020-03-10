@@ -183,10 +183,8 @@ impl bots::Bot {
 				.chain(requested_reviewers.users.iter().by_ref())
 				.any(|u| process_info.owner_or_delegate() == &u.login);
 
-			let author_info =
-				process_info.author_info(&pull_request.user.login);
-
-			if !author_info.is_owner_or_delegate && !owner_or_delegate_requested
+			if !process_info.is_owner_or_delegate(&pull_request.user.login)
+				&& !owner_or_delegate_requested
 			{
 				// author is not the owner/delegate and a review from the owner/delegate has not yet been
 				// requested. request a review from the owner/delegate.

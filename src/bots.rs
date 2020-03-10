@@ -72,13 +72,12 @@ impl Bot {
 				.ok()
 				.flatten();
 
+			// ignore repos with no valid process file
 			if maybe_process.is_none() {
 				continue 'repo_loop;
 			}
-			let process = maybe_process.unwrap();
-			repos_with_process += 1;
-			num_process += process.len();
 
+			// ignore repos with no projects
 			let projects = self.github_bot.projects(&repo.name).await?;
 			if projects.is_empty() {
 				log::warn!(
@@ -88,20 +87,39 @@ impl Bot {
 				continue 'repo_loop;
 			}
 
-			let unmatched_process = process
-				.iter()
+			// ignore process entries that do not match a project in the repository
+			let (_features, process): (Vec<process::ProcessWrapper>, Vec<process::ProcessWrapper>) = maybe_process.unwrap()
+				.into_iter()
 				.filter(|proc| {
-					!projects.iter().all(|proj| proj.name != proc.project_name)
+                    match proc {
+                        process::ProcessWrapper::Features(_) => true,
+                        process::ProcessWrapper::Project(proc) => {
+                            let keep = projects.iter().any(|proj| proj.name == proc.project_name);
+                            if !keep {
+                                log::warn!(
+                                    "'{proc_name}' in Process.toml file doesn't match any projects in repository '{repo_name}'",
+                                    proc_name = proc.project_name,
+                                    repo_name = repo.name,
+                                );
+                            }
+                            keep
+                        }
+                    }
 				})
-				.collect::<Vec<&process::ProcessInfo>>();
-			for proc in &unmatched_process {
-				log::warn!(
-					"'{proc_name}' in Process.toml file doesn't match any projects in repository '{repo_name}'",
-                    proc_name = proc.project_name,
-					repo_name = repo.name,
-				);
-			}
-			if process.len() == unmatched_process.len() {
+                .partition(|proc| match proc {
+                    process::ProcessWrapper::Features(_) => true,
+                    process::ProcessWrapper::Project(_) => false,
+                });
+			let process = process
+				.into_iter()
+				.map(|w| match w {
+					process::ProcessWrapper::Project(p) => p,
+					_ => panic!(),
+				})
+				.collect::<Vec<process::ProcessInfo>>();
+
+			// ignore repos with no matching process entries
+			if process.is_empty() {
 				log::warn!(
 					"Process.toml file doesn't match any projects in repository '{repo_name}'",
 					repo_name = repo.name,
@@ -109,12 +127,18 @@ impl Bot {
 				continue 'repo_loop;
 			}
 
+			repos_with_process += 1;
+			num_process += process.len();
+
 			'issue_loop: for issue in
 				self.github_bot.repository_issues(&repo).await?
 			{
 				let mut local_state = statevec
 					.get_entry_or_default(&format!("{}", issue.id).as_bytes());
 				local_state.alive = true;
+
+				let author_is_core =
+					self.core_devs.iter().any(|u| u.id == issue.user.id);
 
 				if issue.pull_request.is_some() {
 					// issue is a pull request
@@ -167,16 +191,29 @@ impl Bot {
 							&process,
 						)
 						.await;
+
 					let pr_project = self
-						.check_issue_project(
+						.issue_project(&repo.name, pr.number, &projects)
+						.await;
+
+					// ignore issue attached to project not listed in process file
+					if pr_project.is_some() && !combined_process.has_primary() {
+						continue 'issue_loop;
+					}
+
+					// if the issue has no project but:
+					// - there is only one project in the repo, OR
+					// - the author is owner/whitelisted on only one.
+					// then attach that project
+					if pr_project.is_none() {
+						self.try_attach_project(
 							&mut local_state,
-							&repo,
 							&pr,
 							&projects,
+							&process,
+							author_is_core,
 						)
 						.await?;
-					if pr_project.is_some() && !combined_process.has_primary() {
-						continue 'issue_loop; // PR belongs to a project not listed in Process.toml
 					}
 
 					//
@@ -276,13 +313,35 @@ impl Bot {
 					//
 					// CHECK PROJECT
 					//
-					self.check_issue_project(
-						&mut local_state,
-						&repo,
-						&issue,
-						&projects,
-					)
-					.await?;
+					let issue_project = self
+						.issue_project(&repo.name, issue.number, &projects)
+						.await;
+
+					// ignore issue attached to project not listed in process file
+					if issue_project.is_some()
+						&& process::process_matching_project(
+							&process,
+							issue_project.unwrap(),
+						)
+						.is_some()
+					{
+						continue 'issue_loop;
+					}
+
+					// if the issue has no project but:
+					// - there is only one project in the repo, OR
+					// - the author is owner/whitelisted on only one.
+					// then attach that project
+					if issue_project.is_none() {
+						self.try_attach_project(
+							&mut local_state,
+							&issue,
+							&projects,
+							&process,
+							author_is_core,
+						)
+						.await?;
+					}
 				}
 			}
 		}

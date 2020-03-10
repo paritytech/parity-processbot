@@ -1,5 +1,5 @@
-use crate::{error, github, Result};
-use snafu::{OptionExt, ResultExt};
+use crate::{constants::*, error, github, Result};
+use snafu::ResultExt;
 
 #[derive(Clone, Debug)]
 pub struct CombinedProcessInfo {
@@ -133,6 +133,22 @@ struct ProcessInfoTemp {
 }
 
 #[derive(Clone, Debug)]
+pub struct ProcessFeatures {
+	pub auto_merge: bool,
+	pub issue_project: bool,
+	pub issue_addressed: bool,
+	pub issue_assigned: bool,
+	pub review_requests: bool,
+	pub status_notifications: bool,
+}
+
+#[derive(Clone, Debug)]
+pub enum ProcessWrapper {
+	Features(ProcessFeatures),
+	Project(ProcessInfo),
+}
+
+#[derive(Clone, Debug)]
 pub struct ProcessInfo {
 	pub project_name: String,
 	pub owner: String,
@@ -142,32 +158,9 @@ pub struct ProcessInfo {
 	pub backlog: Option<String>,
 }
 
-#[derive(Default, Debug, Clone, Copy)]
-pub struct AuthorInfo {
-	pub is_owner_or_delegate: bool,
-	pub is_whitelisted: bool,
-}
-
-impl AuthorInfo {
-	pub fn is_special(&self) -> bool {
-		self.is_owner_or_delegate || self.is_whitelisted
-	}
-}
-
 impl ProcessInfo {
 	pub fn owner_or_delegate(&self) -> &String {
 		self.delegated_reviewer.as_ref().unwrap_or(&self.owner)
-	}
-
-	pub fn author_info(&self, login: &str) -> AuthorInfo {
-		let is_owner = self.is_owner(login);
-		let is_delegated_reviewer = self.is_delegated_reviewer(login);
-		let is_whitelisted = self.is_whitelisted(login);
-
-		AuthorInfo {
-			is_owner_or_delegate: is_owner || is_delegated_reviewer,
-			is_whitelisted,
-		}
 	}
 
 	/// Checks if the owner of the project matches the login given.
@@ -203,6 +196,15 @@ impl ProcessInfo {
 	}
 }
 
+pub fn process_matching_project<'a>(
+	processes: &'a [ProcessInfo],
+	project: &github::Project,
+) -> Option<&'a ProcessInfo> {
+	processes
+		.iter()
+		.find(|proc| project.name == proc.project_name)
+}
+
 pub fn process_from_projects(
 	projects: &[Option<github::Project>],
 	processes: &[ProcessInfo],
@@ -210,87 +212,80 @@ pub fn process_from_projects(
 	projects
 		.iter()
 		.map(|proj| {
-			processes
-				.iter()
-				.find(|proc| {
-					proj.as_ref().map_or(false, |p| p.name == proc.project_name)
-				})
+			proj.as_ref()
+				.and_then(|proj| process_matching_project(processes, proj))
 				.cloned()
 		})
 		.collect::<_>()
 }
 
-pub fn process_from_contents(c: github::Contents) -> Result<Vec<ProcessInfo>> {
+pub fn process_from_contents(
+	c: github::Contents,
+) -> Result<Vec<ProcessWrapper>> {
 	base64::decode(&c.content.replace("\n", ""))
 		.context(error::Base64)
 		.and_then(|s| {
 			toml::from_slice::<toml::value::Table>(&s).context(error::Toml)
 		})
-		.and_then(process_from_table)
+		.map(process_from_table)
 }
 
-pub fn process_from_table(tab: toml::value::Table) -> Result<Vec<ProcessInfo>> {
-	let temp = tab
-		.into_iter()
-		.filter_map(|(key, val)| match val {
-			toml::value::Value::Table(ref tab) => Some(ProcessInfoTemp {
-				project_name: key,
-				owner: tab
-					.get("owner")
-					.and_then(toml::value::Value::as_str)
-					.map(str::to_owned),
-				delegated_reviewer: tab
-					.get("delegated_reviewer")
-					.and_then(toml::value::Value::as_str)
-					.map(str::to_owned),
-				whitelist: tab
-					.get("whitelist")
-					.and_then(toml::value::Value::as_array)
-					.map(|a| {
-						a.iter()
-							.filter_map(toml::value::Value::as_str)
-							.map(str::to_owned)
-							.collect::<Vec<String>>()
-					}),
-				matrix_room_id: tab
-					.get("matrix_room_id")
-					.and_then(toml::value::Value::as_str)
-					.map(str::to_owned),
-				backlog: tab
-					.get("backlog")
-					.and_then(toml::value::Value::as_str)
-					.map(str::to_owned),
-			}),
-			_ => None,
-		})
-		.collect::<Vec<ProcessInfoTemp>>();
-	if temp
-		.iter()
-		.any(|p| p.owner.is_none() || p.matrix_room_id.is_none())
-	{
-		None.context(error::MissingData)
-	} else {
-		Ok(temp
-			.into_iter()
-			.map(
-				|ProcessInfoTemp {
-				     project_name,
-				     owner,
-				     delegated_reviewer,
-				     whitelist,
-				     matrix_room_id,
-				     backlog,
-				 }| {
-					ProcessInfo {
-						project_name,
-						owner: owner.unwrap(),
-						delegated_reviewer,
-						whitelist: whitelist.unwrap_or(vec![]),
-						matrix_room_id: matrix_room_id.unwrap(),
-						backlog,
+pub fn process_from_table(tab: toml::value::Table) -> Vec<ProcessWrapper> {
+	tab.into_iter()
+		.filter_map(|(key, val)| {
+			if key == FEATURES_KEY {
+				//				match val {
+				//					toml::value::Value::Table(ref tab) => {
+				//                   }
+				//              }
+				None
+			} else {
+				match val {
+					toml::value::Value::Table(ref tab) => {
+						if tab.get("owner").is_none()
+							|| tab.get("whitelist").is_none()
+							|| tab.get("matrix_room_id").is_none()
+						{
+							None
+						} else {
+							Some(ProcessWrapper::Project(ProcessInfo {
+								project_name: key,
+								owner: tab
+									.get("owner")
+									.and_then(toml::value::Value::as_str)
+									.map(str::to_owned)
+									.unwrap(),
+								delegated_reviewer: tab
+									.get("delegated_reviewer")
+									.and_then(toml::value::Value::as_str)
+									.map(str::to_owned),
+								whitelist: tab
+									.get("whitelist")
+									.and_then(toml::value::Value::as_array)
+									.map(|a| {
+										a.iter()
+											.filter_map(
+												toml::value::Value::as_str,
+											)
+											.map(str::to_owned)
+											.collect::<Vec<String>>()
+									})
+									.unwrap(),
+								matrix_room_id: tab
+									.get("matrix_room_id")
+									.and_then(toml::value::Value::as_str)
+									.map(str::to_owned)
+									.unwrap(),
+								backlog: tab
+									.get("backlog")
+									.and_then(toml::value::Value::as_str)
+									.map(str::to_owned),
+							}))
+						}
 					}
-				},
-			)
-			.collect::<Vec<ProcessInfo>>())
-	}
+					_ => None,
+				}
+			}
+		})
+		.collect::<_>()
 }

@@ -46,58 +46,6 @@ impl bots::Bot {
 			}))
 	}
 
-	async fn author_special_attach_only_project(
-		&self,
-		local_state: &mut LocalState,
-		issue: &github::Issue,
-		process_info: &process::ProcessInfo,
-		project: &github::Project,
-	) -> Result<()> {
-		use snafu::OptionExt;
-		// get the project's backlog column or use the default
-		if let Some(backlog_column) = self
-			.github_bot
-			.project_column_by_name(
-				project,
-				process_info
-					.backlog
-					.as_ref()
-					.unwrap_or(&BACKLOG_DEFAULT_NAME.to_owned()),
-			)
-			.await?
-		{
-			local_state.update_issue_project(
-				Some(IssueProject {
-					state: IssueProjectState::Confirmed,
-					actor_login: issue.user.login.clone(),
-					project_column_id: backlog_column.id,
-				}),
-				&self.db,
-			)?;
-			self.github_bot
-				.create_project_card(
-					backlog_column.id,
-					issue.id,
-					github::ProjectCardContentType::Issue,
-				)
-				.await?;
-		} else {
-			self.matrix_bot.send_to_room(
-				&process_info.matrix_room_id,
-				&PROJECT_NEEDS_BACKLOG
-					.replace("{owner}", process_info.owner_or_delegate())
-					.replace(
-						"{project_url}",
-						project
-							.html_url
-							.as_ref()
-							.context(error::MissingData)?,
-					),
-			)?;
-		}
-		Ok(())
-	}
-
 	fn author_non_special_project_state_none(
 		&self,
 		local_state: &mut LocalState,

@@ -2,6 +2,8 @@ pub const AUTO_MERGE_REQUEST: &str = "bot merge";
 pub const AUTO_MERGE_REQUEST_CANCELLED: &str = "bot merge cancel";
 pub const AUTO_MERGE_REQUEST_COMPLETE: &str = "bot merge complete";
 
+pub const FEATURES_KEY: &str = "features";
+
 pub const PROJECT_NEEDS_BACKLOG: &str =
 	"@{owner}, {project_url} needs a backlog column.";
 
