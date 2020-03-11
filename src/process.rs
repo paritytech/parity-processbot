@@ -309,7 +309,7 @@ pub fn process_from_table(tab: toml::value::Table) -> Vec<ProcessWrapper> {
 											.map(str::to_owned)
 											.collect::<Vec<String>>()
 									})
-									.unwrap(),
+									.unwrap_or(vec![]),
 								matrix_room_id: tab
 									.get("matrix_room_id")
 									.and_then(toml::value::Value::as_str)
