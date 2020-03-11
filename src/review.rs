@@ -138,93 +138,87 @@ impl bots::Bot {
 		reviews: &[github::Review],
 		requested_reviewers: &github::RequestedReviewers,
 	) -> Result<()> {
-		if self.feature_config.pr_require_reviews {
-			log::debug!(
-				"Checking if reviews required on {}",
-				pull_request.html_url
-			);
+		log::debug!(
+			"Checking if reviews required on {}",
+			pull_request.html_url
+		);
 
-			for review in reviews.iter().sorted_by_key(|r| r.submitted_at) {
-				local_state.update_review(
-					review.user.login.clone(),
-					review.state.unwrap(),
-					&self.db,
-				)?;
-			}
-			// TODO check for code change and repeat
+		for review in reviews.iter().sorted_by_key(|r| r.submitted_at) {
+			local_state.update_review(
+				review.user.login.clone(),
+				review.state.unwrap(),
+				&self.db,
+			)?;
+		}
+		// TODO check for code change and repeat
 
-			for user in requested_reviewers.users.iter() {
-				match local_state.review_from_user(&user.login) {
-					None | Some(github::ReviewState::Pending) => {
-						self.review_reminder(
-							local_state,
-							process_info,
-							pull_request,
-							user,
-						)?;
-					}
-					_ => {}
+		for user in requested_reviewers.users.iter() {
+			match local_state.review_from_user(&user.login) {
+				None | Some(github::ReviewState::Pending) => {
+					self.review_reminder(
+						local_state,
+						process_info,
+						pull_request,
+						user,
+					)?;
 				}
+				_ => {}
 			}
+		}
 
-			let reviewer_count = {
-				let mut users = reviews
-					.iter()
-					.map(|r| &r.user)
-					.chain(requested_reviewers.users.iter().by_ref())
-					.collect::<Vec<&github::User>>();
-				users.dedup_by_key(|u| &u.login);
-				users.len()
-			};
-
-			let owner_or_delegate_requested = reviews
+		let reviewer_count = {
+			let mut users = reviews
 				.iter()
 				.map(|r| &r.user)
 				.chain(requested_reviewers.users.iter().by_ref())
-				.any(|u| process_info.owner_or_delegate() == &u.login);
+				.collect::<Vec<&github::User>>();
+			users.dedup_by_key(|u| &u.login);
+			users.len()
+		};
 
-			if !process_info.is_owner_or_delegate(&pull_request.user.login)
-				&& !owner_or_delegate_requested
-			{
-				// author is not the owner/delegate and a review from the owner/delegate has not yet been
-				// requested. request a review from the owner/delegate.
-				log::debug!(
-					"Requesting a review on {} from the project owner, {}.",
-					pull_request.html_url,
-					&process_info.owner_or_delegate(),
-				);
-				let github_login = process_info.owner_or_delegate();
-				if let Some(matrix_id) = self.github_to_matrix.get(github_login)
-				{
-					self.matrix_bot.send_private_message(
-						&self.db,
-						&matrix_id,
-						&REQUEST_DELEGATED_REVIEW_MESSAGE
-							.replace("{1}", &pull_request.html_url),
-					)?;
-					self.github_bot
-						.request_reviews(
-							&pull_request,
-							&[github_login.as_ref()],
-						)
-						.await?;
-				} else {
-					log::error!(
+		let owner_or_delegate_requested = reviews
+			.iter()
+			.map(|r| &r.user)
+			.chain(requested_reviewers.users.iter().by_ref())
+			.any(|u| process_info.owner_or_delegate() == &u.login);
+
+		if !process_info.is_owner_or_delegate(&pull_request.user.login)
+			&& !owner_or_delegate_requested
+		{
+			// author is not the owner/delegate and a review from the owner/delegate has not yet been
+			// requested. request a review from the owner/delegate.
+			log::debug!(
+				"Requesting a review on {} from the project owner, {}.",
+				pull_request.html_url,
+				&process_info.owner_or_delegate(),
+			);
+			let github_login = process_info.owner_or_delegate();
+			if let Some(matrix_id) = self.github_to_matrix.get(github_login) {
+				self.matrix_bot.send_private_message(
+					&self.db,
+					&matrix_id,
+					&REQUEST_DELEGATED_REVIEW_MESSAGE
+						.replace("{1}", &pull_request.html_url),
+				)?;
+				self.github_bot
+					.request_reviews(&pull_request, &[github_login.as_ref()])
+					.await?;
+			} else {
+				log::error!(
                         "Couldn't send a message to {}; either their Github or Matrix handle is not set in Bamboo",
                         &github_login
                     );
-				}
 			}
+		}
 
-			if reviewer_count < self.config.min_reviewers {
-				// post a message in the project's Riot channel, requesting a review;
-				// repeat this message every 24 hours until a reviewer is assigned.
-				self.public_reviews_request(
-					local_state,
-					process_info,
-					pull_request,
-				)?;
-			}
+		if reviewer_count < self.config.min_reviewers {
+			// post a message in the project's Riot channel, requesting a review;
+			// repeat this message every 24 hours until a reviewer is assigned.
+			self.public_reviews_request(
+				local_state,
+				process_info,
+				pull_request,
+			)?;
 		}
 
 		Ok(())

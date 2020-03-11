@@ -6,14 +6,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::{
-	config::{BotConfig, FeatureConfig},
-	constants::*,
-	db::*,
-	error, github,
-	github_bot::GithubBot,
-	local_state::*,
-	matrix_bot::MatrixBot,
-	process, Result,
+	config::BotConfig, constants::*, db::*, error, github,
+	github_bot::GithubBot, local_state::*, matrix_bot::MatrixBot, process,
+	Result,
 };
 
 const STATS_MSG: &str = "Organization {org_login}:\n- Repositories with valid Process files: {repos_with_process}\n- Projects in all repositories: {num_projects}\n- Process entries (including owner & matrix room) in all repositories: {num_process}\n- Developers with Github and Matrix handles in BambooHR: {github_to_matrix}\n- Core developers: {core_devs}\n- Open pull requests: {open_prs}\n- Open issues: {open_issues}";
@@ -25,7 +20,6 @@ pub struct Bot {
 	pub core_devs: Vec<github::User>,
 	pub github_to_matrix: HashMap<String, String>,
 	pub config: BotConfig,
-	pub feature_config: FeatureConfig,
 }
 
 impl Bot {
@@ -43,7 +37,6 @@ impl Bot {
 			core_devs,
 			github_to_matrix,
 			config: BotConfig::from_env(),
-			feature_config: FeatureConfig::from_env(),
 		}
 	}
 
@@ -88,7 +81,7 @@ impl Bot {
 			}
 
 			// ignore process entries that do not match a project in the repository
-			let (_features, process): (Vec<process::ProcessWrapper>, Vec<process::ProcessWrapper>) = maybe_process.unwrap()
+			let (features, process): (Vec<process::ProcessWrapper>, Vec<process::ProcessWrapper>) = maybe_process.unwrap()
 				.into_iter()
 				.filter(|proc| {
                     match proc {
@@ -110,6 +103,13 @@ impl Bot {
                     process::ProcessWrapper::Features(_) => true,
                     process::ProcessWrapper::Project(_) => false,
                 });
+			let features = features
+				.first()
+				.and_then(|f| match f {
+					process::ProcessWrapper::Features(feat) => Some(feat.clone()),
+					_ => None,
+				})
+				.unwrap_or(process::ProcessFeatures::default());
 			let process = process
 				.into_iter()
 				.map(|w| match w {
@@ -142,9 +142,6 @@ impl Bot {
 
 				if issue.pull_request.is_some() {
 					// issue is a pull request
-					if !self.feature_config.any_pr() {
-						continue 'issue_loop;
-					}
 
 					// the `mergeable` key is only returned with an individual GET request
 					let pr = match self
@@ -205,72 +202,102 @@ impl Bot {
 					// - there is only one project in the repo, OR
 					// - the author is owner/whitelisted on only one.
 					// then attach that project
-					if pr_project.is_none() {
-						self.try_attach_project(
-							&mut local_state,
-							&pr,
-							&projects,
-							&process,
-							author_is_core,
-						)
-						.await?;
+					if features.issue_project {
+						if pr_project.is_none() {
+							self.try_attach_project(
+								&mut local_state,
+								&pr,
+								&projects,
+								&process,
+								author_is_core,
+							)
+							.await?;
+						}
 					}
 
 					//
 					// CHECK MERGE
 					//
-					match self
-						.auto_merge_if_ready(
-							&repo,
-							&pr,
-							&status,
-							&combined_process,
-							&reviews,
-						)
-						.await
-					{
-						Ok(true) => {
-							local_state.alive = false;
-							continue 'issue_loop; // PR was merged so no more actions
-						}
-						Err(e) => {
-							log::error!(
+					if features.auto_merge {
+						match self
+							.auto_merge_if_ready(
+								&repo,
+								&pr,
+								&status,
+								&combined_process,
+								&reviews,
+							)
+							.await
+						{
+							Ok(true) => {
+								local_state.alive = false;
+								continue 'issue_loop; // PR was merged so no more actions
+							}
+							Err(e) => {
+								log::error!(
                                 "Error auto-merging pull request #{issue_number} in repo {repo_name}: {error}", 
                                 issue_number = pr.number,
                                 repo_name = repo.name,
                                 error = e,
                             );
+							}
+							_ => {}
 						}
-						_ => {}
 					}
 
 					//
 					// CHECK ISSUE ADDRESSED
 					//
-					if combined_process.is_special(&pr.user.login) {
-						// owners and whitelisted devs can open prs without an attached issue.
-					} else if issues.is_empty() {
-						// author is not special and no issue addressed.
-						self.close_for_missing_issue(&repo, &pr).await?;
-						local_state.alive = false;
-						continue 'issue_loop;
+					if features.issue_addressed {
+						if combined_process.is_special(&pr.user.login) {
+							// owners and whitelisted devs can open prs without an attached issue.
+						} else if issues.is_empty() {
+							// author is not special and no issue addressed.
+							self.close_for_missing_issue(&repo, &pr).await?;
+							local_state.alive = false;
+							continue 'issue_loop;
+						}
 					}
 
 					//
 					// CHECK ISSUE ASSIGNED CORRECTLY
 					//
-					for (issue, maybe_project) in
-						self.issue_projects(&repo, &issues, &projects).await
-					{
-						if let Some(process_info) = maybe_project
+					if features.issue_assigned {
+						for (issue, maybe_project) in
+							self.issue_projects(&repo, &issues, &projects).await
+						{
+							if let Some(process_info) =
+								maybe_project.and_then(|proj| {
+									combined_process.get(&proj.name)
+								}) {
+								self.assign_issue_or_warn(
+									&mut local_state,
+									&process_info,
+									&repo,
+									&pr,
+									&issue,
+								)
+								.await?;
+							} else {
+								// project is absent or not in Process.toml
+								// so we don't know the owner / matrix room.
+							}
+						}
+					}
+
+					//
+					// CHECK REVIEWS
+					//
+					if features.review_requests {
+						if let Some(process_info) = pr_project
 							.and_then(|proj| combined_process.get(&proj.name))
 						{
-							self.assign_issue_or_warn(
+							self.require_reviewers(
 								&mut local_state,
-								&process_info,
-								&repo,
 								&pr,
-								&issue,
+								&process_info,
+								&reviews,
+								&requested_reviewers,
 							)
 							.await?;
 						} else {
@@ -280,34 +307,14 @@ impl Bot {
 					}
 
 					//
-					// CHECK REVIEWS
-					//
-					if let Some(process_info) = pr_project
-						.and_then(|proj| combined_process.get(&proj.name))
-					{
-						self.require_reviewers(
-							&mut local_state,
-							&pr,
-							&process_info,
-							&reviews,
-							&requested_reviewers,
-						)
-						.await?;
-					} else {
-						// project is absent or not in Process.toml
-						// so we don't know the owner / matrix room.
-					}
-
-					//
 					// CHECK STATUS
 					//
-					self.handle_status(&mut local_state, &pr, &status).await?;
+					if features.status_notifications {
+						self.handle_status(&mut local_state, &pr, &status)
+							.await?;
+					}
 				} else {
 					// issue is not a pull request
-					if !self.feature_config.any_issue() {
-						continue 'issue_loop;
-					}
-
 					open_issues += 1;
 
 					//
@@ -332,15 +339,17 @@ impl Bot {
 					// - there is only one project in the repo, OR
 					// - the author is owner/whitelisted on only one.
 					// then attach that project
-					if issue_project.is_none() {
-						self.try_attach_project(
-							&mut local_state,
-							&issue,
-							&projects,
-							&process,
-							author_is_core,
-						)
-						.await?;
+					if features.issue_project {
+						if issue_project.is_none() {
+							self.try_attach_project(
+								&mut local_state,
+								&issue,
+								&projects,
+								&process,
+								author_is_core,
+							)
+							.await?;
+						}
 					}
 				}
 			}

@@ -142,6 +142,19 @@ pub struct ProcessFeatures {
 	pub status_notifications: bool,
 }
 
+impl Default for ProcessFeatures {
+	fn default() -> Self {
+		ProcessFeatures {
+			auto_merge: true,
+			issue_project: true,
+			issue_addressed: true,
+			issue_assigned: true,
+			review_requests: true,
+			status_notifications: true,
+		}
+	}
+}
+
 #[derive(Clone, Debug)]
 pub enum ProcessWrapper {
 	Features(ProcessFeatures),
@@ -234,11 +247,37 @@ pub fn process_from_table(tab: toml::value::Table) -> Vec<ProcessWrapper> {
 	tab.into_iter()
 		.filter_map(|(key, val)| {
 			if key == FEATURES_KEY {
-				//				match val {
-				//					toml::value::Value::Table(ref tab) => {
-				//                   }
-				//              }
-				None
+				match val {
+					toml::value::Value::Table(ref tab) => {
+						Some(ProcessWrapper::Features(ProcessFeatures {
+							auto_merge: tab
+								.get("auto_merge")
+								.and_then(toml::value::Value::as_bool)
+								.unwrap_or(true),
+							issue_project: tab
+								.get("issue_project")
+								.and_then(toml::value::Value::as_bool)
+								.unwrap_or(true),
+							issue_addressed: tab
+								.get("issue_addressed")
+								.and_then(toml::value::Value::as_bool)
+								.unwrap_or(true),
+							issue_assigned: tab
+								.get("issue_assigned")
+								.and_then(toml::value::Value::as_bool)
+								.unwrap_or(true),
+							review_requests: tab
+								.get("review_requests")
+								.and_then(toml::value::Value::as_bool)
+								.unwrap_or(true),
+							status_notifications: tab
+								.get("status_notifications")
+								.and_then(toml::value::Value::as_bool)
+								.unwrap_or(true),
+						}))
+					}
+					_ => None,
+				}
 			} else {
 				match val {
 					toml::value::Value::Table(ref tab) => {
