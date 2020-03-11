@@ -106,7 +106,9 @@ impl Bot {
 			let features = features
 				.first()
 				.and_then(|f| match f {
-					process::ProcessWrapper::Features(feat) => Some(feat.clone()),
+					process::ProcessWrapper::Features(feat) => {
+						Some(feat.clone())
+					}
 					_ => None,
 				})
 				.unwrap_or(process::ProcessFeatures::default());
