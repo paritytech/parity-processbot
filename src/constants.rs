@@ -1,3 +1,9 @@
+pub const AUTO_MERGE_REQUEST: &str = "bot merge";
+pub const AUTO_MERGE_REQUEST_CANCELLED: &str = "bot merge cancel";
+pub const AUTO_MERGE_REQUEST_COMPLETE: &str = "bot merge complete";
+
+pub const FEATURES_KEY: &str = "features";
+
 pub const PROJECT_NEEDS_BACKLOG: &str =
 	"@{owner}, {project_url} needs a backlog column.";
 
@@ -21,7 +27,8 @@ pub const ISSUE_REVERT_PROJECT_NOTIFICATION: &str = "The change you made to {iss
 pub const REQUESTING_REVIEWS_MESSAGE: &str =
 	"@{author}, {pr_url} needs reviewers.";
 
-pub const STATUS_FAILURE_NOTIFICATION: &str = "{1} has failed status checks.";
+pub const STATUS_FAILURE_NOTIFICATION: &str =
+	"{1} failed status checks or is not mergeable.";
 
 pub const REQUEST_DELEGATED_REVIEW_MESSAGE: &str = "{1} needs your review in the next 72 hours, as you are the owner or delegated reviewer.";
 
@@ -34,3 +41,5 @@ pub const CORE_SORTING_REPO: &str = "core-sorting";
 pub const BACKLOG_DEFAULT_NAME: &str = "backlog";
 
 pub const PROCESS_FILE_NAME: &str = "Process.toml";
+
+pub const LOCAL_STATE_KEY: &str = "LOCAL_STATE_KEY";

@@ -163,6 +163,10 @@ impl Client {
 				header::ACCEPT,
 				"application/vnd.github.inertia-preview+json",
 			)
+			.header(
+				header::ACCEPT,
+				"application/vnd.github.antiope-preview+json",
+			)
 			.header(header::USER_AGENT, "parity-processbot/0.0.1")
 			.build()
 			.context(error::Http)?;
@@ -249,20 +253,40 @@ impl Client {
 		I: Into<Cow<'b, str>>,
 		T: serde::de::DeserializeOwned,
 	{
-		self.get_response(url)
+		self.get_response(url, serde_json::json!({}))
 			.await?
 			.json::<T>()
 			.await
 			.context(error::Http)
 	}
 
-	/// Sends a `GET` request to `url`, supplying the relevant headers for
-	/// authenication and feature detection.
-	async fn get_response<'b, I: Into<Cow<'b, str>>>(
+	/// Get a single entry from a resource in GitHub.
+	pub async fn get_with_params<'b, I, T, P>(
 		&self,
 		url: I,
+		params: P,
+	) -> Result<T>
+	where
+		I: Into<Cow<'b, str>>,
+		T: serde::de::DeserializeOwned,
+		P: Serialize,
+	{
+		self.get_response(url, params)
+			.await?
+			.json::<T>()
+			.await
+			.context(error::Http)
+	}
+
+	//	/// Sends a `GET` request to `url`, supplying the relevant headers for
+	//	/// authenication and feature detection.
+	pub async fn get_response<'b, I: Into<Cow<'b, str>>, P: Serialize>(
+		&self,
+		url: I,
+		params: P,
 	) -> Result<Response> {
-		self.execute(self.client.get(&*url.into())).await
+		self.execute(self.client.get(&*url.into()).json(&params))
+			.await
 	}
 
 	// Originally adapted from:
@@ -277,7 +301,8 @@ impl Client {
 		let mut next = Some(url.into());
 
 		while let Some(url) = next {
-			let response = self.get_response(url).await?;
+			let response =
+				self.get_response(url, serde_json::json!({})).await?;
 
 			next = response
 				.headers()

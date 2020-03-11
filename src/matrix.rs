@@ -42,8 +42,9 @@ pub fn login(
 			.or_else(error::map_curl_error)?;
 		transfer.perform().or_else(error::map_curl_error)?;
 	}
-	serde_json::from_str(dbg!(String::from_utf8(dst).as_ref()).unwrap())
-		.context(error::Json)
+	String::from_utf8(dst)
+		.context(error::Utf8)
+		.and_then(|s| serde_json::from_str(&s).context(error::Json))
 }
 
 pub fn create_room(
@@ -153,6 +154,28 @@ pub fn parse_id(matrix_id: &str) -> Option<String> {
 		None
 	}
 }
+
+/*
+/// If the pattern is recognised, return the name.
+/// Otherwise, return None.
+pub fn parse_id_name(matrix_id: &str) -> Option<String> {
+	let full_handle = Regex::new(r"^@[\w]+:matrix.parity.io$").unwrap();
+	let no_at = Regex::new(r"^[\w]+:matrix.parity.io$").unwrap();
+	let no_domain = Regex::new(r"^@[\w]+$").unwrap();
+	let name_only = Regex::new(r"^[\w]+$").unwrap();
+	if full_handle.is_match(matrix_id) {
+		Some(format!("{}", matrix_id))
+	} else if no_at.is_match(matrix_id) {
+		Some(format!("@{}", matrix_id))
+	} else if no_domain.is_match(matrix_id) {
+		Some(format!("{}:matrix.parity.io", matrix_id))
+	} else if name_only.is_match(matrix_id) {
+		Some(format!("@{}:matrix.parity.io", matrix_id))
+	} else {
+		None
+	}
+}
+*/
 
 #[cfg(test)]
 mod tests {

@@ -36,11 +36,19 @@ impl GithubBot {
 	/// # Errors
 	/// If the organization does not exist or `auth_key` does not have sufficent
 	/// permissions.
-	pub async fn new(private_key: impl Into<Vec<u8>>) -> Result<Self> {
+	pub async fn new(
+		private_key: impl Into<Vec<u8>>,
+		installation_login: &str,
+	) -> Result<Self> {
 		let client = crate::http::Client::new(private_key.into());
 
 		let installations = Self::installations(&client).await?;
-		let installation = installations.first().context(error::MissingData)?;
+		let installation = installations
+			.iter()
+			.find(|installation| {
+				installation.account.login == installation_login
+			})
+			.context(error::MissingData)?;
 
 		let organization = client
 			.get(&format!(
@@ -56,6 +64,22 @@ impl GithubBot {
 		})
 	}
 
+	/// Returns check runs associated with a pull request.
+	pub async fn check_runs(
+		&self,
+		repo_name: &str,
+		pull_request: &github::PullRequest,
+	) -> Result<github::CheckRuns> {
+		let url = format!(
+			"{base_url}/repos/{owner}/{repo}/commits/{sha}/check-runs",
+			base_url = Self::BASE_URL,
+			owner = self.organization.login,
+			repo = repo_name,
+			sha = &pull_request.head.sha
+		);
+		self.client.get(url).await
+	}
+
 	/// Returns statuses associated with a pull request.
 	pub async fn status(
 		&self,
@@ -68,10 +92,6 @@ impl GithubBot {
 			owner = self.organization.login,
 			repo = repo_name,
 			sha = &pull_request.head.sha
-//            &pull_request
-//				.merge_commit_sha
-//				.as_ref()
-//				.context(error::MissingData)?,
 		);
 		self.client.get(url).await
 	}
@@ -92,6 +112,24 @@ impl GithubBot {
 			))
 			.await
 	}
+
+	/// Returns all commits since a given date.
+	pub async fn commits(
+		&self,
+		repo_name: &str,
+		sha: &str,
+		since: chrono::DateTime<chrono::Utc>,
+	) -> Result<Vec<github::Commit>> {
+		let url = format!(
+			"{base_url}/repos/{owner}/{repo}/commits",
+			base_url = Self::BASE_URL,
+			owner = self.organization.login,
+			repo = repo_name,
+		);
+		let body =
+			serde_json::json!({ "sha": sha, "since": since.to_rfc3339() });
+		self.client.get_with_params(url, body).await
+	}
 }
 
 #[cfg(test)]
@@ -102,6 +140,8 @@ mod tests {
 	#[test]
 	fn test_statuses() {
 		dotenv::dotenv().ok();
+		let installation = dotenv::var("TEST_INSTALLATION_LOGIN")
+			.expect("TEST_INSTALLATION_LOGIN");
 		let private_key_path =
 			dotenv::var("PRIVATE_KEY_PATH").expect("PRIVATE_KEY_PATH");
 		let private_key = std::fs::read(&private_key_path)
@@ -111,8 +151,9 @@ mod tests {
 
 		let mut rt = tokio::runtime::Runtime::new().expect("runtime");
 		rt.block_on(async {
-			let github_bot =
-				GithubBot::new(private_key).await.expect("github_bot");
+			let github_bot = GithubBot::new(private_key, &installation)
+				.await
+				.expect("github_bot");
 			let created_pr = github_bot
 				.create_pull_request(
 					&test_repo_name,
@@ -139,6 +180,8 @@ mod tests {
 	#[test]
 	fn test_contents() {
 		dotenv::dotenv().ok();
+		let installation = dotenv::var("TEST_INSTALLATION_LOGIN")
+			.expect("TEST_INSTALLATION_LOGIN");
 		let private_key_path =
 			dotenv::var("PRIVATE_KEY_PATH").expect("PRIVATE_KEY_PATH");
 		let private_key = std::fs::read(&private_key_path)
@@ -147,8 +190,9 @@ mod tests {
 			dotenv::var("TEST_REPO_NAME").expect("TEST_REPO_NAME");
 		let mut rt = tokio::runtime::Runtime::new().expect("runtime");
 		rt.block_on(async {
-			let github_bot =
-				GithubBot::new(private_key).await.expect("github_bot");
+			let github_bot = GithubBot::new(private_key, &installation)
+				.await
+				.expect("github_bot");
 			let _contents = github_bot
 				.contents(&test_repo_name, "README.md")
 				.await

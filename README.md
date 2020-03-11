@@ -12,9 +12,9 @@ A GitHub bot to automate common tasks and processes at Parity.
 - that project must contain a column named according to the `backlog` field of `Process.toml` below, if the field is included, otherwise named 'Backlog'.
 
 ### `Process.toml` file
-Must be present in the repository's root directory. If it is absent Processbot will ignore the repository. 
+In the repository's root directory. If it is absent Processbot will ignore the repository. 
 
-##### `Process.toml` *must* contain:
+##### `Process.toml` *must* contain (or it will be ignored):
 
 - `[project-name]`:
   - must match a project in the repository
@@ -30,9 +30,15 @@ Must be present in the repository's root directory. If it is absent Processbot w
   - will be warned before the pull request is closed for not having a project attached
 
 - `matrix_room_id = "!SFhvpsdivdsds:matrix.example.io"`:
-  - public notifications will be posted here
+  - public notifications may be posted here
 
 ##### `Process.toml` *may* contain:
+
+- `[features]`
+  - e.g. `auto_merge = false`
+  - the only TOML key that shouldn't match a project name
+  - list of bot features to be enabled/disabled for the repository (default to enabled)
+  - see *Features* below for details
 
 - `delegated_reviewer = "github_user_login"`
   - acts as the `owner`, intended as a stand-in when the `owner` will be unavailable for long periods
@@ -40,6 +46,32 @@ Must be present in the repository's root directory. If it is absent Processbot w
 - `backlog = "column_name"`
   - project column to which new issues should be attached
   - will override the organization-wide value specified in `.env` (see below)
+
+### Features
+- `auto_merge`
+  - comment `bot merge` on a PR to automatically merge it once checks pass (if
+    sufficient approvals have been given)
+  - `bot cancel` will cancel a pending `bot merge`
+- `issue_project`
+  - ensure all issues have projects attached
+  - send notifications when they do not
+  - eventually close issues without projects
+- `issue_addressed`
+  - ensure all PRs explicitly address an issue
+  - send notifications when they do not
+  - eventually close PRs that do not address an issue
+  - PRs authored by whitelisted developers are exempt
+- `issue_assigned`
+  - ensure the author of a PR addressing an issue is also assigned to that issue
+  - send notifications when they do not
+  - eventually close PRs that do not address an issue
+  - automatically re-assign relevant issues to whitelisted PR authors
+- `review_requests`
+  - automatically request PR reviews from the project owner/delegated-reviewer 
+  - remind requested reviewers to complete their review
+  - post public review requests to the project channel when necessary
+- `status_notifications`
+  - automatically notify PR authors when CI fails
 
 ## Processbot Configuration
 
@@ -77,7 +109,7 @@ pull request author or publicly to the default channel if the author's Matrix ha
 
 `NO_PROJECT_AUTHOR_IS_CORE_CLOSE_PR`: Seconds before closing a pull request opened by a core developer that has no project attached.
 
-`NO_PROJECT_AUTHOR_NOT_CORE_CLOSE_PR`: Seconds before closing a pull request opened by an external developer that has no project attached.
+`NO_PROJECT_AUTHOR_UNKNOWN_CLOSE_PR`: Seconds before closing a pull request opened by an external developer that has no project attached.
 
 `PROJECT_CONFIRMATION_TIMEOUT`: Seconds before reverting an unconfirmed change of project by a non-whitelisted developer (currently unimplemented).
 

@@ -62,8 +62,9 @@ fn get_employees_directory(
 			.or_else(error::map_curl_error)?;
 		transfer.perform().or_else(error::map_curl_error)?;
 	}
-	serde_json::from_str(String::from_utf8(dst).as_ref().unwrap())
-		.context(error::Json)
+	String::from_utf8(dst)
+		.context(error::Utf8)
+		.and_then(|s| serde_json::from_str(&s).context(error::Json))
 }
 
 fn get_employee(

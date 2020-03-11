@@ -1,6 +1,6 @@
 use parking_lot::RwLock;
 use rocksdb::DB;
-use snafu::{OptionExt, ResultExt};
+use snafu::ResultExt;
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use parity_processbot::{bamboo, bots, config, error, github_bot, matrix_bot};
@@ -35,8 +35,11 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 		config.matrix_user
 	);
 
-	let github_bot =
-		github_bot::GithubBot::new(config.private_key.clone()).await?;
+	let github_bot = github_bot::GithubBot::new(
+		config.private_key.clone(),
+		&config.installation_login,
+	)
+	.await?;
 	log::info!("Connected to github");
 
 	// the bamboo queries can take a long time so only wait for it
@@ -48,14 +51,20 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 		.is_none()
 	{
 		// block on bamboo
-		let github_to_matrix = bamboo::github_to_matrix(&config.bamboo_token)?;
-		db.put(
-			&GITHUB_TO_MATRIX_KEY,
-			serde_json::to_string(&github_to_matrix)
-				.context(error::Json)?
-				.as_bytes(),
-		)
-		.context(error::Db)?;
+		match bamboo::github_to_matrix(&config.bamboo_token) {
+			Ok(github_to_matrix) => {
+				db.put(
+					&GITHUB_TO_MATRIX_KEY,
+					serde_json::to_string(&github_to_matrix)
+						.context(error::Json)?
+						.as_bytes(),
+				)
+				.context(error::Db)?;
+			}
+			Err(e) => {
+				log::error!("Error fetching employee data from Bamboo: {}", e)
+			}
+		}
 	}
 
 	let db = Arc::new(RwLock::new(db));
@@ -81,7 +90,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 			},
 		) {
 			Ok(_) => {}
-			Err(e) => log::error!("DB error: {}", e),
+			Err(e) => log::error!("Bamboo error: {}", e),
 		}
 		std::thread::sleep(Duration::from_secs(config_clone.bamboo_tick_secs));
 	});
@@ -95,29 +104,23 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 	loop {
 		interval.tick().await;
 
-		let core_devs = bot
-			.github_bot
-			.team_members(
-				bot.github_bot
-					.team("core-devs")
-					.await?
-					.id
-					.context(error::MissingData)?,
-			)
-			.await?;
+		let core_devs = match bot.github_bot.team("core-devs").await {
+			Ok(team) => bot.github_bot.team_members(team.id).await?,
+			_ => vec![],
+		};
 
 		let github_to_matrix = bot
 			.db
 			.read()
 			.get(&GITHUB_TO_MATRIX_KEY)
 			.context(error::Db)?
-			.map(|ref v| {
-				serde_json::from_slice::<HashMap<String, String>>(v)
-					.context(error::Json)
+			.and_then(|ref v| {
+				serde_json::from_slice::<HashMap<String, String>>(v).ok()
 			})
-			.expect(
-				"github_to_matrix should always be in the db by this time",
-			)?;
+			.unwrap_or_else(|| {
+				log::error!("Bamboo data not found in DB");
+				HashMap::new()
+			});
 
 		bot.core_devs = core_devs;
 		bot.github_to_matrix = github_to_matrix;
