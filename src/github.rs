@@ -162,15 +162,15 @@ pub struct Release {
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Ref {
-    object: RefObject,
+	object: RefObject,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RefObject {
-    #[serde(rename = "type")]
-    ref_type: String,
-    sha: String,
-    url: String,
+	#[serde(rename = "type")]
+	ref_type: String,
+	sha: String,
+	url: String,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]

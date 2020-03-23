@@ -19,7 +19,7 @@ impl GithubBot {
 		self.client.get(url).await
 	}
 
-    /*
+	/*
 	/// Returns the assets associated with a release.
 	pub async fn release_assets(
 		&self,
@@ -35,7 +35,7 @@ impl GithubBot {
 		);
 		self.client.get(url).await
 	}
-    */
+	*/
 }
 
 #[cfg(test)]
@@ -63,10 +63,10 @@ mod tests {
 				.latest_release(&test_repo_name)
 				.await
 				.expect("release"));
-//			let assets = dbg!(github_bot
-//				.release_assets(&test_repo_name, release.id,)
-//				.await
-//				.expect("release assets"));
+			//			let assets = dbg!(github_bot
+			//				.release_assets(&test_repo_name, release.id,)
+			//				.await
+			//				.expect("release assets"));
 			assert_eq!(release.tag_name, "v0.1.0".to_owned(),);
 		});
 	}
