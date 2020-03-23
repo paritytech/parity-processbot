@@ -5,8 +5,10 @@ use snafu::OptionExt;
 pub mod issue;
 pub mod project;
 pub mod pull_request;
+pub mod release;
 pub mod repository;
 pub mod review;
+pub mod tag;
 pub mod team;
 
 pub struct GithubBot {

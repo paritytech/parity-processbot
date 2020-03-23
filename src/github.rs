@@ -150,6 +150,30 @@ impl GithubIssue for Issue {
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Release {
+	pub url: String,
+	pub html_url: String,
+	pub tarball_url: String,
+	pub zipball_url: String,
+	pub id: i64,
+	pub tag_name: String,
+	pub target_commitish: String,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Ref {
+    object: RefObject,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RefObject {
+    #[serde(rename = "type")]
+    ref_type: String,
+    sha: String,
+    url: String,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Organization {
 	pub login: String,
 	pub id: Option<i64>,
