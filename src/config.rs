@@ -88,8 +88,6 @@ pub struct BotConfig {
 	pub public_review_reminder_delay: u64,
 	/// mininum number of reviewers
 	pub min_reviewers: usize,
-	/// matrix room id to be used when missing project details
-	pub fallback_room_id: String, // TODO remove in favour of Config's default_matrix_room_id
 	/// name of repo for issues without a project
 	pub core_sorting_repo_name: String,
 	/// matrix room id for sending app logs
@@ -170,9 +168,6 @@ impl BotConfig {
 				.expect("MIN_REVIEWERS")
 				.parse::<usize>()
 				.expect("failed parsing MIN_REVIEWERS"),
-
-			fallback_room_id: dotenv::var("FALLBACK_ROOM_ID")
-				.expect("FALLBACK_ROOM_ID"),
 
 			core_sorting_repo_name: dotenv::var("CORE_SORTING_REPO_NAME")
 				.expect("CORE_SORTING_REPO_NAME"),
