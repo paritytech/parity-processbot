@@ -6,17 +6,15 @@ use super::GithubBot;
 
 impl GithubBot {
 	/// Returns the latest release in a repository.
-	pub async fn latest_release(
-		&self,
-		repo_name: &str,
-	) -> Result<github::Release> {
-		let url = format!(
-			"{base_url}/repos/{owner}/{repo}/releases/latest",
-			base_url = Self::BASE_URL,
+	pub fn diff_url(&self, repo_name: &str, base: &str, head: &str) -> String {
+		format!(
+			"{base_url}/{owner}/{repo}/compare/{base}...{head}",
+			base_url = Self::HTML_BASE_URL,
 			owner = self.organization.login,
 			repo = repo_name,
-		);
-		self.client.get(url).await
+			base = base,
+			head = head,
+		)
 	}
 }
 
@@ -26,7 +24,7 @@ mod tests {
 
 	#[ignore]
 	#[test]
-	fn test_release() {
+	fn test_diff_url() {
 		dotenv::dotenv().ok();
 		let installation = dotenv::var("TEST_INSTALLATION_LOGIN")
 			.expect("TEST_INSTALLATION_LOGIN");
@@ -41,10 +39,11 @@ mod tests {
 			let github_bot = GithubBot::new(private_key, &installation)
 				.await
 				.expect("github_bot");
-			let release = dbg!(github_bot
-				.latest_release(&test_repo_name)
-				.await
-				.expect("release"));
+			let diff = dbg!(github_bot.diff_url(
+				&test_repo_name,
+				"d383b0dd542bc04d6fd7042205f353cfc76d5502",
+				"68e51d6e24862d499b5f042321cc87b172579e74",
+			));
 		});
 	}
 }

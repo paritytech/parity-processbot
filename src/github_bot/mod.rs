@@ -2,6 +2,7 @@ use crate::{error, github, Result};
 
 use snafu::OptionExt;
 
+pub mod commit;
 pub mod issue;
 pub mod project;
 pub mod pull_request;
@@ -18,6 +19,7 @@ pub struct GithubBot {
 
 impl GithubBot {
 	pub(crate) const BASE_URL: &'static str = "https://api.github.com";
+	pub(crate) const HTML_BASE_URL: &'static str = "https://github.com";
 
 	pub fn organization_login(&self) -> &str {
 		self.organization.login.as_ref()

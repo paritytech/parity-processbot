@@ -174,6 +174,14 @@ pub struct RefObject {
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Diff {
+	url: String,
+	html_url: String,
+	permalink_url: Option<String>,
+	diff_url: Option<String>,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Organization {
 	pub login: String,
 	pub id: Option<i64>,
