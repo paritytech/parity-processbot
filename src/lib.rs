@@ -1,6 +1,7 @@
 pub mod auto_merge;
 pub mod bamboo;
 pub mod bots;
+pub mod compare_release;
 pub mod config;
 pub mod constants;
 pub mod db;

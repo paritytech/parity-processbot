@@ -1,6 +1,4 @@
-use crate::{error, github, Result};
-
-use snafu::OptionExt;
+use crate::{github, Result};
 
 use super::GithubBot;
 

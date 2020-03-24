@@ -1,23 +1,3 @@
-use crate::{error, github, Result};
-
-use snafu::OptionExt;
-
-use super::GithubBot;
-
-impl GithubBot {
-	/// Returns the latest release in a repository.
-	pub fn diff_url(&self, repo_name: &str, base: &str, head: &str) -> String {
-		format!(
-			"{base_url}/{owner}/{repo}/compare/{base}...{head}",
-			base_url = Self::HTML_BASE_URL,
-			owner = self.organization.login,
-			repo = repo_name,
-			base = base,
-			head = head,
-		)
-	}
-}
-
 #[cfg(test)]
 mod tests {
 	use super::*;

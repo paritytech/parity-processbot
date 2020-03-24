@@ -134,6 +134,18 @@ impl GithubBot {
 			serde_json::json!({ "sha": sha, "since": since.to_rfc3339() });
 		self.client.get_with_params(url, body).await
 	}
+
+	/// Returns a link to a diff.
+	pub fn diff_url(&self, repo_name: &str, base: &str, head: &str) -> String {
+		format!(
+			"{base_url}/{owner}/{repo}/compare/{base}...{head}",
+			base_url = Self::HTML_BASE_URL,
+			owner = self.organization.login,
+			repo = repo_name,
+			base = base,
+			head = head,
+		)
+	}
 }
 
 #[cfg(test)]

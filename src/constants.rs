@@ -1,6 +1,10 @@
+pub const BOT_GITHUB_LOGIN: &str = "parity-processbot";
 pub const AUTO_MERGE_REQUEST: &str = "bot merge";
 pub const AUTO_MERGE_REQUEST_CANCELLED: &str = "bot merge cancel";
 pub const AUTO_MERGE_REQUEST_COMPLETE: &str = "bot merge complete";
+
+pub const COMPARE_RELEASE_REQUEST: &str = "bot compare release";
+pub const COMPARE_RELEASE_REPLY: &str = "Compare latest release:";
 
 pub const FEATURES_KEY: &str = "features";
 

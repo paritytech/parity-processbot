@@ -250,7 +250,10 @@ impl Bot {
 					//
 					// CHECK COMPARE RELEASE
 					//
-					if features.compare_release {}
+					if features.compare_release {
+						self.compare_release_if_requested(&repo.name, &pr)
+							.await?;
+					}
 
 					//
 					// CHECK ISSUE ADDRESSED
