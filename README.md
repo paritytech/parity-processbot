@@ -35,10 +35,11 @@ In the repository's root directory. If it is absent Processbot will ignore the r
 ##### `Process.toml` *may* contain:
 
 - `[features]`
-  - e.g. `auto_merge = false`
+  - e.g. `auto_merge = true`
   - the only TOML key that shouldn't match a project name
-  - list of bot features to be enabled/disabled for the repository (default to enabled)
+  - list of bot features to be enabled/disabled for the repository
   - see *Features* below for details
+  - features requiring a comment default to `true`, others `false`
 
 - `delegated_reviewer = "github_user_login"`
   - acts as the `owner`, intended as a stand-in when the `owner` will be unavailable for long periods
@@ -52,26 +53,36 @@ In the repository's root directory. If it is absent Processbot will ignore the r
   - comment `bot merge` on a PR to automatically merge it once checks pass (if
     sufficient approvals have been given)
   - `bot cancel` will cancel a pending `bot merge`
+  - defaults to `true`
+- `compare_release`
+  - comment `bot compare release` on a PR to have the bot post a link comparing
+    the PR branch to the latest release.
+  - defaults to `true`
 - `issue_project`
   - ensure all issues have projects attached
   - send notifications when they do not
   - eventually close issues without projects
+  - defaults to `false`
 - `issue_addressed`
   - ensure all PRs explicitly address an issue
   - send notifications when they do not
   - eventually close PRs that do not address an issue
   - PRs authored by whitelisted developers are exempt
+  - defaults to `false`
 - `issue_assigned`
   - ensure the author of a PR addressing an issue is also assigned to that issue
   - send notifications when they do not
   - eventually close PRs that do not address an issue
   - automatically re-assign relevant issues to whitelisted PR authors
+  - defaults to `false`
 - `review_requests`
   - automatically request PR reviews from the project owner/delegated-reviewer 
   - remind requested reviewers to complete their review
   - post public review requests to the project channel when necessary
+  - defaults to `false`
 - `status_notifications`
   - automatically notify PR authors when CI fails
+  - defaults to `false`
 
 ## Processbot Configuration
 

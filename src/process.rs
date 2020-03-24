@@ -135,6 +135,7 @@ struct ProcessInfoTemp {
 #[derive(Clone, Debug)]
 pub struct ProcessFeatures {
 	pub auto_merge: bool,
+	pub compare_release: bool,
 	pub issue_project: bool,
 	pub issue_addressed: bool,
 	pub issue_assigned: bool,
@@ -146,11 +147,12 @@ impl Default for ProcessFeatures {
 	fn default() -> Self {
 		ProcessFeatures {
 			auto_merge: true,
-			issue_project: true,
-			issue_addressed: true,
-			issue_assigned: true,
-			review_requests: true,
-			status_notifications: true,
+			compare_release: true,
+			issue_project: false,
+			issue_addressed: false,
+			issue_assigned: false,
+			review_requests: false,
+			status_notifications: false,
 		}
 	}
 }
@@ -254,26 +256,30 @@ pub fn process_from_table(tab: toml::value::Table) -> Vec<ProcessWrapper> {
 								.get("auto_merge")
 								.and_then(toml::value::Value::as_bool)
 								.unwrap_or(true),
+							compare_release: tab
+								.get("compare_release")
+								.and_then(toml::value::Value::as_bool)
+								.unwrap_or(true),
 							issue_project: tab
 								.get("issue_project")
 								.and_then(toml::value::Value::as_bool)
-								.unwrap_or(true),
+								.unwrap_or(false),
 							issue_addressed: tab
 								.get("issue_addressed")
 								.and_then(toml::value::Value::as_bool)
-								.unwrap_or(true),
+								.unwrap_or(false),
 							issue_assigned: tab
 								.get("issue_assigned")
 								.and_then(toml::value::Value::as_bool)
-								.unwrap_or(true),
+								.unwrap_or(false),
 							review_requests: tab
 								.get("review_requests")
 								.and_then(toml::value::Value::as_bool)
-								.unwrap_or(true),
+								.unwrap_or(false),
 							status_notifications: tab
 								.get("status_notifications")
 								.and_then(toml::value::Value::as_bool)
-								.unwrap_or(true),
+								.unwrap_or(false),
 						}))
 					}
 					_ => None,

@@ -248,6 +248,11 @@ impl Bot {
 					}
 
 					//
+					// CHECK COMPARE RELEASE
+					//
+					if features.compare_release {}
+
+					//
 					// CHECK ISSUE ADDRESSED
 					//
 					if features.issue_addressed {
