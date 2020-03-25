@@ -198,7 +198,8 @@ impl Client {
 		jsonwebtoken::encode(
 			&jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256),
 			&body,
-			&self.private_key,
+			&jsonwebtoken::EncodingKey::from_rsa_pem(&self.private_key)
+				.expect("private key should be RSA pem"),
 		)
 		.context(error::Jwt)
 	}
