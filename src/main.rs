@@ -22,17 +22,15 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
 	let db = DB::open_default(&config.db_path)?;
 
-	let matrix_bot = matrix_bot::MatrixBot::new(
+	let matrix_bot = matrix_bot::MatrixBot::new_with_token(
 		&config.matrix_homeserver,
-		&config.matrix_user,
-		&config.matrix_password,
+		&config.matrix_access_token,
 		&config.matrix_default_channel_id,
 		config.matrix_silent,
 	)?;
 	log::info!(
-		"Connected to matrix homeserver {} as {}",
+		"Connected to matrix homeserver {}",
 		config.matrix_homeserver,
-		config.matrix_user
 	);
 
 	let github_bot = github_bot::GithubBot::new(

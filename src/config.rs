@@ -5,8 +5,9 @@ pub struct MainConfig {
 	pub bamboo_token: String,
 	pub private_key: Vec<u8>,
 	pub matrix_homeserver: String,
-	pub matrix_user: String,
-	pub matrix_password: String,
+	//	pub matrix_user: String,
+	//	pub matrix_password: String,
+	pub matrix_access_token: String,
 	pub matrix_default_channel_id: String,
 	pub main_tick_secs: u64,
 	pub bamboo_tick_secs: u64,
@@ -24,9 +25,11 @@ impl MainConfig {
 		let bamboo_token = dotenv::var("BAMBOO_TOKEN").expect("BAMBOO_TOKEN");
 		let matrix_homeserver =
 			dotenv::var("MATRIX_HOMESERVER").expect("MATRIX_HOMESERVER");
-		let matrix_user = dotenv::var("MATRIX_USER").expect("MATRIX_USER");
-		let matrix_password =
-			dotenv::var("MATRIX_PASSWORD").expect("MATRIX_PASSWORD");
+		let matrix_access_token =
+			dotenv::var("MATRIX_ACCESS_TOKEN").expect("MATRIX_ACCESS_TOKEN");
+		//		let matrix_user = dotenv::var("MATRIX_USER").expect("MATRIX_USER");
+		//		let matrix_password =
+		//			dotenv::var("MATRIX_PASSWORD").expect("MATRIX_PASSWORD");
 		let matrix_default_channel_id =
 			dotenv::var("MATRIX_DEFAULT_CHANNEL_ID")
 				.expect("MATRIX_DEFAULT_CHANNEL_ID");
@@ -54,8 +57,9 @@ impl MainConfig {
 			bamboo_token,
 			private_key,
 			matrix_homeserver,
-			matrix_user,
-			matrix_password,
+			//			matrix_user,
+			//			matrix_password,
+			matrix_access_token,
 			matrix_default_channel_id,
 			main_tick_secs,
 			bamboo_tick_secs,

@@ -14,7 +14,24 @@ pub struct MatrixBot {
 }
 
 impl MatrixBot {
-	pub fn new(
+	pub fn new_with_token(
+		homeserver: &str,
+		access_token: &str,
+		default_channel_id: &str,
+		silent: bool,
+	) -> Result<Self> {
+		matrix::sync(homeserver, access_token).map(|s| {
+			log::debug!("Matrix sync: {}", s);
+			Self {
+				homeserver: homeserver.to_owned(),
+				access_token: access_token.to_owned(),
+				default_channel_id: default_channel_id.to_owned(),
+				silent: silent,
+			}
+		})
+	}
+
+	pub fn new_with_credentials(
 		homeserver: &str,
 		username: &str,
 		password: &str,

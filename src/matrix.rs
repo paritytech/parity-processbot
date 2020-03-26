@@ -42,9 +42,35 @@ pub fn login(
 			.or_else(error::map_curl_error)?;
 		transfer.perform().or_else(error::map_curl_error)?;
 	}
-	String::from_utf8(dst)
+	dbg!(String::from_utf8(dst)
 		.context(error::Utf8)
-		.and_then(|s| serde_json::from_str(&s).context(error::Json))
+		.and_then(|s| serde_json::from_str(&s).context(error::Json)))
+}
+
+pub fn sync(homeserver: &str, access_token: &str) -> Result<String> {
+	let mut dst = Vec::new();
+	let mut handle = Easy::new();
+	handle
+		.url(
+			format!(
+				"{}/_matrix/client/r0/sync?access_token={}",
+				homeserver, access_token
+			)
+			.as_ref(),
+		)
+		.or_else(error::map_curl_error)?;
+	handle.get(false).or_else(error::map_curl_error)?;
+	{
+		let mut transfer = handle.transfer();
+		transfer
+			.write_function(|data| {
+				dst.extend_from_slice(data);
+				Ok(data.len())
+			})
+			.or_else(error::map_curl_error)?;
+		transfer.perform().or_else(error::map_curl_error)?;
+	}
+	String::from_utf8(dst).context(error::Utf8)
 }
 
 pub fn create_room(
