@@ -93,9 +93,7 @@ Processbot looks for configuration variables in `.env` in the root directory. Eg
 
 `MATRIX_HOMESERVER`: Matrix homeserver.
 
-`MATRIX_USER`: Email address associated with the bot's Matrix user.
-
-`MATRIX_PASSWORD`: Password associated with the bot's Matrix user.
+`MATRIX_ACCESS_TOKEN`: Matrix access token.
 
 `MATRIX_DEFAULT_CHANNEL_ID`: ID of a channel the bot should use when specific project details are unavailable.
 
