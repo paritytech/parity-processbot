@@ -38,7 +38,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 		&config.installation_login,
 	)
 	.await?;
-	log::info!("Connected to github");
+	log::info!("Connected to Github account {}", config.installation_login);
 
 	// the bamboo queries can take a long time so only wait for it
 	// if github_to_matrix is not in the db. otherwise update it

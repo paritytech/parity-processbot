@@ -41,7 +41,11 @@ impl Bot {
 	}
 
 	pub async fn update(&self) -> Result<()> {
-		let repos = self.github_bot.repositories().await?;
+		let repos = self
+			.github_bot
+			.installation_repositories()
+			.await?
+			.repositories;
 		let mut repos_with_process = 0usize;
 		let mut num_projects = 0usize;
 		let mut num_process = 0usize;

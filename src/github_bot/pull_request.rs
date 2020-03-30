@@ -1,6 +1,6 @@
 use crate::{error, github, Result};
 
-use snafu::ResultExt;
+use snafu::{OptionExt, ResultExt};
 
 use super::GithubBot;
 
@@ -10,9 +10,8 @@ impl GithubBot {
 		&self,
 		repo: &github::Repository,
 	) -> Result<Vec<github::PullRequest>> {
-		self.client
-			.get_all(repo.pulls_url.replace("{/number}", ""))
-			.await
+		let url = repo.pulls_url.as_ref().context(error::MissingData)?;
+		self.client.get_all(url.replace("{/number}", "")).await
 	}
 
 	/// Returns a single pull request.

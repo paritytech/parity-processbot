@@ -13,6 +13,7 @@ use snafu::{OptionExt, ResultExt};
 pub struct Client {
 	client: reqwest::Client,
 	private_key: Vec<u8>,
+	installation_login: String,
 }
 
 macro_rules! impl_methods_with_body {
@@ -78,9 +79,10 @@ async fn handle_response(response: Response) -> Result<Response> {
 
 /// HTTP util methods.
 impl Client {
-	pub fn new(private_key: Vec<u8>) -> Self {
+	pub fn new(private_key: Vec<u8>, installation_login: String) -> Self {
 		Self {
 			private_key: private_key.into(),
+			installation_login,
 			..Self::default()
 		}
 	}
@@ -127,8 +129,10 @@ impl Client {
 			))
 			.await?;
 
-		// App should be installed on only one organisation.
-		let installation = installations.get(0).context(error::MissingData)?;
+		let installation = installations
+			.iter()
+			.find(|inst| inst.account.login == self.installation_login)
+			.context(error::MissingData)?;
 
 		let install_token: github::InstallationToken = self
 			.jwt_post(
@@ -166,6 +170,10 @@ impl Client {
 			.header(
 				header::ACCEPT,
 				"application/vnd.github.antiope-preview+json",
+			)
+			.header(
+				header::ACCEPT,
+				"application/vnd.github.machine-man-preview+json",
 			)
 			.header(header::USER_AGENT, "parity-processbot/0.0.1")
 			.build()
@@ -251,7 +259,7 @@ impl Client {
 	/// Get a single entry from a resource in GitHub.
 	pub async fn get<'b, I, T>(&self, url: I) -> Result<T>
 	where
-		I: Into<Cow<'b, str>>,
+		I: Into<Cow<'b, str>> + Clone,
 		T: serde::de::DeserializeOwned,
 	{
 		self.get_response(url, serde_json::json!({}))

@@ -40,7 +40,10 @@ impl GithubBot {
 		private_key: impl Into<Vec<u8>>,
 		installation_login: &str,
 	) -> Result<Self> {
-		let client = crate::http::Client::new(private_key.into());
+		let client = crate::http::Client::new(
+			private_key.into(),
+			installation_login.to_owned(),
+		);
 
 		let installations = Self::installations(&client).await?;
 		let installation = installations
@@ -62,6 +65,14 @@ impl GithubBot {
 			client,
 			organization,
 		})
+	}
+
+	pub async fn installation_repositories(
+		&self,
+	) -> Result<github::InstallationRepositories> {
+		self.client
+			.get(&format!("{}/installation/repositories", Self::BASE_URL))
+			.await
 	}
 
 	/// Returns check runs associated with a pull request.
