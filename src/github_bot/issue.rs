@@ -51,13 +51,13 @@ impl GithubBot {
 		issue_number: i64,
 	) -> Result<Vec<github::IssueEvent>> {
 		self.client
-			.get(format!(
-			"{base_url}/repos/{owner}/{repo_name}/issues/{issue_number}/events",
-			base_url = Self::BASE_URL,
-			owner = self.organization.login,
-			repo_name = repo_name,
-			issue_number = issue_number
-		))
+			.get_all(format!(
+                "{base_url}/repos/{owner}/{repo_name}/issues/{issue_number}/events",
+                base_url = Self::BASE_URL,
+                owner = self.organization.login,
+                repo_name = repo_name,
+                issue_number = issue_number
+            ))
 			.await
 	}
 

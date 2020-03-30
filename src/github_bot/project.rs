@@ -13,7 +13,7 @@ impl GithubBot {
 		repo_name: &str,
 	) -> Result<Vec<github::Project>> {
 		self.client
-			.get(&format!(
+			.get_all(&format!(
 				"{base_url}/repos/{owner}/{repo_name}/projects",
 				base_url = Self::BASE_URL,
 				owner = self.organization.login,
@@ -44,7 +44,7 @@ impl GithubBot {
 		project: &github::Project,
 	) -> Result<Vec<github::ProjectColumn>> {
 		self.client
-			.get(project.columns_url.as_ref().context(error::MissingData)?)
+			.get_all(project.columns_url.as_ref().context(error::MissingData)?)
 			.await
 	}
 
@@ -69,7 +69,8 @@ impl GithubBot {
 		})
 	}
 
-	/// Return the most recent AddedToProject event that is not followed by a RemovedFromProject event.
+	/// Return the most recent AddedToProject event that is not followed by a RemovedFromProject
+	/// event.
 	pub async fn active_project_event(
 		&self,
 		repo_name: &str,

@@ -17,7 +17,7 @@ impl GithubBot {
 		team_id: i64,
 	) -> Result<Vec<github::User>> {
 		self.client
-			.get(format!("{}/teams/{}/members", Self::BASE_URL, team_id))
+			.get_all(format!("{}/teams/{}/members", Self::BASE_URL, team_id))
 			.await
 	}
 }

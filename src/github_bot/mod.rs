@@ -139,6 +139,7 @@ impl GithubBot {
 		);
 		let body =
 			serde_json::json!({ "sha": sha, "since": since.to_rfc3339() });
+		// TODO this should use get_all
 		self.client.get_with_params(url, body).await
 	}
 }
