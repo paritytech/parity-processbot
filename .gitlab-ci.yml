@@ -6,19 +6,19 @@ variables:
   GIT_STRATEGY:                    fetch
   GIT_DEPTH:                       3
   # Variables required by Gitlab scanning
-  SAST_DISABLE_DIND:               "true"
-  SCAN_KUBERNETES_MANIFESTS:       "true"
+#  SAST_DISABLE_DIND:               "true"
+#  SCAN_KUBERNETES_MANIFESTS:       "true"
   DS_DISABLE_DIND:                 "true"
 
 # Enable Gitlab's security scanning
-include:
-  - template: SAST.gitlab-ci.yml
-  - template: Dependency-Scanning.gitlab-ci.yml
-  - template: License-Scanning.gitlab-ci.yml
+#include:
+#  - template: SAST.gitlab-ci.yml
+#  - template: Dependency-Scanning.gitlab-ci.yml
+#  - template: License-Scanning.gitlab-ci.yml
 
-kubesec-sast:
-  variables:
-    ANALYZER_TARGET_DIR: "kubernetes/"
+#kubesec-sast:
+#  variables:
+#    ANALYZER_TARGET_DIR: "kubernetes/"
 
 stages:
   #  - check
@@ -80,7 +80,7 @@ dockerize:production:
     # check syntax
     - for f in kubernetes/processbot/*yaml; do echo $f; cat $f | envsubst | kubectl --dry-run --validate -n processbot apply -f -; done
     # print rendered yaml
-     - for f in kubernetes/processbot/*yaml; do echo $f; cat $f | envsubst; echo '---'; done
+    - for f in kubernetes/processbot/*yaml; do echo $f; cat $f | envsubst; echo '---'; done
     # deploy yaml to cluster
     #    - for f in kubernetes/processbot/*yaml; do cat $f | envsubst | kubectl -n processbot apply -f -; done
 
