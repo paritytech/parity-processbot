@@ -8,5 +8,6 @@ RUN set -ev; \
     apt-get upgrade -y; \
     apt-get install -y --no-install-recommends \
         pkg-config curl ca-certificates libssl-dev
+
 COPY --from=builder /usr/local/cargo/bin/parity-processbot /usr/local/bin/parity-processbot
 CMD ["parity-processbot"]
