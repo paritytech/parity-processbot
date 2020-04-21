@@ -3,8 +3,6 @@ RUN cargo install --git https://github.com/paritytech/parity-processbot --branch
 
 FROM debian:buster-slim
 
-COPY --from=builder /usr/local/cargo/bin/parity-processbot /usr/local/bin/parity-processbot
-
 RUN set -ev; \
     apt-get update; \
     apt-get upgrade -y; \
@@ -14,4 +12,6 @@ RUN set -ev; \
 	apt-get autoremove -y; \
 	apt-get clean; \
 	rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /usr/local/cargo/bin/parity-processbot /usr/local/bin/parity-processbot
 CMD ["parity-processbot"]
