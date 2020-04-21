@@ -8,7 +8,6 @@ variables:
   # Variables required by Gitlab scanning
   SAST_DISABLE_DIND:               "true"
   SCAN_KUBERNETES_MANIFESTS:       "true"
-  ANALYZER_TARGET_DIR:             "auth-server/"
   DS_DISABLE_DIND:                 "true"
 
 # Enable Gitlab's security scanning
@@ -22,8 +21,8 @@ kubesec-sast:
     ANALYZER_TARGET_DIR: "kubernetes/"
 
 stages:
-  - check
-  - test
+  #  - check
+  #  - test
   - dockerize
   - deploy
 
@@ -31,21 +30,21 @@ cache:
   key:                             '${CI_JOB_NAME}'
     
 #### stage:                        dockerize
-check:fmt:
-  stage: test
-  image: base-ci-linux
-  interruptible: true
-  dependencies: []
-  script:
-    - cargo fmt --all -- --check
+#fmt:
+#  stage: check
+#  image: base-ci-linux
+#  interruptible: true
+#  dependencies: []
+#  script:
+#    - cargo fmt --all -- --check
 
-test:
-  stage: test
-  image: base-ci-linux
-  interruptible: true
-  dependencies: []
-  script:
-    - cargo test --all
+  #test:
+  #  stage: test
+  #  image: base-ci-linux
+  #  interruptible: true
+  #  dependencies: []
+  #  script:
+  #    - cargo test --all
 
 .build_and_push:                   &build_and_push
   variables:
@@ -69,8 +68,8 @@ dockerize:production:
   stage: dockerize
   environment:
     name: parity-build
-  only:
-    - master
+    #  only:
+    #  - master
   <<: *build_and_push
 
 #### stage:                        deploy
@@ -91,8 +90,8 @@ deploy-staging:
     name: dashboards-cluster-1
   tags:
     - kubernetes-parity-build
-  only:
-    - master
+      # only:
+      #  - master
   <<: *deploy-k8s
 
 deploy-production:
