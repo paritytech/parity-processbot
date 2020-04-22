@@ -31,7 +31,7 @@ cache:
     
 fmt:
   stage: check
-  image: base-ci-linux
+  image: parity/rust-builder:latest
   interruptible: true
   dependencies: []
   script:
@@ -39,7 +39,7 @@ fmt:
 
   #test:
   #  stage: test
-  #  image: base-ci-linux
+  #  image: parity/rust-builder:latest
   #  interruptible: true
   #  dependencies: []
   #  script:
