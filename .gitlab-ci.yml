@@ -21,21 +21,21 @@ variables:
 #    ANALYZER_TARGET_DIR: "kubernetes/"
 
 stages:
-  #  - check
+  - check
   #  - test
-  - dockerize
-  - deploy
+  # - dockerize
+  # - deploy
 
 cache:
   key:                             '${CI_JOB_NAME}'
     
-#fmt:
-#  stage: check
-#  image: base-ci-linux
-#  interruptible: true
-#  dependencies: []
-#  script:
-#    - cargo fmt --all -- --check
+fmt:
+  stage: check
+  image: base-ci-linux
+  interruptible: true
+  dependencies: []
+  script:
+    - cargo fmt --all -- --check
 
   #test:
   #  stage: test
