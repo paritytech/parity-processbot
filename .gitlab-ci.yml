@@ -23,8 +23,8 @@ variables:
 stages:
   - check
   #  - test
-  # - dockerize
-  # - deploy
+  - dockerize
+  - deploy
 
 cache:
   key:                             '${CI_JOB_NAME}'
