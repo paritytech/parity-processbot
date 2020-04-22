@@ -51,9 +51,9 @@ fmt:
     DOCKER_HOST: tcp://localhost:2375
   tags:
     - kubernetes-parity-build
-  image: docker:git
+  image: docker:18-git
   services:
-    - docker:stable-dind
+    - docker:dind
   script:
     - export DOCKER_IMAGE="${CI_REGISTRY}/${KUBE_NAMESPACE}"
     - export DOCKER_IMAGE_FULL_NAME=$DOCKER_IMAGE:$DOCKER_TAG
