@@ -51,7 +51,7 @@ fmt:
     DOCKER_HOST: tcp://localhost:2375
   tags:
     - kubernetes-parity-build
-  image: docker:stable-git
+  image: docker:stable-dind
   services:
     - docker:dind
   script:
