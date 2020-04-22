@@ -1,4 +1,4 @@
-image: parity/kubetools:helm3
+image: parity/kubetools:latest
 variables:
   KUBE_NAMESPACE:                  "processbot"
   CI_REGISTRY:                     "paritytech"
@@ -8,7 +8,7 @@ variables:
   # Variables required by Gitlab scanning
 #  SAST_DISABLE_DIND:               "true"
 #  SCAN_KUBERNETES_MANIFESTS:       "true"
-  DS_DISABLE_DIND:                 "true"
+#DS_DISABLE_DIND:                 "true"
 
 # Enable Gitlab's security scanning
 #include:
