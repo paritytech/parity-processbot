@@ -1,7 +1,7 @@
 image: parity/kubetools:latest
 variables:
   KUBE_NAMESPACE:                  "processbot"
-  CI_REGISTRY:                     "gcr.io/test-installations-222013"
+  CI_REGISTRY:                     "paritytech"
   DOCKER_TAG:                      '$CI_COMMIT_REF_SLUG-$CI_COMMIT_SHORT_SHA'
   GIT_STRATEGY:                    fetch
   GIT_DEPTH:                       3
@@ -37,8 +37,8 @@ fmt:
   script:
     - cargo fmt --all -- --check
 
-  #test:
-  #  stage: test
+      #test:
+      #  stage: test
   #  image: parity/rust-builder:latest
   #  interruptible: true
   #  dependencies: []
@@ -59,7 +59,7 @@ fmt:
     - export DOCKER_IMAGE="${CI_REGISTRY}/${KUBE_NAMESPACE}-${POD_NAME}"
     - export DOCKER_IMAGE_FULL_NAME=$DOCKER_IMAGE:$DOCKER_TAG
     - echo "$BUILD_ARGS"
-    - echo "$DOCKER_REGISTRY_JSON" | docker login -u _json_key --password-stdin https://gcr.io
+    - echo "$Docker_Hub_Pass_Parity" | docker login -u "$Docker_Hub_User_Parity" --password-stdin
     - eval "docker build -t" "$DOCKER_IMAGE_FULL_NAME" "$BUILD_ARGS" "$POD_NAME"
     - docker push "$DOCKER_IMAGE_FULL_NAME"
 
