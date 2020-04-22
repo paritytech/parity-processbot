@@ -2,7 +2,7 @@ image: parity/kubetools:helm3
 variables:
   KUBE_NAMESPACE:                  "processbot"
   CI_REGISTRY:                     "paritytech"
-  #DOCKER_TAG:                      '$CI_COMMIT_REF_SLUG-$CI_COMMIT_SHORT_SHA'
+  DOCKER_TAG:                      'latest'
   GIT_STRATEGY:                    fetch
   GIT_DEPTH:                       3
   # Variables required by Gitlab scanning
@@ -56,9 +56,9 @@ fmt:
     - docker:dind
   script:
     - export DOCKER_IMAGE="${CI_REGISTRY}/${KUBE_NAMESPACE}"
-    - export DOCKER_IMAGE_FULL_NAME=$DOCKER_IMAGE:latest
+    - export DOCKER_IMAGE_FULL_NAME=$DOCKER_IMAGE:$DOCKER_TAG
     - echo "$Docker_Hub_Pass_Parity" | docker login -u "$Docker_Hub_User_Parity" --password-stdin
-    - eval "docker build -t" "$DOCKER_IMAGE_FULL_NAME" "."
+    - eval "docker build -t" "$DOCKER_IMAGE_FULL_NAME" .
     - docker push "$DOCKER_IMAGE_FULL_NAME"
 
 #### stage:                        dockerize
