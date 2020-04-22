@@ -58,8 +58,8 @@ fmt:
     - export DOCKER_IMAGE="${CI_REGISTRY}/${KUBE_NAMESPACE}"
     - export DOCKER_IMAGE_FULL_NAME=$DOCKER_IMAGE:latest
     - echo "$Docker_Hub_Pass_Parity" | docker login -u "$Docker_Hub_User_Parity" --password-stdin
-    - eval "docker build -t" "$DOCKER_IMAGE_FULL_NAME"
-    - docker push "$DOCKER_IMAGE_FULL_NAME" .
+    - eval "docker build -t" "$DOCKER_IMAGE_FULL_NAME" .
+    - docker push "$DOCKER_IMAGE_FULL_NAME"
 
 #### stage:                        dockerize
 dockerize-processbot:
