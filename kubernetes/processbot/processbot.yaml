@@ -24,7 +24,7 @@ spec:
     matchLabels:
       app: parity-processbot
   serviceName: "parity-processbot"
-  updateStrategy:
+  strategy:
     type: RollingUpdate
     rollingUpdate:
       maxSurge: 1
