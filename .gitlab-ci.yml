@@ -15,7 +15,7 @@ stages:
 cache:
   key:                             '${CI_JOB_NAME}'
     
-fmt:
+check:
   stage: check
   image: parity/rust-builder:latest
   interruptible: true
