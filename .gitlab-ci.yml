@@ -89,7 +89,7 @@ dockerize-processbot:
 deploy-staging:
   stage: deploy
   environment:
-    name: dashboards-cluster-1
+    name: staging-cluster-1
   tags:
     - kubernetes-parity-build
       # only:
