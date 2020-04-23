@@ -32,8 +32,8 @@ test:
     - export ROCKSDB_LIB_DIR="/usr/lib"
     - export ROCKSDB_STATIC=1
     - cargo test --all
-  only:
-    - external_pull_requests
+  tags:
+    - linux-docker
 
 .build_and_push:                   &build_and_push
   variables:
