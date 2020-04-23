@@ -24,11 +24,8 @@ spec:
     matchLabels:
       app: parity-processbot
   serviceName: "parity-processbot"
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 1
+  updateStrategy:
+    type: Recreate
   replicas: 1
   template:
     metadata:
