@@ -30,19 +30,19 @@ stages:
 
 #### stage:                        check
 
-check:
-  stage:                           check
-  <<:                              *docker-env
-  script:
-    - cargo fmt --all -- --check
+# check:
+#   stage:                           check
+#   <<:                              *docker-env
+#   script:
+#     - cargo fmt --all -- --check
 
-#### stage:                        test
+# #### stage:                        test
 
-test:
-  stage:                           test
-  <<:                              *docker-env
-  script:
-    - cargo test --all
+# test:
+#   stage:                           test
+#   <<:                              *docker-env
+#   script:
+#     - cargo test --all
 
 #### stage:                        dockerize
 
@@ -67,8 +67,8 @@ dockerize-processbot:
   <<:                              *build_and_push
   environment:
     name:                          parity-build
-  only:
-    - tags
+  # only:
+    # - tags
 
 #### stage:                        deploy
 
