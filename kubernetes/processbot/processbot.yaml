@@ -61,8 +61,6 @@ spec:
                       key: bamboo_token
             - name: RUST_BACKTRACE
               value: full
-            - name: RUST_LOG
-              value: debug
             - name: INSTALLATION_LOGIN
               value: paritytech
             - name: PRIVATE_KEY_PATH
@@ -74,7 +72,7 @@ spec:
             - name: BAMBOO_TICK_SECS
               value: "7200"
             - name: MATRIX_SILENT
-              value: "false"
+              value: "true"
             - name: MATRIX_DEFAULT_CHANNEL_ID
               value: "!ZXvnxSiXstTeRmkMGk:matrix.parity.io" 
             - name: MAIN_TICK_SECS

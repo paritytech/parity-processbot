@@ -2,7 +2,7 @@ image: parity/kubetools:helm3
 variables:
   KUBE_NAMESPACE:                  "processbot"
   CI_REGISTRY:                     "paritytech"
-  DOCKER_TAG:                      'latest'
+  DOCKER_TAG:                      "${CI_COMMIT_TAG}"
   GIT_STRATEGY:                    fetch
   GIT_DEPTH:                       3
   # Variables required by Gitlab scanning
@@ -71,7 +71,7 @@ dockerize-processbot:
   environment:
     name: parity-build
   only:
-      - master
+    - tags
   <<: *build_and_push
 
 #### stage:                        deploy
