@@ -42,7 +42,7 @@ spec:
       containers:
       - name: parity-processbot
         imagePullPolicy: Always
-        image: gcr.io/test-installations-222013/processbot:latest
+        image: paritytech/processbot:latest
         volumeMounts:
         - name: processbot-key-volume
           mountPath: "/etc/processbot-key"

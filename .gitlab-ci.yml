@@ -22,9 +22,10 @@ variables:
 
 stages:
   - check
-  - test
+    #  - test
   - dockerize
-  - deploy
+  - deploy-staging
+    #  - deploy-production
 
 cache:
   key:                             '${CI_JOB_NAME}'
@@ -78,14 +79,14 @@ dockerize-processbot:
   script:
     - export DOCKER_TAG
     # check syntax
-    - for f in kubernetes/processbot/*yaml; do echo $f; cat $f | envsubst | kubectl --dry-run --validate -n processbot apply -f -; done
+    - for f in kubernetes/processbot/*yaml; do echo $f; cat $f | envsubst | kubectl --dry-run=client --validate -n processbot apply -f -; done
     # print rendered yaml
     - for f in kubernetes/processbot/*yaml; do echo $f; cat $f | envsubst; echo '---'; done
     # deploy yaml to cluster
-    #    - for f in kubernetes/processbot/*yaml; do cat $f | envsubst | kubectl -n processbot apply -f -; done
+    - for f in kubernetes/processbot/*yaml; do cat $f | envsubst | kubectl -n processbot apply -f -; done
 
 deploy-staging:
-  stage: deploy
+  stage: deploy-staging
   environment:
     name: dashboards-cluster-1
   tags:
@@ -95,7 +96,7 @@ deploy-staging:
   <<: *deploy-k8s
 
 deploy-production:
-  stage: deploy
+  stage: deploy-production
   environment:
     name: parity-prod
   tags:
