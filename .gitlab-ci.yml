@@ -5,20 +5,6 @@ variables:
   DOCKER_TAG:                      "${CI_COMMIT_TAG}"
   GIT_STRATEGY:                    fetch
   GIT_DEPTH:                       3
-  # Variables required by Gitlab scanning
-#  SAST_DISABLE_DIND:               "true"
-#  SCAN_KUBERNETES_MANIFESTS:       "true"
-#DS_DISABLE_DIND:                 "true"
-
-# Enable Gitlab's security scanning
-#include:
-#  - template: SAST.gitlab-ci.yml
-#  - template: Dependency-Scanning.gitlab-ci.yml
-#  - template: License-Scanning.gitlab-ci.yml
-
-#kubesec-sast:
-#  variables:
-#    ANALYZER_TARGET_DIR: "kubernetes/"
 
 stages:
   - check
@@ -47,7 +33,7 @@ test:
     - export ROCKSDB_STATIC=1
     - cargo test --all
   only:
-    - master
+    - external_pull_requests
 
 .build_and_push:                   &build_and_push
   variables:
@@ -92,8 +78,8 @@ deploy-staging:
     name: staging-cluster-1
   tags:
     - kubernetes-parity-build
-      # only:
-      #  - master
+  only:
+    - master
   <<: *deploy-k8s
 
 deploy-production:
