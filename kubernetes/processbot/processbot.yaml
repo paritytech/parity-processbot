@@ -38,7 +38,7 @@ spec:
           defaultMode: 256
       - name: database
         persistentVolumeClaim:
-          claimName: statedbvolume
+          claimName: processbot-pv-claim
       containers:
       - name: parity-processbot
         imagePullPolicy: Always
