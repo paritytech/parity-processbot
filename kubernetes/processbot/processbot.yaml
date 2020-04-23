@@ -26,6 +26,7 @@ spec:
   serviceName: "parity-processbot"
   updateStrategy:
     type: RollingUpdate
+  replicas: 1
   template:
     metadata:
       labels:
