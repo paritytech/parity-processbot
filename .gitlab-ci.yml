@@ -35,17 +35,19 @@ fmt:
   interruptible: true
   dependencies: []
   script:
-    - export ROCKSDB_LIB_DIR="/usr/lib"
-    - export ROCKSDB_STATIC=1
     - cargo fmt --all -- --check
 
-      #test:
-      # stage: test
-      #  image: parity/rust-builder:latest
-      #  interruptible: true
-      #  dependencies: []
-      #  script:
-      # - cargo test --all
+test:
+  stage: test
+  image: parity/rust-builder:latest
+  interruptible: true
+  dependencies: []
+  script:
+    - export ROCKSDB_LIB_DIR="/usr/lib"
+    - export ROCKSDB_STATIC=1
+    - cargo test --all
+  only:
+    - master
 
 .build_and_push:                   &build_and_push
   variables:
@@ -68,7 +70,7 @@ dockerize-processbot:
   stage: dockerize
   environment:
     name: parity-build
-    only:
+  only:
       - master
   <<: *build_and_push
 
