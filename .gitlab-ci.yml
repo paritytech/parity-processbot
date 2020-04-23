@@ -80,7 +80,7 @@ dockerize-processbot:
   script:
     - export DOCKER_TAG
     # check syntax
-    - for f in kubernetes/processbot/*yaml; do echo $f; cat $f | envsubst | kubectl --dry-run=client --validate -n processbot apply -f -; done
+    - for f in kubernetes/processbot/*yaml; do echo $f; cat $f | envsubst | kubectl --dry-run --validate -n processbot apply -f -; done
     # print rendered yaml
     - for f in kubernetes/processbot/*yaml; do echo $f; cat $f | envsubst; echo '---'; done
     # deploy yaml to cluster
