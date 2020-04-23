@@ -1,11 +1,40 @@
+use actix_web::{post, web, App, HttpResponse, HttpServer, Responder};
 use parking_lot::RwLock;
 use rocksdb::DB;
+use serde::Deserialize;
 use snafu::ResultExt;
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use parity_processbot::{bamboo, bots, config, error, github_bot, matrix_bot};
 
 const GITHUB_TO_MATRIX_KEY: &str = "GITHUB_TO_MATRIX";
+
+/*
+#[derive(Debug, Deserialize)]
+struct Payload {
+	#[serde(rename = "type")]
+	event_type: String,
+	action: String,
+}
+
+#[post("/payload")]
+async fn webhook(payload: String) -> impl Responder {
+	let s = format!("{:?}", payload);
+	dbg!(&s);
+	HttpResponse::Ok().body(s)
+}
+
+#[actix_rt::main]
+async fn main() -> std::io::Result<()> {
+	HttpServer::new(|| {
+		App::new()
+			.service(webhook)
+	})
+	.bind("127.0.0.1:4567")?
+	.run()
+	.await
+}
+*/
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -22,23 +51,23 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
 	let db = DB::open_default(&config.db_path)?;
 
-	let matrix_bot = matrix_bot::MatrixBot::new_with_token(
+	log::info!(
+		"Connecting to matrix homeserver {}",
+		config.matrix_homeserver,
+	);
+	let matrix_bot = dbg!(matrix_bot::MatrixBot::new_with_token(
 		&config.matrix_homeserver,
 		&config.matrix_access_token,
 		&config.matrix_default_channel_id,
 		config.matrix_silent,
-	)?;
-	log::info!(
-		"Connected to matrix homeserver {}",
-		config.matrix_homeserver,
-	);
+	)?);
 
+	log::info!("Connecting to Github account {}", config.installation_login);
 	let github_bot = github_bot::GithubBot::new(
 		config.private_key.clone(),
 		&config.installation_login,
 	)
 	.await?;
-	log::info!("Connected to Github account {}", config.installation_login);
 
 	// the bamboo queries can take a long time so only wait for it
 	// if github_to_matrix is not in the db. otherwise update it
@@ -48,6 +77,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 		.context(error::Db)?
 		.is_none()
 	{
+		log::info!("Waiting for Bamboo data (may take a few minutes)");
 		// block on bamboo
 		match bamboo::github_to_matrix(&config.bamboo_token) {
 			Ok(github_to_matrix) => {
@@ -102,6 +132,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 	loop {
 		interval.tick().await;
 
+		log::info!("Fetching core-devs");
 		let core_devs = match bot.github_bot.team("core-devs").await {
 			Ok(team) => bot.github_bot.team_members(team.id).await?,
 			_ => vec![],
@@ -123,5 +154,23 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 		bot.core_devs = core_devs;
 		bot.github_to_matrix = github_to_matrix;
 		bot.update().await?;
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use regex::Regex;
+
+	#[test]
+	fn test_replace_whitespace_in_toml_key() {
+		let mut s = String::from("[Smart Contracts Ok]\nwhitelist = []");
+		let re = Regex::new(
+			r"^\[((?:[[:word:]]|[[:punct:]])*)[[:blank:]]((?:[[:word:]]|[[:punct:]])*)",
+		)
+		.unwrap();
+		while re.captures_iter(&s).count() > 0 {
+			s = dbg!(re.replace_all(&s, "[$1-$2").to_string());
+		}
+		assert_eq!(&s, "[Smart-Contracts-Ok]\nwhitelist = []");
 	}
 }

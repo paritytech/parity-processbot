@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use crate::{error, matrix, Result};
 
+#[derive(Debug)]
 pub struct MatrixBot {
 	homeserver: String,
 	access_token: String,
@@ -20,14 +21,11 @@ impl MatrixBot {
 		default_channel_id: &str,
 		silent: bool,
 	) -> Result<Self> {
-		matrix::sync(homeserver, access_token).map(|s| {
-			log::debug!("Matrix sync: {}", s);
-			Self {
-				homeserver: homeserver.to_owned(),
-				access_token: access_token.to_owned(),
-				default_channel_id: default_channel_id.to_owned(),
-				silent: silent,
-			}
+		matrix::sync(homeserver, access_token).map(|s| Self {
+			homeserver: homeserver.to_owned(),
+			access_token: access_token.to_owned(),
+			default_channel_id: default_channel_id.to_owned(),
+			silent: silent,
 		})
 	}
 
