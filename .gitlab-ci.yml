@@ -22,7 +22,7 @@ variables:
 
 stages:
   - check
-  #  - test
+  - test
   - dockerize
   - deploy
 
@@ -35,15 +35,17 @@ fmt:
   interruptible: true
   dependencies: []
   script:
+    - export ROCKSDB_LIB_DIR="/usr/lib"
+    - export ROCKSDB_STATIC=1
     - cargo fmt --all -- --check
 
-      #test:
-      #  stage: test
-  #  image: parity/rust-builder:latest
-  #  interruptible: true
-  #  dependencies: []
-  #  script:
-  #    - cargo test --all
+test:
+  stage: test
+  image: parity/rust-builder:latest
+  interruptible: true
+  dependencies: []
+  script:
+    - cargo test --all
 
 .build_and_push:                   &build_and_push
   variables:
