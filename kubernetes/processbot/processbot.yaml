@@ -3,7 +3,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: parity-processbot
-  namespace: processbot
+  namespace: $KUBE_NAMESPACE
   labels:
     app: parity-processbot
 spec:
@@ -43,7 +43,7 @@ spec:
       containers:
       - name: parity-processbot
         imagePullPolicy: Always
-        image: paritytech/processbot:latest
+        image: paritytech/processbot:$DOCKER_TAG
         volumeMounts:
         - name: processbot-key-volume
           mountPath: "/etc/processbot-key"

@@ -47,18 +47,19 @@ test:
 #### stage:                        dockerize
 
 .build_and_push:                   &build_and_push
-  image:                           docker:18-git
+  image:                           docker:git
   services:
-    - docker:18-dind
+    - docker:dind
   variables:
     DOCKER_DRIVER:                 overlay2
     DOCKER_HOST:                   tcp://localhost:2375
     DOCKER_IMAGE:                  "${CI_REGISTRY}/${KUBE_NAMESPACE}"
     DOCKER_IMAGE_FULL_NAME:        "$DOCKER_IMAGE:$DOCKER_TAG"
   script:
+    - export DOCKER_IMAGE_FULL_NAME
     - echo "$Docker_Hub_Pass_Parity" | docker login -u "$Docker_Hub_User_Parity" --password-stdin
-    - eval "docker build -t" "$DOCKER_IMAGE_FULL_NAME" .
-    - eval "docker push" "$DOCKER_IMAGE_FULL_NAME"
+    - docker build -t $DOCKER_IMAGE_FULL_NAME .
+    - docker push $DOCKER_IMAGE_FULL_NAME
   tags:
     - kubernetes-parity-build
       
@@ -75,12 +76,14 @@ dockerize-processbot:
 .deploy-k8s:                       &deploy-k8s
   image:                           parity/kubetools:helm3
   script:
+    - export DOCKER_TAG
+    - export KUBE_NAMESPACE
     # check syntax
-    - for f in kubernetes/processbot/*yaml; do echo $f; cat $f | envsubst | kubectl --dry-run --validate -n processbot apply -f -; done
+    - for f in kubernetes/processbot/*yaml; do echo $f; cat $f | envsubst | kubectl --dry-run --validate -n $KUBE_NAMESPACE apply -f -; done
     # print rendered yaml
     - for f in kubernetes/processbot/*yaml; do echo $f; cat $f | envsubst; echo '---'; done
     # deploy yaml to cluster
-    - for f in kubernetes/processbot/*yaml; do cat $f | envsubst | kubectl -n processbot apply -f -; done
+    - for f in kubernetes/processbot/*yaml; do cat $f | envsubst | kubectl -n $KUBE_NAMESPACE apply -f -; done
 
 deploy-staging:
   stage:                           deploy
@@ -89,8 +92,8 @@ deploy-staging:
     name: staging-cluster-1
   tags:
     - kubernetes-parity-build
-  only:
-    - tags
+       only:
+        - tags
 
 deploy-production:
   stage:                           deploy
