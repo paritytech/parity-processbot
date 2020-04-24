@@ -69,8 +69,12 @@ impl MainConfig {
 
 #[derive(Debug, Clone)]
 pub struct BotConfig {
+	/// warn instead of closing issues
+	pub grace_period: bool,
 	/// seconds between pings
 	pub status_failure_ping: u64,
+	/// seconds between pings
+	pub issue_not_addressed_ping: u64,
 	/// seconds between pings
 	pub issue_not_assigned_to_pr_author_ping: u64,
 	/// seconds between pings
@@ -101,10 +105,20 @@ impl BotConfig {
 	pub fn from_env() -> Self {
 		dotenv::dotenv().ok();
 		Self {
+			grace_period: dotenv::var("GRACE_PERIOD")
+				.expect("GRACE_PERIOD")
+				.parse::<bool>()
+				.expect("failed parsing GRACE_PERIOD"),
+
 			status_failure_ping: dotenv::var("STATUS_FAILURE_PING")
 				.expect("STATUS_FAILURE_PING")
 				.parse::<u64>()
 				.expect("failed parsing STATUS_FAILURE_PING"),
+
+			issue_not_addressed_ping: dotenv::var("ISSUE_NOT_ADDRESSED_PING")
+				.expect("ISSUE_NOT_ADDRESSED_PING")
+				.parse::<u64>()
+				.expect("failed parsing ISSUE_NOT_ADDRESSED_PING"),
 
 			issue_not_assigned_to_pr_author_ping: dotenv::var(
 				"ISSUE_NOT_ASSIGNED_TO_PR_AUTHOR_PING",

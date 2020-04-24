@@ -269,9 +269,12 @@ impl Bot {
 							// owners and whitelisted devs can open prs without an attached issue.
 						} else if issues.is_empty() {
 							// author is not special and no issue addressed.
-							self.close_for_missing_issue(&repo, &pr).await?;
-							local_state.alive = false;
-							continue 'issue_loop;
+							self.pr_missing_issue(
+								&mut local_state,
+								&repo,
+								&pr,
+							)
+							.await?;
 						}
 					}
 

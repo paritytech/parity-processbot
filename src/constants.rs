@@ -11,14 +11,16 @@ pub const MISMATCHED_PROCESS_FILE: &str = "Process.toml for repo {repo_url} list
 
 pub const MALFORMED_PROCESS_FILE: &str = "Process.toml for repo {repo_url} is malformed or missing some fields. Please ensure that every listed project contains an owner and a matrix_room_id.";
 
+pub const WARN_FOR_NO_ISSUE: &str = "@{author}, this pull request will be closed if it does not explicitly mention the issue it addresses.";
+
 pub const CLOSE_FOR_NO_ISSUE: &str = "@{author}, this pull request is being closed because it does not explicitly address an issue.";
 
 pub const WILL_CLOSE_FOR_NO_PROJECT: &str =
 	"@{author}, {issue_url} will be closed if it is not attached to a project.";
 
-pub const PRIVATE_ISSUE_NEEDS_REASSIGNMENT: &str = "{pr_url} addressing {issue_url} has been opened by {author}. Please reassign the issue or close the pull request.";
+pub const PRIVATE_ISSUE_NEEDS_REASSIGNMENT: &str = "{pr_url} addressing {issue_url} has been opened by {author}. Please reassign the issue to the PR author, or close the pull request.";
 
-pub const PUBLIC_ISSUE_NEEDS_REASSIGNMENT: &str = "@{owner}, {pr_url} addressing {issue_url} has been opened by {author}. Please reassign the issue or close the pull request.";
+pub const PUBLIC_ISSUE_NEEDS_REASSIGNMENT: &str = "@{owner}, {pr_url} addressing {issue_url} has been opened by {author}. Please reassign the issue to the PR author, or close the pull request.";
 
 pub const PROJECT_CONFIRMATION: &str = "{issue_url} has been attached to the project column '{column_name}' in project '{project_name}'. To confirm the change, {owner} or a whitelisted developer should post, \"confirm {issue_id} {column_id}\", to this channel in the next {seconds} seconds.";
 

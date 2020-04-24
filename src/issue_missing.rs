@@ -1,29 +1,59 @@
 use crate::{bots, constants::*, github, Result};
 
 impl bots::Bot {
-	pub async fn close_for_missing_issue(
+	pub async fn pr_missing_issue(
 		&self,
+		local_state: &mut LocalState,
 		repo: &github::Repository,
 		pull_request: &github::PullRequest,
 	) -> Result<()> {
-		// leave a message that a corresponding issue must exist for
-		// each PR then close the PR
+		let elapsed = local_state
+			.issue_not_addressed_ping()
+			.and_then(|ping| ping.elapsed().ok());
+		let days = elapsed.ticks(self.config.issue_not_addressed_ping);
 		log::info!(
-            "Closing pull request '{issue_title:?}' as it addresses no issue in repo '{repo_name}'",
-            issue_title = pull_request.title,
-            repo_name = repo.name
-        );
-		self.github_bot
-			.create_issue_comment(
-				&repo.name,
-				pull_request.number,
-				&CLOSE_FOR_NO_ISSUE
-					.replace("{author}", &pull_request.user.login),
-			)
-			.await?;
-		self.github_bot
-			.close_pull_request(&repo.name, pull_request.number)
-			.await?;
+			"{} has been missing an issue for at least {:?} seconds.",
+			pull_request.html_url,
+			elapsed
+		);
+		match days {
+			// notify the the issue assignee and project
+			// owner through a PM
+			None => {
+				self.github_bot
+					.create_issue_comment(
+						&repo.name,
+						pull_request.number,
+						&WARN_FOR_NO_ISSUE
+							.replace("{author}", &pull_request.user.login),
+					)
+					.await?
+			}
+			// do nothing
+			Some(0) => Ok(()),
+			// if after 24 hours there is no change, then
+			// send a message into the project's Riot
+			// channel
+			Some(_) => {
+                log::info!(
+                    "Closing pull request '{issue_title:?}' as it addresses no issue in repo '{repo_name}'",
+                    issue_title = pull_request.title,
+                    repo_name = repo.name
+                );
+				self.github_bot
+					.create_issue_comment(
+						&repo.name,
+						pull_request.number,
+						&CLOSE_FOR_NO_ISSUE
+							.replace("{author}", &pull_request.user.login),
+					)
+					.await?;
+				self.github_bot
+					.close_pull_request(&repo.name, pull_request.number)
+					.await?;
+                local_state.alive = false;
+			}
+		}
 		Ok(())
 	}
 
