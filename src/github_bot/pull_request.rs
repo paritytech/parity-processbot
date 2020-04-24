@@ -76,7 +76,7 @@ impl GithubBot {
 			repo = repo_name,
 		);
 		self.client
-			.post_response(&url, &serde_json::json!({ "base": pull_request.base.ref_field, "head": pull_request.head.sha })) 
+			.post_response(&url, &serde_json::json!({ "base": pull_request.base.ref_field, "head": pull_request.head.sha, "merge_method": "squash" })) 
 			.await
 			.map(|_| ())
 	}

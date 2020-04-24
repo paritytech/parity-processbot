@@ -31,7 +31,7 @@ impl bots::Bot {
 			.iter()
 			.sorted_by_key(|r| r.submitted_at)
 			.rev()
-			.find(|r| process_info.is_linked_owner(&r.user.login))
+			.find(|r| process_info.is_primary_owner(&r.user.login))
 			.map_or(false, |r| r.state == Some(github::ReviewState::Approved));
 
 		let core_approved = reviews
@@ -157,10 +157,12 @@ impl bots::Bot {
 		let mut merged = false;
 		match state {
 			AutoMergeState::Ready(requested_by) => {
-				if pull_request.mergeable.unwrap_or(false)
-					&& (self.pull_request_is_approved(&process, &reviews)
-						|| process.is_primary_owner(&requested_by))
-				{
+				let mergeable = dbg!(pull_request.mergeable.unwrap_or(false));
+				let approved =
+					dbg!(self.pull_request_is_approved(&process, &reviews));
+				let owner_request =
+					dbg!(process.is_primary_owner(&requested_by));
+				if mergeable && (approved || owner_request) {
 					log::info!(
 						"{} has necessary approvals; merging.",
 						pull_request.html_url

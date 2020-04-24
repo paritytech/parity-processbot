@@ -1,40 +1,11 @@
-//use actix_web::{post, web, App, HttpResponse, HttpServer, Responder};
 use parking_lot::RwLock;
 use rocksdb::DB;
-//use serde::Deserialize;
 use snafu::ResultExt;
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use parity_processbot::{bamboo, bots, config, error, github_bot, matrix_bot};
 
 const GITHUB_TO_MATRIX_KEY: &str = "GITHUB_TO_MATRIX";
-
-/*
-#[derive(Debug, Deserialize)]
-struct Payload {
-	#[serde(rename = "type")]
-	event_type: String,
-	action: String,
-}
-
-#[post("/payload")]
-async fn webhook(payload: String) -> impl Responder {
-	let s = format!("{:?}", payload);
-	dbg!(&s);
-	HttpResponse::Ok().body(s)
-}
-
-#[actix_rt::main]
-async fn main() -> std::io::Result<()> {
-	HttpServer::new(|| {
-		App::new()
-			.service(webhook)
-	})
-	.bind("127.0.0.1:4567")?
-	.run()
-	.await
-}
-*/
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

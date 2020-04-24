@@ -6,9 +6,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::{
-	config::BotConfig, constants::*, db::*, error, github,
-	github_bot::GithubBot, local_state::*, matrix_bot::MatrixBot, process,
-	Result,
+	config::BotConfig, constants::*, error, github, github_bot::GithubBot,
+	matrix_bot::MatrixBot, process, Result,
 };
 
 const STATS_MSG: &str = "Organization {org_login}:\n- Repositories with valid Process files: {repos_with_process}\n- Projects in all repositories: {num_projects}\n- Process entries (including owner & matrix room) in all repositories: {num_process}\n- Developers with Github and Matrix handles in BambooHR: {github_to_matrix}\n- Core developers: {core_devs}\n- Open pull requests: {open_prs}\n- Open issues: {open_issues}";
@@ -52,11 +51,11 @@ impl Bot {
 		let mut open_prs = 0usize;
 		let mut open_issues = 0usize;
 
-		let mut statevec = LocalStateVec::get_or_default(
-			&self.db,
-			format!("{}", LOCAL_STATE_KEY).into_bytes(),
-		)?
-		.map(|x| x.map_alive(false));
+		//		let mut statevec = LocalStateVec::get_or_default(
+		//			&self.db,
+		//			format!("{}", LOCAL_STATE_KEY).into_bytes(),
+		//		)?
+		//		.map(|x| x.map_alive(false));
 
 		log::info!("REPOSITORIES");
 		'repo_loop: for repo in repos {
@@ -149,12 +148,12 @@ impl Bot {
 			'issue_loop: for issue in
 				self.github_bot.repository_issues(&repo).await?
 			{
-				let mut local_state = statevec
-					.get_entry_or_default(&format!("{}", issue.id).as_bytes());
-				local_state.alive = true;
+				//				let mut local_state = statevec
+				//					.get_entry_or_default(&format!("{}", issue.id).as_bytes());
+				//				local_state.alive = true;
 
-				let author_is_core =
-					self.core_devs.iter().any(|u| u.id == issue.user.id);
+				//				let author_is_core =
+				//					self.core_devs.iter().any(|u| u.id == issue.user.id);
 
 				if issue.pull_request.is_some() {
 					// issue is a pull request
@@ -179,7 +178,7 @@ impl Bot {
 
 					open_prs += 1;
 
-					let (reviews, issues, status, requested_reviewers) = futures::try_join!(
+					let (reviews, issues, status, _requested_reviewers) = futures::try_join!(
 						self.github_bot.reviews(&pr),
 						self.github_bot.linked_issues(
 							&repo,
@@ -220,15 +219,15 @@ impl Bot {
 					// then attach that project
 					if features.issue_project {
 						if pr_project.is_none() {
-							self.try_attach_project(
-								&mut local_state,
-								&repo,
-								&pr,
-								&projects,
-								&process,
-								author_is_core,
-							)
-							.await?;
+							//							self.try_attach_project(
+							//								&mut local_state,
+							//								&repo,
+							//								&pr,
+							//								&projects,
+							//								&process,
+							//								author_is_core,
+							//							)
+							//							.await?;
 						}
 					}
 
@@ -247,7 +246,7 @@ impl Bot {
 							.await
 						{
 							Ok(true) => {
-								local_state.alive = false;
+								//								local_state.alive = false;
 								continue 'issue_loop; // PR was merged so no more actions
 							}
 							Err(e) => {
@@ -270,8 +269,8 @@ impl Bot {
 							// owners and whitelisted devs can open prs without an attached issue.
 						} else if issues.is_empty() {
 							// author is not special and no issue addressed.
-							self.pr_missing_issue(&mut local_state, &repo, &pr)
-								.await?;
+							//							self.pr_missing_issue(&mut local_state, &repo, &pr)
+							//								.await?;
 						}
 					}
 
@@ -279,21 +278,21 @@ impl Bot {
 					// CHECK ISSUE ASSIGNED CORRECTLY
 					//
 					if features.issue_assigned {
-						for (issue, maybe_project) in
+						for (_issue, maybe_project) in
 							self.issue_projects(&repo, &issues, &projects).await
 						{
-							if let Some(process_info) =
+							if let Some(_process_info) =
 								maybe_project.and_then(|proj| {
 									combined_process.get(&proj.name)
 								}) {
-								self.assign_issue_or_warn(
-									&mut local_state,
-									&process_info,
-									&repo,
-									&pr,
-									&issue,
-								)
-								.await?;
+								//								self.assign_issue_or_warn(
+								//									&mut local_state,
+								//									&process_info,
+								//									&repo,
+								//									&pr,
+								//									&issue,
+								//								)
+								//								.await?;
 							} else {
 								// project is absent or not in Process.toml
 								// so we don't know the owner / matrix room.
@@ -305,17 +304,17 @@ impl Bot {
 					// CHECK REVIEWS
 					//
 					if features.review_requests {
-						if let Some(process_info) = pr_project
+						if let Some(_process_info) = pr_project
 							.and_then(|proj| combined_process.get(&proj.name))
 						{
-							self.require_reviewers(
-								&mut local_state,
-								&pr,
-								&process_info,
-								&reviews,
-								&requested_reviewers,
-							)
-							.await?;
+							//							self.require_reviewers(
+							//								&mut local_state,
+							//								&pr,
+							//								&process_info,
+							//								&reviews,
+							//								&requested_reviewers,
+							//							)
+							//							.await?;
 						} else {
 							// project is absent or not in Process.toml
 							// so we don't know the owner / matrix room.
@@ -326,8 +325,8 @@ impl Bot {
 					// CHECK STATUS
 					//
 					if features.status_notifications {
-						self.handle_status(&mut local_state, &pr, &status)
-							.await?;
+						//						self.handle_status(&mut local_state, &pr, &status)
+						//							.await?;
 					}
 				} else {
 					let issue = match self
@@ -374,15 +373,15 @@ impl Bot {
 					// then attach that project
 					if features.issue_project {
 						if issue_project.is_none() {
-							self.try_attach_project(
-								&mut local_state,
-								&repo,
-								&issue,
-								&projects,
-								&process,
-								author_is_core,
-							)
-							.await?;
+							//							self.try_attach_project(
+							//								&mut local_state,
+							//								&repo,
+							//								&issue,
+							//								&projects,
+							//								&process,
+							//								author_is_core,
+							//							)
+							//							.await?;
 						}
 					}
 				}
@@ -390,8 +389,8 @@ impl Bot {
 		}
 
 		// delete closed issues / pull requests and persist
-		statevec.delete(&self.db, LOCAL_STATE_KEY)?;
-		statevec.filter(|x| x.alive).persist(&self.db)?;
+		//		statevec.delete(&self.db, LOCAL_STATE_KEY)?;
+		//		statevec.filter(|x| x.alive).persist(&self.db)?;
 
 		let stats_msg = &STATS_MSG
 			.replace("{org_login}", self.github_bot.organization_login())
