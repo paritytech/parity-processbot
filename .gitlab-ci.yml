@@ -92,8 +92,8 @@ deploy-staging:
     name: staging-cluster-1
   tags:
     - kubernetes-parity-build
-       only:
-        - tags
+  only:
+    - tags
 
 deploy-production:
   stage:                           deploy
