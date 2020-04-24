@@ -45,6 +45,7 @@ test-build:
     - cargo test --all
     - cargo build
   after_script:
+    - mkdir -p ./artifacts/
     - mv ./target/debug/parity-processbot ./artifacts/
     - cp ./Dockerfile ./artifacts/
   artifacts:
