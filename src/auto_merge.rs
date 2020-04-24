@@ -7,16 +7,14 @@ pub struct AutoMergeRequest {
 	requested_at: chrono::DateTime<chrono::Utc>,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum AutoMergeState {
 	/// PR can be auto-merged
-	Ready,
+	Ready(String),
 	/// Checks are pending
 	Pending,
 	/// Checks failed or PR was not mergeable
 	Failed,
-	/// Someone besides the requester pushed a commit
-	Invalidated,
 	/// Cancelled or not requested
 	Declined,
 }
@@ -61,6 +59,7 @@ impl bots::Bot {
 			.await?;
 
 		let last_request = comments.iter().rev().find(|c| {
+			dbg!(&c);
 			c.body.as_ref().map_or(false, |b| {
 				b.to_lowercase().trim()
 					== AUTO_MERGE_REQUEST.to_lowercase().trim()
@@ -100,41 +99,24 @@ impl bots::Bot {
 				.auto_merge_requested(&repository.name, pull_request.number)
 				.await?
 			{
-				if self
-					.github_bot
-					.commits(
-						&repository.name,
-						&pull_request.head.sha,
-						merge_request.requested_at,
-					)
-					.await?
+				let last_status = status
+					.statuses
 					.iter()
-					.all(|x| x.committer.id == merge_request.user.id)
-				{
-					let last_status = status
-						.statuses
-						.iter()
-						.sorted_by_key(|x| x.created_at)
-						.rev()
-						.take(1)
-						.last();
+					.sorted_by_key(|x| x.created_at)
+					.rev()
+					.take(1)
+					.last();
 
-					last_status.map_or(AutoMergeState::Ready, |s| {
-						match s.state {
-							github::StatusState::Success => {
-								AutoMergeState::Ready
-							}
-							github::StatusState::Pending => {
-								AutoMergeState::Pending
-							}
-							github::StatusState::Failure => {
-								AutoMergeState::Failed
-							}
-						}
-					})
-				} else {
-					AutoMergeState::Invalidated
-				}
+				last_status.map_or(
+					AutoMergeState::Ready(merge_request.user.login.clone()),
+					|s| match s.state {
+						github::StatusState::Success => AutoMergeState::Ready(
+							merge_request.user.login.clone(),
+						),
+						github::StatusState::Pending => AutoMergeState::Pending,
+						github::StatusState::Failure => AutoMergeState::Failed,
+					},
+				)
 			} else {
 				AutoMergeState::Declined
 			},
@@ -175,9 +157,10 @@ impl bots::Bot {
 			.await?;
 		let mut merged = false;
 		match state {
-			AutoMergeState::Ready => {
+			AutoMergeState::Ready(requested_by) => {
 				if pull_request.mergeable.unwrap_or(false)
-					&& self.pull_request_is_approved(&process, &reviews)
+					&& (self.pull_request_is_approved(&process, &reviews)
+						|| process.is_primary_owner(&requested_by))
 				{
 					log::info!(
 						"{} has necessary approvals; merging.",
@@ -186,6 +169,28 @@ impl bots::Bot {
 					self.auto_merge_complete(&repository, &pull_request)
 						.await?;
 					merged = true;
+				} else {
+					log::info!(
+						"{} lacks approval; cannot merge.",
+						pull_request.html_url
+					);
+					self.github_bot
+						.create_issue_comment(
+							&repository.name,
+							pull_request.number,
+							&AUTO_MERGE_LACKS_APPROVAL.replace(
+								"{min_reviewers}",
+								&format!("{}", self.config.min_reviewers),
+							),
+						)
+						.await?;
+					self.github_bot
+						.create_issue_comment(
+							&repository.name,
+							pull_request.number,
+							AUTO_MERGE_REQUEST_CANCELLED,
+						)
+						.await?;
 				}
 			}
 			AutoMergeState::Pending => {
@@ -200,15 +205,9 @@ impl bots::Bot {
 					.create_issue_comment(
 						&repository.name,
 						pull_request.number,
-						AUTO_MERGE_REQUEST_CANCELLED,
+						AUTO_MERGE_CHECKS_FAILED,
 					)
 					.await?;
-			}
-			AutoMergeState::Invalidated => {
-				log::info!(
-					"{} auto-merge request no longer valid; cancelling.",
-					pull_request.html_url
-				);
 				self.github_bot
 					.create_issue_comment(
 						&repository.name,

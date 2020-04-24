@@ -1,7 +1,7 @@
-use actix_web::{post, web, App, HttpResponse, HttpServer, Responder};
+//use actix_web::{post, web, App, HttpResponse, HttpServer, Responder};
 use parking_lot::RwLock;
 use rocksdb::DB;
-use serde::Deserialize;
+//use serde::Deserialize;
 use snafu::ResultExt;
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
@@ -55,12 +55,12 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 		"Connecting to matrix homeserver {}",
 		config.matrix_homeserver,
 	);
-	let matrix_bot = dbg!(matrix_bot::MatrixBot::new_with_token(
+	let matrix_bot = matrix_bot::MatrixBot::new_with_token(
 		&config.matrix_homeserver,
 		&config.matrix_access_token,
 		&config.matrix_default_channel_id,
 		config.matrix_silent,
-	)?);
+	)?;
 
 	log::info!("Connecting to Github account {}", config.installation_login);
 	let github_bot = github_bot::GithubBot::new(
@@ -153,7 +153,9 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
 		bot.core_devs = core_devs;
 		bot.github_to_matrix = github_to_matrix;
-		bot.update().await?;
+		if let Err(e) = bot.update().await {
+			log::error!("{:?}", e);
+		}
 	}
 }
 

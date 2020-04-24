@@ -2,6 +2,11 @@ pub const AUTO_MERGE_REQUEST: &str = "bot merge";
 pub const AUTO_MERGE_REQUEST_CANCELLED: &str = "bot merge cancel";
 pub const AUTO_MERGE_REQUEST_COMPLETE: &str = "bot merge complete";
 
+pub const AUTO_MERGE_LACKS_APPROVAL: &str = "Auto-merge requires approval from the project owner or at least {min_reviewers} core devs.";
+pub const AUTO_MERGE_CHECKS_FAILED: &str = "Checks failed; cannot auto-merge.";
+pub const AUTO_MERGE_INVALIDATED: &str =
+	"Something has changed since auto-merge was requested; cancelling.";
+
 pub const FEATURES_KEY: &str = "features";
 
 pub const PROJECT_NEEDS_BACKLOG: &str =
@@ -11,12 +16,12 @@ pub const MISMATCHED_PROCESS_FILE: &str = "Process.toml for repo {repo_url} list
 
 pub const MALFORMED_PROCESS_FILE: &str = "Process.toml for repo {repo_url} is malformed or missing some fields. Please ensure that every listed project contains an owner and a matrix_room_id.";
 
-pub const WARN_FOR_NO_ISSUE: &str = "@{author}, this pull request will be closed if it does not explicitly mention the issue it addresses.";
+pub const WARN_FOR_NO_ISSUE: &str = "@{author}, this will be closed if it does not explicitly mention the issue it addresses.";
 
-pub const CLOSE_FOR_NO_ISSUE: &str = "@{author}, this pull request is being closed because it does not explicitly address an issue.";
+pub const CLOSE_FOR_NO_ISSUE: &str = "@{author}, this is being closed because it does not explicitly address an issue.";
 
-pub const WILL_CLOSE_FOR_NO_PROJECT: &str =
-	"@{author}, {issue_url} will be closed if it is not attached to a project.";
+pub const WARN_FOR_NO_PROJECT: &str =
+	"@{author}, this will be closed if it is not attached to a project.";
 
 pub const PRIVATE_ISSUE_NEEDS_REASSIGNMENT: &str = "{pr_url} addressing {issue_url} has been opened by {author}. Please reassign the issue to the PR author, or close the pull request.";
 

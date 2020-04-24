@@ -123,25 +123,6 @@ impl GithubBot {
 			))
 			.await
 	}
-
-	/// Returns all commits since a given date.
-	pub async fn commits(
-		&self,
-		repo_name: &str,
-		sha: &str,
-		since: chrono::DateTime<chrono::Utc>,
-	) -> Result<Vec<github::Commit>> {
-		let url = format!(
-			"{base_url}/repos/{owner}/{repo}/commits",
-			base_url = Self::BASE_URL,
-			owner = self.organization.login,
-			repo = repo_name,
-		);
-		let body =
-			serde_json::json!({ "sha": sha, "since": since.to_rfc3339() });
-		// TODO this should use get_all
-		self.client.get_with_params(url, body).await
-	}
 }
 
 #[cfg(test)]

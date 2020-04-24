@@ -222,6 +222,7 @@ impl Bot {
 						if pr_project.is_none() {
 							self.try_attach_project(
 								&mut local_state,
+								&repo,
 								&pr,
 								&projects,
 								&process,
@@ -269,12 +270,8 @@ impl Bot {
 							// owners and whitelisted devs can open prs without an attached issue.
 						} else if issues.is_empty() {
 							// author is not special and no issue addressed.
-							self.pr_missing_issue(
-								&mut local_state,
-								&repo,
-								&pr,
-							)
-							.await?;
+							self.pr_missing_issue(&mut local_state, &repo, &pr)
+								.await?;
 						}
 					}
 
@@ -333,6 +330,23 @@ impl Bot {
 							.await?;
 					}
 				} else {
+					let issue = match self
+						.github_bot
+						.issue(&repo, issue.number)
+						.await
+					{
+						Err(e) => {
+							log::error!(
+                                "Error getting issue #{issue_number} in repo {repo_name}: {error}",
+                                issue_number = issue.number,
+                                repo_name = repo.name,
+                                error = e
+                            );
+							continue 'issue_loop;
+						}
+						Ok(issue) => issue,
+					};
+
 					// issue is not a pull request
 					open_issues += 1;
 
@@ -362,6 +376,7 @@ impl Bot {
 						if issue_project.is_none() {
 							self.try_attach_project(
 								&mut local_state,
+								&repo,
 								&issue,
 								&projects,
 								&process,
@@ -393,8 +408,8 @@ impl Bot {
 
 		log::info!("{}", stats_msg);
 
-		self.matrix_bot
-			.send_to_room(&self.config.logs_room_id, stats_msg)?;
+		//		self.matrix_bot
+		//			.send_to_room(&self.config.logs_room_id, stats_msg)?;
 
 		Ok(())
 	}

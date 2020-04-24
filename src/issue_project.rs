@@ -57,6 +57,7 @@ impl bots::Bot {
 	pub async fn try_attach_project(
 		&self,
 		local_state: &mut LocalState,
+		repo: &github::Repository,
 		issue: &dyn github::GithubIssue,
 		projects: &[github::Project],
 		process: &[process::ProcessInfo],
@@ -90,6 +91,7 @@ impl bots::Bot {
 				);
 				self.send_project_notification(
 					local_state,
+					repo,
 					issue,
 					author_is_core,
 				)
@@ -124,6 +126,7 @@ impl bots::Bot {
 	async fn send_project_notification(
 		&self,
 		local_state: &mut LocalState,
+		repo: &github::Repository,
 		issue: &dyn github::GithubIssue,
 		author_is_core: bool,
 	) -> Result<()> {
@@ -147,11 +150,14 @@ impl bots::Bot {
 					Some(std::time::SystemTime::now()),
 					&self.db,
 				)?;
-				self.matrix_bot.send_to_default(
-					&WILL_CLOSE_FOR_NO_PROJECT
-						.replace("{author}", &issue.user().login)
-						.replace("{issue_url}", issue.html_url()),
-				)?;
+				self.github_bot
+					.create_issue_comment(
+						&repo.name,
+						issue.number(),
+						&WARN_FOR_NO_PROJECT
+							.replace("{author}", &issue.user().login),
+					)
+					.await?
 			}
 			Some(0) => {}
 			Some(i) => {
@@ -182,11 +188,6 @@ impl bots::Bot {
 					local_state.alive = false;
 				} else {
 					local_state.update_issue_no_project_npings(i, &self.db)?;
-					self.matrix_bot.send_to_default(
-						&WILL_CLOSE_FOR_NO_PROJECT
-							.replace("{author}", &issue.user().login)
-							.replace("{issue_url}", issue.html_url()),
-					)?;
 				}
 			}
 		}

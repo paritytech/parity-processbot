@@ -147,11 +147,11 @@ impl Default for ProcessFeatures {
 	fn default() -> Self {
 		ProcessFeatures {
 			auto_merge: true,
-			issue_project: true,
-			issue_addressed: true,
-			issue_assigned: true,
-			review_requests: true,
-			status_notifications: true,
+			issue_project: false,
+			issue_addressed: false,
+			issue_assigned: false,
+			review_requests: false,
+			status_notifications: false,
 		}
 	}
 }
@@ -237,7 +237,7 @@ pub fn remove_spaces_from_project_keys(mut s: String) -> String {
 	let re = Regex::new(r"(?m)^\[((?:[[:word:]]|[[:punct:]])*)[[:blank:]]")
 		.expect("compile regex");
 	while re.is_match(&s) {
-		s = dbg!(re.replace_all(&s, "[$1-").to_string());
+		s = re.replace_all(&s, "[$1-").to_string();
 	}
 	s
 }
@@ -248,11 +248,11 @@ pub fn process_from_contents(
 	base64::decode(&c.content.replace("\n", ""))
 		.context(error::Base64)
 		.and_then(|b| {
-			let mut s = remove_spaces_from_project_keys(
+			let s = remove_spaces_from_project_keys(
 				String::from_utf8(b).context(error::Utf8)?,
 			);
-			dbg!(toml::from_slice::<toml::value::Table>(s.as_bytes())
-				.context(error::Toml))
+			toml::from_slice::<toml::value::Table>(s.as_bytes())
+				.context(error::Toml)
 		})
 		.map(process_from_table)
 }

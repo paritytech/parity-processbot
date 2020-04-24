@@ -167,6 +167,19 @@ impl LocalState {
 		self.update(db, &self.key)
 	}
 
+	pub fn issue_not_addressed_ping(&self) -> Option<&SystemTime> {
+		self.issue_not_addressed_ping.as_ref()
+	}
+
+	pub fn update_issue_not_addressed_ping(
+		&mut self,
+		x: Option<SystemTime>,
+		db: &Arc<RwLock<DB>>,
+	) -> Result<()> {
+		self.issue_not_addressed_ping = x;
+		self.update(db, &self.key)
+	}
+
 	pub fn issue_not_assigned_ping(&self) -> Option<&SystemTime> {
 		self.issue_not_assigned_ping.as_ref()
 	}

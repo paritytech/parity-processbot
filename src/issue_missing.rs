@@ -1,4 +1,8 @@
-use crate::{bots, constants::*, github, Result};
+use crate::local_state::*;
+use crate::{
+	bots, constants::*, duration_ticks::DurationTicks, github, Result,
+};
+use std::time::SystemTime;
 
 impl bots::Bot {
 	pub async fn pr_missing_issue(
@@ -20,6 +24,10 @@ impl bots::Bot {
 			// notify the the issue assignee and project
 			// owner through a PM
 			None => {
+				local_state.update_issue_not_addressed_ping(
+					Some(SystemTime::now()),
+					&self.db,
+				)?;
 				self.github_bot
 					.create_issue_comment(
 						&repo.name,
@@ -30,12 +38,12 @@ impl bots::Bot {
 					.await?
 			}
 			// do nothing
-			Some(0) => Ok(()),
+			Some(0) => {}
 			// if after 24 hours there is no change, then
 			// send a message into the project's Riot
 			// channel
 			Some(_) => {
-                log::info!(
+				log::info!(
                     "Closing pull request '{issue_title:?}' as it addresses no issue in repo '{repo_name}'",
                     issue_title = pull_request.title,
                     repo_name = repo.name
@@ -51,7 +59,7 @@ impl bots::Bot {
 				self.github_bot
 					.close_pull_request(&repo.name, pull_request.number)
 					.await?;
-                local_state.alive = false;
+				local_state.alive = false;
 			}
 		}
 		Ok(())

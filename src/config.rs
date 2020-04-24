@@ -6,8 +6,6 @@ pub struct MainConfig {
 	pub bamboo_token: String,
 	pub private_key: Vec<u8>,
 	pub matrix_homeserver: String,
-	//	pub matrix_user: String,
-	//	pub matrix_password: String,
 	pub matrix_access_token: String,
 	pub matrix_default_channel_id: String,
 	pub main_tick_secs: u64,
@@ -69,8 +67,6 @@ impl MainConfig {
 
 #[derive(Debug, Clone)]
 pub struct BotConfig {
-	/// warn instead of closing issues
-	pub grace_period: bool,
 	/// seconds between pings
 	pub status_failure_ping: u64,
 	/// seconds between pings
@@ -105,11 +101,6 @@ impl BotConfig {
 	pub fn from_env() -> Self {
 		dotenv::dotenv().ok();
 		Self {
-			grace_period: dotenv::var("GRACE_PERIOD")
-				.expect("GRACE_PERIOD")
-				.parse::<bool>()
-				.expect("failed parsing GRACE_PERIOD"),
-
 			status_failure_ping: dotenv::var("STATUS_FAILURE_PING")
 				.expect("STATUS_FAILURE_PING")
 				.parse::<u64>()

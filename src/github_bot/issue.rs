@@ -7,6 +7,23 @@ use super::GithubBot;
 use regex::Regex;
 
 impl GithubBot {
+	/// Returns a single issue.
+	pub async fn issue(
+		&self,
+		repo: &github::Repository,
+		number: i64,
+	) -> Result<github::Issue> {
+		self.client
+			.get(format!(
+				"{base_url}/repos/{owner}/{repo}/issues/{number}",
+				base_url = Self::BASE_URL,
+				owner = self.organization.login,
+				repo = repo.name,
+				number = number
+			))
+			.await
+	}
+
 	/// Returns all of the issues in a single repository.
 	pub async fn repository_issues(
 		&self,
@@ -100,12 +117,7 @@ impl GithubBot {
 			repo = repo_name,
 			issue_number = issue_number
 		);
-		self.client
-			.get_response(&url, &serde_json::json!({}))
-			.await?
-			.json()
-			.await
-			.context(error::Http)
+		self.client.get_all(&url).await
 	}
 
 	/// Adds a comment to an issue.

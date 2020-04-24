@@ -21,7 +21,7 @@ impl MatrixBot {
 		default_channel_id: &str,
 		silent: bool,
 	) -> Result<Self> {
-		matrix::sync(homeserver, access_token).map(|s| Self {
+		matrix::sync(homeserver, access_token).map(|_s| Self {
 			homeserver: homeserver.to_owned(),
 			access_token: access_token.to_owned(),
 			default_channel_id: default_channel_id.to_owned(),
