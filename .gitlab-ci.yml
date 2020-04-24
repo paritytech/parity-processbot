@@ -1,0 +1,106 @@
+variables:
+  KUBE_NAMESPACE:                  "processbot"
+  CI_REGISTRY:                     "paritytech"
+  DOCKER_TAG:                      "${CI_COMMIT_TAG}"
+  GIT_STRATEGY:                    fetch
+  GIT_DEPTH:                       3
+
+stages:
+  - check
+  - test
+  - dockerize
+  - deploy
+
+.docker-env:                       &docker-env
+  image:                           parity/rust-builder:latest
+  before_script:
+    - rustup show
+    - cargo --version
+    - sccache -s
+  retry:
+    max: 2
+    when:
+      - runner_system_failure
+      - unknown_failure
+      - api_failure
+  dependencies:                    []
+  interruptible:                   true
+  tags:
+    - linux-docker
+
+#### stage:                        check
+
+check:
+  stage:                           check
+  <<:                              *docker-env
+  script:
+    - cargo fmt --all -- --check
+
+#### stage:                        test
+
+test:
+  stage:                           test
+  <<:                              *docker-env
+  script:
+    - cargo test --all
+
+#### stage:                        dockerize
+
+.build_and_push:                   &build_and_push
+  image:                           docker:git
+  services:
+    - docker:dind
+  variables:
+    DOCKER_DRIVER:                 overlay2
+    DOCKER_HOST:                   tcp://localhost:2375
+    DOCKER_IMAGE:                  "${CI_REGISTRY}/${KUBE_NAMESPACE}"
+    DOCKER_IMAGE_FULL_NAME:        "$DOCKER_IMAGE:$DOCKER_TAG"
+  script:
+    - export DOCKER_IMAGE_FULL_NAME
+    - echo "$Docker_Hub_Pass_Parity" | docker login -u "$Docker_Hub_User_Parity" --password-stdin
+    - docker build -t $DOCKER_IMAGE_FULL_NAME .
+    - docker push $DOCKER_IMAGE_FULL_NAME
+  tags:
+    - kubernetes-parity-build
+      
+dockerize-processbot:
+  stage:                           dockerize
+  <<:                              *build_and_push
+  environment:
+    name:                          parity-build
+  only:
+    - tags
+
+#### stage:                        deploy
+
+.deploy-k8s:                       &deploy-k8s
+  image:                           parity/kubetools:helm3
+  script:
+    - export DOCKER_TAG
+    - export KUBE_NAMESPACE
+    # check syntax
+    - for f in kubernetes/processbot/*yaml; do echo $f; cat $f | envsubst | kubectl --dry-run --validate -n $KUBE_NAMESPACE apply -f -; done
+    # print rendered yaml
+    - for f in kubernetes/processbot/*yaml; do echo $f; cat $f | envsubst; echo '---'; done
+    # deploy yaml to cluster
+    - for f in kubernetes/processbot/*yaml; do cat $f | envsubst | kubectl -n $KUBE_NAMESPACE apply -f -; done
+
+deploy-staging:
+  stage:                           deploy
+  <<:                              *deploy-k8s
+  environment:
+    name: staging-cluster-1
+  tags:
+    - kubernetes-parity-build
+  only:
+    - tags
+
+deploy-production:
+  stage:                           deploy
+  <<:                              *deploy-k8s
+  environment:
+    name: parity-prod
+  tags:
+    - kubernetes-parity-build
+  only:
+    - tags
