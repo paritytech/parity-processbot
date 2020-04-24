@@ -59,7 +59,6 @@ impl bots::Bot {
 			.await?;
 
 		let last_request = comments.iter().rev().find(|c| {
-			dbg!(&c);
 			c.body.as_ref().map_or(false, |b| {
 				b.to_lowercase().trim()
 					== AUTO_MERGE_REQUEST.to_lowercase().trim()
