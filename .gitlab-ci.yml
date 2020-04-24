@@ -83,8 +83,8 @@ dockerize-processbot:
       artifacts:                   true
   environment:
     name:                          parity-build
-  only:
-    - tags
+  # only:
+  #   - tags
 
 #### stage:                        deploy
 
