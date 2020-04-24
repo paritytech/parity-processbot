@@ -72,7 +72,7 @@ spec:
             - name: BAMBOO_TICK_SECS
               value: "7200"
             - name: MATRIX_SILENT
-              value: "true"
+              value: "false"
             - name: MATRIX_DEFAULT_CHANNEL_ID
               value: "!ZXvnxSiXstTeRmkMGk:matrix.parity.io" 
             - name: MAIN_TICK_SECS
@@ -82,6 +82,8 @@ spec:
             - name: CORE_SORTING_REPO_NAME
               value: "core-sorting"
             - name: STATUS_FAILURE_PING
+              value: "86400"
+            - name: ISSUE_NOT_ADDRESSED_PING
               value: "86400"
             - name: ISSUE_NOT_ASSIGNED_TO_PR_AUTHOR_PING
               value: "86400"
