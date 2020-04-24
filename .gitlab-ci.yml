@@ -1,7 +1,6 @@
 variables:
   KUBE_NAMESPACE:                  "processbot"
   CI_REGISTRY:                     "paritytech"
-  DOCKER_TAG:                      "${CI_COMMIT_REF_NAME}"
   GIT_STRATEGY:                    fetch
   GIT_DEPTH:                       3
 
@@ -42,8 +41,8 @@ test-build:
   stage:                           test
   <<:                              *docker-env
   script:
-    - cargo test --all
-    - cargo build
+    - cargo test --release --all
+    - cargo build --release
   after_script:
     - mkdir -p ./artifacts/
     - mv ./target/debug/parity-processbot ./artifacts/
@@ -70,9 +69,8 @@ test-build:
     - export DOCKER_IMAGE_FULL_NAME
     - echo "$Docker_Hub_Pass_Parity" | docker login -u "$Docker_Hub_User_Parity" --password-stdin
     - cd ./artifacts
-    - echo "$DOCKER_IMAGE:$DOCKER_TAG"
-    - docker build -t "$DOCKER_IMAGE:$DOCKER_TAG" .
-    - eval docker push "$DOCKER_IMAGE:$DOCKER_TAG"
+    - docker build -t "$DOCKER_IMAGE:$CI_COMMIT_REF_NAME" .
+    - docker push "$DOCKER_IMAGE:$CI_COMMIT_REF_NAME"
   tags:
     - kubernetes-parity-build
       
@@ -92,7 +90,6 @@ dockerize-processbot:
 .deploy-k8s:                       &deploy-k8s
   image:                           parity/kubetools:helm3
   script:
-    - export DOCKER_TAG
     - export KUBE_NAMESPACE
     # check syntax
     - for f in kubernetes/processbot/*yaml; do echo $f; cat $f | envsubst | kubectl --dry-run --validate -n $KUBE_NAMESPACE apply -f -; done
