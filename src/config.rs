@@ -1,6 +1,7 @@
 #[derive(Debug, Clone)]
 pub struct MainConfig {
 	pub installation_login: String,
+	pub webhook_secret: String,
 	pub db_path: String,
 	pub bamboo_token: String,
 	pub private_key: Vec<u8>,
@@ -21,15 +22,14 @@ impl MainConfig {
 
 		let installation_login =
 			dotenv::var("INSTALLATION_LOGIN").expect("INSTALLATION_LOGIN");
+		let webhook_secret =
+			dotenv::var("WEBHOOK_SECRET").expect("WEBHOOK_SECRET");
 		let db_path = dotenv::var("DB_PATH").expect("DB_PATH");
 		let bamboo_token = dotenv::var("BAMBOO_TOKEN").expect("BAMBOO_TOKEN");
 		let matrix_homeserver =
 			dotenv::var("MATRIX_HOMESERVER").expect("MATRIX_HOMESERVER");
 		let matrix_access_token =
 			dotenv::var("MATRIX_ACCESS_TOKEN").expect("MATRIX_ACCESS_TOKEN");
-		//		let matrix_user = dotenv::var("MATRIX_USER").expect("MATRIX_USER");
-		//		let matrix_password =
-		//			dotenv::var("MATRIX_PASSWORD").expect("MATRIX_PASSWORD");
 		let matrix_default_channel_id =
 			dotenv::var("MATRIX_DEFAULT_CHANNEL_ID")
 				.expect("MATRIX_DEFAULT_CHANNEL_ID");
@@ -53,12 +53,11 @@ impl MainConfig {
 
 		Self {
 			installation_login,
+			webhook_secret,
 			db_path,
 			bamboo_token,
 			private_key,
 			matrix_homeserver,
-			//			matrix_user,
-			//			matrix_password,
 			matrix_access_token,
 			matrix_default_channel_id,
 			main_tick_secs,

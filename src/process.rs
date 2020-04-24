@@ -1,4 +1,5 @@
 use crate::{constants::*, error, github, Result};
+use regex::Regex;
 use snafu::ResultExt;
 
 #[derive(Clone, Debug)]
@@ -9,7 +10,7 @@ pub struct CombinedProcessInfo {
 
 impl CombinedProcessInfo {
 	pub fn new(mut v: Vec<Option<ProcessInfo>>) -> Self {
-		let linked = v.split_off(1);
+		let linked = if v.len() > 1 { v.split_off(1) } else { vec![] };
 		Self {
 			primary: v.first().cloned().flatten(),
 			linked: linked.into_iter().filter_map(|x| x).collect::<_>(),
@@ -232,13 +233,26 @@ pub fn process_from_projects(
 		.collect::<_>()
 }
 
+pub fn remove_spaces_from_project_keys(mut s: String) -> String {
+	let re = Regex::new(r"(?m)^\[((?:[[:word:]]|[[:punct:]])*)[[:blank:]]")
+		.expect("compile regex");
+	while re.is_match(&s) {
+		s = dbg!(re.replace_all(&s, "[$1-").to_string());
+	}
+	s
+}
+
 pub fn process_from_contents(
 	c: github::Contents,
 ) -> Result<Vec<ProcessWrapper>> {
 	base64::decode(&c.content.replace("\n", ""))
 		.context(error::Base64)
-		.and_then(|s| {
-			toml::from_slice::<toml::value::Table>(&s).context(error::Toml)
+		.and_then(|b| {
+			let mut s = remove_spaces_from_project_keys(
+				String::from_utf8(b).context(error::Utf8)?,
+			);
+			dbg!(toml::from_slice::<toml::value::Table>(s.as_bytes())
+				.context(error::Toml))
 		})
 		.map(process_from_table)
 }
@@ -257,23 +271,23 @@ pub fn process_from_table(tab: toml::value::Table) -> Vec<ProcessWrapper> {
 							issue_project: tab
 								.get("issue_project")
 								.and_then(toml::value::Value::as_bool)
-								.unwrap_or(true),
+								.unwrap_or(false),
 							issue_addressed: tab
 								.get("issue_addressed")
 								.and_then(toml::value::Value::as_bool)
-								.unwrap_or(true),
+								.unwrap_or(false),
 							issue_assigned: tab
 								.get("issue_assigned")
 								.and_then(toml::value::Value::as_bool)
-								.unwrap_or(true),
+								.unwrap_or(false),
 							review_requests: tab
 								.get("review_requests")
 								.and_then(toml::value::Value::as_bool)
-								.unwrap_or(true),
+								.unwrap_or(false),
 							status_notifications: tab
 								.get("status_notifications")
 								.and_then(toml::value::Value::as_bool)
-								.unwrap_or(true),
+								.unwrap_or(false),
 						}))
 					}
 					_ => None,

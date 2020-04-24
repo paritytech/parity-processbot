@@ -65,12 +65,22 @@ impl Bot {
 				.github_bot
 				.contents(&repo.name, PROCESS_FILE_NAME)
 				.await
-				.map(|contents| process::process_from_contents(contents).ok())
+				.map(|contents| {
+					let proc = process::process_from_contents(contents);
+					if proc.is_err() {
+						log::debug!("{:#?}", proc);
+					}
+					proc.ok()
+				})
 				.ok()
 				.flatten();
 
 			// ignore repos with no valid process file
 			if maybe_process.is_none() {
+				log::warn!(
+					"Repository '{repo_name}' has no valid Process.toml file",
+					repo_name = repo.name,
+				);
 				continue 'repo_loop;
 			}
 
@@ -91,7 +101,7 @@ impl Bot {
                     match proc {
                         process::ProcessWrapper::Features(_) => true,
                         process::ProcessWrapper::Project(proc) => {
-                            let keep = projects.iter().any(|proj| proj.name == proc.project_name);
+                            let keep = projects.iter().any(|proj| proj.name.replace(" ", "-") == proc.project_name);
                             if !keep {
                                 log::warn!(
                                     "'{proc_name}' in Process.toml file doesn't match any projects in repository '{repo_name}'",
