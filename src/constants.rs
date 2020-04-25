@@ -2,7 +2,7 @@ pub const AUTO_MERGE_REQUEST: &str = "bot merge";
 pub const AUTO_MERGE_REQUEST_CANCELLED: &str = "bot merge cancel";
 pub const AUTO_MERGE_REQUEST_COMPLETE: &str = "bot merge complete";
 
-pub const AUTO_MERGE_LACKS_APPROVAL: &str = "Auto-merge requires approval from the project owner or at least {min_reviewers} core devs.";
+pub const AUTO_MERGE_FAILED: &str = "Cannot merge; please ensure the pull request is mergeable and has approval from the project owner or at least {min_reviewers} core devs.";
 pub const AUTO_MERGE_CHECKS_FAILED: &str = "Checks failed; cannot auto-merge.";
 pub const AUTO_MERGE_INVALIDATED: &str =
 	"Something has changed since auto-merge was requested; cancelling.";

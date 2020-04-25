@@ -50,10 +50,10 @@ impl GithubBot {
 			repo = repo_name.as_ref(),
 		);
 		let params = serde_json::json!({
-				"title": title.as_ref(),
-				"body": body.as_ref(),
-				"head": head.as_ref(),
-				"base": base.as_ref(),
+            "title": title.as_ref(),
+            "body": body.as_ref(),
+            "head": head.as_ref(),
+            "base": base.as_ref(),
 		});
 		self.client
 			.post_response(&url, &params)
@@ -70,15 +70,17 @@ impl GithubBot {
 		pull_request: &github::PullRequest,
 	) -> Result<()> {
 		let url = format!(
-			"{base_url}/repos/{owner}/{repo}/merges",
+			"{base_url}/repos/{owner}/{repo}/pulls/{number}/merge",
 			base_url = Self::BASE_URL,
 			owner = self.organization.login,
 			repo = repo_name,
+            number = pull_request.number,
 		);
-		self.client
-			.post_response(&url, &serde_json::json!({ "base": pull_request.base.ref_field, "head": pull_request.head.sha, "merge_method": "squash" })) 
-			.await
-			.map(|_| ())
+		let params = serde_json::json!({ 
+            "sha": pull_request.head.sha, 
+            "merge_method": "squash" 
+        });
+		self.client.put_response(&url, &params).await.map(|r| ())
 	}
 
 	/// Closes a pull request.
