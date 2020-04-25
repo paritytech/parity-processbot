@@ -10,7 +10,7 @@ use crate::{
 	matrix_bot::MatrixBot, process, Result,
 };
 
-const STATS_MSG: &str = "Organization {org_login}:\n- Repositories with valid Process files: {repos_with_process}\n- Projects in all repositories: {num_projects}\n- Process entries (including owner & matrix room) in all repositories: {num_process}\n- Developers with Github and Matrix handles in BambooHR: {github_to_matrix}\n- Core developers: {core_devs}\n- Open pull requests: {open_prs}\n- Open issues: {open_issues}";
+const STATS_MSG: &str = "ORGANIZATION {org_login}\nRepositories with valid Process files: {repos_with_process}\nProjects in all repositories: {num_projects}\nProcess entries (including owner & matrix room) in all repositories: {num_process}\nDevelopers with Github and Matrix handles in BambooHR: {github_to_matrix}\nCore developers: {core_devs}\nOpen pull requests: {open_prs}\nOpen issues: {open_issues}";
 
 pub struct Bot {
 	pub db: Arc<RwLock<DB>>,
@@ -262,6 +262,11 @@ impl Bot {
 					}
 
 					//
+					// SHORT CIRCUIT
+					//
+					continue 'issue_loop; // TODO: remove
+
+					//
 					// CHECK ISSUE ADDRESSED
 					//
 					if features.issue_addressed {
@@ -329,6 +334,11 @@ impl Bot {
 						//							.await?;
 					}
 				} else {
+					//
+					// SHORT CIRCUIT
+					//
+					continue 'issue_loop; // TODO: remove
+
 					let issue = match self
 						.github_bot
 						.issue(&repo, issue.number)
