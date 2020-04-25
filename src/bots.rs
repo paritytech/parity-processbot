@@ -155,6 +155,8 @@ impl Bot {
 				//				let author_is_core =
 				//					self.core_devs.iter().any(|u| u.id == issue.user.id);
 
+				open_issues += 1;
+
 				if issue.pull_request.is_some() {
 					// issue is a pull request
 
@@ -266,79 +268,77 @@ impl Bot {
 					//
 					continue 'issue_loop; // TODO: remove
 
-					//
-					// CHECK ISSUE ADDRESSED
-					//
-					if features.issue_addressed {
-						if combined_process.is_special(&pr.user.login) {
-							// owners and whitelisted devs can open prs without an attached issue.
-						} else if issues.is_empty() {
-							// author is not special and no issue addressed.
-							//							self.pr_missing_issue(&mut local_state, &repo, &pr)
+				/*
+				//
+				// CHECK ISSUE ADDRESSED
+				//
+				if features.issue_addressed {
+					if combined_process.is_special(&pr.user.login) {
+						// owners and whitelisted devs can open prs without an attached issue.
+					} else if issues.is_empty() {
+						// author is not special and no issue addressed.
+						//							self.pr_missing_issue(&mut local_state, &repo, &pr)
+						//								.await?;
+					}
+				}
+
+				//
+				// CHECK ISSUE ASSIGNED CORRECTLY
+				//
+				if features.issue_assigned {
+					for (_issue, maybe_project) in
+						self.issue_projects(&repo, &issues, &projects).await
+					{
+						if let Some(_process_info) =
+							maybe_project.and_then(|proj| {
+								combined_process.get(&proj.name)
+							}) {
+							//								self.assign_issue_or_warn(
+							//									&mut local_state,
+							//									&process_info,
+							//									&repo,
+							//									&pr,
+							//									&issue,
+							//								)
 							//								.await?;
-						}
-					}
-
-					//
-					// CHECK ISSUE ASSIGNED CORRECTLY
-					//
-					if features.issue_assigned {
-						for (_issue, maybe_project) in
-							self.issue_projects(&repo, &issues, &projects).await
-						{
-							if let Some(_process_info) =
-								maybe_project.and_then(|proj| {
-									combined_process.get(&proj.name)
-								}) {
-								//								self.assign_issue_or_warn(
-								//									&mut local_state,
-								//									&process_info,
-								//									&repo,
-								//									&pr,
-								//									&issue,
-								//								)
-								//								.await?;
-							} else {
-								// project is absent or not in Process.toml
-								// so we don't know the owner / matrix room.
-							}
-						}
-					}
-
-					//
-					// CHECK REVIEWS
-					//
-					if features.review_requests {
-						if let Some(_process_info) = pr_project
-							.and_then(|proj| combined_process.get(&proj.name))
-						{
-							//							self.require_reviewers(
-							//								&mut local_state,
-							//								&pr,
-							//								&process_info,
-							//								&reviews,
-							//								&requested_reviewers,
-							//							)
-							//							.await?;
 						} else {
 							// project is absent or not in Process.toml
 							// so we don't know the owner / matrix room.
 						}
 					}
+				}
 
-					//
-					// CHECK STATUS
-					//
-					if features.status_notifications {
-						//						self.handle_status(&mut local_state, &pr, &status)
+				//
+				// CHECK REVIEWS
+				//
+				if features.review_requests {
+					if let Some(_process_info) = pr_project
+						.and_then(|proj| combined_process.get(&proj.name))
+					{
+						//							self.require_reviewers(
+						//								&mut local_state,
+						//								&pr,
+						//								&process_info,
+						//								&reviews,
+						//								&requested_reviewers,
+						//							)
 						//							.await?;
+					} else {
+						// project is absent or not in Process.toml
+						// so we don't know the owner / matrix room.
 					}
-				} else {
-					//
-					// SHORT CIRCUIT
-					//
-					continue 'issue_loop; // TODO: remove
+				}
 
+				//
+				// CHECK STATUS
+				//
+				if features.status_notifications {
+					//						self.handle_status(&mut local_state, &pr, &status)
+					//							.await?;
+				}
+				*/
+				} else {
+					/*
 					let issue = match self
 						.github_bot
 						.issue(&repo, issue.number)
@@ -346,11 +346,11 @@ impl Bot {
 					{
 						Err(e) => {
 							log::error!(
-                                "Error getting issue #{issue_number} in repo {repo_name}: {error}",
-                                issue_number = issue.number,
-                                repo_name = repo.name,
-                                error = e
-                            );
+								"Error getting issue #{issue_number} in repo {repo_name}: {error}",
+								issue_number = issue.number,
+								repo_name = repo.name,
+								error = e
+							);
 							continue 'issue_loop;
 						}
 						Ok(issue) => issue,
@@ -394,6 +394,7 @@ impl Bot {
 							//							.await?;
 						}
 					}
+					*/
 				}
 			}
 		}
@@ -413,7 +414,7 @@ impl Bot {
 			)
 			.replace("{core_devs}", &format!("{}", self.core_devs.len()))
 			.replace("{open_prs}", &format!("{}", open_prs))
-			.replace("{open_issues}", &format!("{}", open_issues));
+			.replace("{open_issues}", &format!("{}", open_issues - open_prs));
 
 		log::info!("{}", stats_msg);
 
