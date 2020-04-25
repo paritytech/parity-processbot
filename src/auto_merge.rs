@@ -157,11 +157,10 @@ impl bots::Bot {
 		let mut merged = false;
 		match state {
 			AutoMergeState::Ready(requested_by) => {
-				let mergeable = dbg!(pull_request.mergeable.unwrap_or(false));
+				let mergeable = pull_request.mergeable.unwrap_or(false);
 				let approved =
-					dbg!(self.pull_request_is_approved(&process, &reviews));
-				let owner_request =
-					dbg!(process.is_primary_owner(&requested_by));
+					self.pull_request_is_approved(&process, &reviews);
+				let owner_request = process.is_primary_owner(&requested_by);
 				if mergeable && (approved || owner_request) {
 					log::info!(
 						"{} has necessary approvals; merging.",
@@ -171,15 +170,20 @@ impl bots::Bot {
 						.await?;
 					merged = true;
 				} else {
-					log::info!(
-						"{} lacks approval; cannot merge.",
-						pull_request.html_url
-					);
+					if !mergeable {
+						log::info!("{} is unmergeable.", pull_request.html_url);
+					}
+					if !(approved || owner_request) {
+						log::info!(
+							"{} lacks approval; cannot merge.",
+							pull_request.html_url
+						);
+					}
 					self.github_bot
 						.create_issue_comment(
 							&repository.name,
 							pull_request.number,
-							&AUTO_MERGE_LACKS_APPROVAL.replace(
+							&AUTO_MERGE_FAILED.replace(
 								"{min_reviewers}",
 								&format!("{}", self.config.min_reviewers),
 							),

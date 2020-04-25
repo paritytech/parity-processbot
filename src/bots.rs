@@ -251,11 +251,11 @@ impl Bot {
 							}
 							Err(e) => {
 								log::error!(
-                                "Error auto-merging pull request #{issue_number} in repo {repo_name}: {error}", 
-                                issue_number = pr.number,
-                                repo_name = repo.name,
-                                error = e,
-                            );
+                                    "Error auto-merging pull request #{issue_number} in repo {repo_name}: {error}", 
+                                    issue_number = pr.number,
+                                    repo_name = repo.name,
+                                    error = e,
+                                );
 							}
 							_ => {}
 						}
