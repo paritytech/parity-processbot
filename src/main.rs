@@ -127,6 +127,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 		if let Err(e) = bot.update().await {
 			log::error!("{:?}", e);
 		}
+
+        log::info!("Sleeping for {} seconds", config.main_tick_secs);
 	}
 }
 
