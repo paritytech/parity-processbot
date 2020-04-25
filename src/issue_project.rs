@@ -102,27 +102,6 @@ impl bots::Bot {
 		Ok(())
 	}
 
-	pub async fn issue_project<'a>(
-		&self,
-		repo_name: &str,
-		issue_number: i64,
-		projects: &'a [github::Project],
-	) -> Option<&'a github::Project> {
-		self.github_bot
-			.active_project_event(repo_name, issue_number)
-			.map(|result| {
-				result
-					.ok()
-					.and_then(|event| {
-						event.map(|event| event.project_card).flatten()
-					})
-					.and_then(|card| {
-						projects.iter().find(|proj| card.project_id == proj.id)
-					})
-			})
-			.await
-	}
-
 	async fn send_project_notification(
 		&self,
 		local_state: &mut LocalState,

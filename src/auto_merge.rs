@@ -130,14 +130,13 @@ impl bots::Bot {
 		self.github_bot
 			.merge_pull_request(&repository.name, pull_request)
 			.await?;
-		self.github_bot
-			.create_issue_comment(
-				&repository.name,
-				pull_request.number,
-				AUTO_MERGE_REQUEST_COMPLETE,
-			)
-			.await?;
-		// TODO delete branch
+		//		self.github_bot
+		//			.create_issue_comment(
+		//				&repository.name,
+		//				pull_request.number,
+		//				AUTO_MERGE_REQUEST_COMPLETE,
+		//			)
+		//			.await?;
 		Ok(())
 	}
 

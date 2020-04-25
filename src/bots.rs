@@ -1,9 +1,9 @@
 use futures_util::future::FutureExt;
-use parking_lot::RwLock;
-use rocksdb::DB;
+//use parking_lot::RwLock;
+//use rocksdb::DB;
 use snafu::OptionExt;
 use std::collections::HashMap;
-use std::sync::Arc;
+//use std::sync::Arc;
 
 use crate::{
 	config::BotConfig, constants::*, error, github, github_bot::GithubBot,
@@ -13,7 +13,7 @@ use crate::{
 const STATS_MSG: &str = "ORGANIZATION {org_login}\nRepositories with valid Process files: {repos_with_process}\nProjects in all repositories: {num_projects}\nProcess entries (including owner & matrix room) in all repositories: {num_process}\nDevelopers with Github and Matrix handles in BambooHR: {github_to_matrix}\nCore developers: {core_devs}\nOpen pull requests: {open_prs}\nOpen issues: {open_issues}";
 
 pub struct Bot {
-	pub db: Arc<RwLock<DB>>,
+	//	pub db: Arc<RwLock<DB>>,
 	pub github_bot: GithubBot,
 	pub matrix_bot: MatrixBot,
 	pub core_devs: Vec<github::User>,
@@ -23,14 +23,14 @@ pub struct Bot {
 
 impl Bot {
 	pub fn new(
-		db: Arc<RwLock<DB>>,
+		//		db: Arc<RwLock<DB>>,
 		github_bot: GithubBot,
 		matrix_bot: MatrixBot,
 		core_devs: Vec<github::User>,
 		github_to_matrix: HashMap<String, String>,
 	) -> Bot {
 		Bot {
-			db,
+			//			db,
 			github_bot,
 			matrix_bot,
 			core_devs,
@@ -443,6 +443,27 @@ impl Bot {
 			),
 			processes,
 		))
+	}
+
+	pub async fn issue_project<'a>(
+		&self,
+		repo_name: &str,
+		issue_number: i64,
+		projects: &'a [github::Project],
+	) -> Option<&'a github::Project> {
+		self.github_bot
+			.active_project_event(repo_name, issue_number)
+			.map(|result| {
+				result
+					.ok()
+					.and_then(|event| {
+						event.map(|event| event.project_card).flatten()
+					})
+					.and_then(|card| {
+						projects.iter().find(|proj| card.project_id == proj.id)
+					})
+			})
+			.await
 	}
 
 	pub async fn issue_projects<'a>(
