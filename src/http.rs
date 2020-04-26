@@ -3,7 +3,7 @@ use std::time::SystemTime;
 
 use crate::{error, github, Result};
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use hyperx::header::TypedHeaders;
 use reqwest::{header, IntoUrl, Method, RequestBuilder, Response};
 use serde::Serialize;
@@ -104,7 +104,7 @@ impl Client {
 
 	async fn auth_key(&self) -> Result<String> {
 		lazy_static::lazy_static! {
-			static ref TOKEN_CACHE: std::sync::RwLock<Option<(Option<DateTime<Utc>>, String)>> = {
+			static ref TOKEN_CACHE: std::sync::RwLock<Option<(DateTime<Utc>, String)>> = {
 				std::sync::RwLock::new(None)
 			};
 		}
@@ -115,7 +115,7 @@ impl Client {
 			.unwrap()
 			.as_ref()
 			// Ensure token is not expired if set.
-			.filter(|(time, _)| time.map_or(true, |t| t < Utc::now()))
+			.filter(|(time, _)| time > &Utc::now())
 			.map(|(_, token)| token.clone());
 
 		if let Some(token) = token {
@@ -148,8 +148,11 @@ impl Client {
 		let mut write = TOKEN_CACHE.write().unwrap();
 
 		let token = install_token.token.clone();
+		let default_exp = Utc::now() + Duration::minutes(60);
 		*write = Some((
-			install_token.expires_at.and_then(|t| t.parse().ok()),
+			install_token
+				.expires_at
+				.map_or(default_exp, |t| t.parse().unwrap_or(default_exp)),
 			install_token.token,
 		));
 
