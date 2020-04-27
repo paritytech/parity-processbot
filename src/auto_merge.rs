@@ -15,6 +15,8 @@ pub enum AutoMergeState {
 	Pending,
 	/// Checks failed or PR was not mergeable
 	Failed,
+	/// Status error
+	Error,
 	/// Cancelled or not requested
 	Declined,
 }
@@ -114,6 +116,7 @@ impl bots::Bot {
 						),
 						github::StatusState::Pending => AutoMergeState::Pending,
 						github::StatusState::Failure => AutoMergeState::Failed,
+						github::StatusState::Error => AutoMergeState::Error,
 					},
 				)
 			} else {
@@ -130,13 +133,6 @@ impl bots::Bot {
 		self.github_bot
 			.merge_pull_request(&repository.name, pull_request)
 			.await?;
-		//		self.github_bot
-		//			.create_issue_comment(
-		//				&repository.name,
-		//				pull_request.number,
-		//				AUTO_MERGE_REQUEST_COMPLETE,
-		//			)
-		//			.await?;
 		Ok(())
 	}
 
@@ -210,6 +206,23 @@ impl bots::Bot {
 						&repository.name,
 						pull_request.number,
 						AUTO_MERGE_CHECKS_FAILED,
+					)
+					.await?;
+				self.github_bot
+					.create_issue_comment(
+						&repository.name,
+						pull_request.number,
+						AUTO_MERGE_REQUEST_CANCELLED,
+					)
+					.await?;
+			}
+			AutoMergeState::Error => {
+				log::info!("{} status error; aborting.", pull_request.html_url);
+				self.github_bot
+					.create_issue_comment(
+						&repository.name,
+						pull_request.number,
+						AUTO_MERGE_CHECKS_ERROR,
 					)
 					.await?;
 				self.github_bot
