@@ -148,7 +148,7 @@ impl Client {
 		let mut write = TOKEN_CACHE.write().unwrap();
 
 		let token = install_token.token.clone();
-		let default_exp = Utc::now() + Duration::minutes(60);
+		let default_exp = Utc::now() + Duration::minutes(40);
 		*write = Some((
 			install_token
 				.expires_at
