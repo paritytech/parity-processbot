@@ -6,6 +6,8 @@ use super::GithubBot;
 
 use regex::Regex;
 
+use futures_util::future::FutureExt;
+
 impl GithubBot {
 	/// Returns a single issue.
 	pub async fn issue(
@@ -36,7 +38,7 @@ impl GithubBot {
 	/// Returns a list of issues mentioned in the body of a pull request.
 	pub async fn linked_issues(
 		&self,
-		repo: &github::Repository,
+		repo_name: &str,
 		body: &str,
 	) -> Result<Vec<github::Issue>> {
 		let re = Regex::new(r"#([0-9]+)").unwrap();
@@ -50,7 +52,7 @@ impl GithubBot {
 						"{base_url}/repos/{owner}/{repo}/issues/{issue_number}",
 						base_url = Self::BASE_URL,
 						owner = self.organization.login,
-						repo = &repo.name,
+						repo = &repo_name,
 						issue_number = num
 					))
 				}),
@@ -75,6 +77,26 @@ impl GithubBot {
                 repo_name = repo_name,
                 issue_number = issue_number
             ))
+			.await
+	}
+
+	pub async fn issue_project<'a>(
+		&self,
+		repo_name: &str,
+		issue_number: i64,
+		projects: &'a [github::Project],
+	) -> Option<&'a github::Project> {
+		self.active_project_event(repo_name, issue_number)
+			.map(|result| {
+				result
+					.ok()
+					.and_then(|event| {
+						event.map(|event| event.project_card).flatten()
+					})
+					.and_then(|card| {
+						projects.iter().find(|proj| card.project_id == proj.id)
+					})
+			})
 			.await
 	}
 

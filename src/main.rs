@@ -1,15 +1,75 @@
+use actix_web::{post, web, Responder, HttpServer, HttpResponse, App};
 use parking_lot::RwLock;
 //use rocksdb::DB;
 use futures_util::future::TryFutureExt;
-//use snafu::ResultExt;
+use serde::Deserialize;
+use snafu::{OptionExt, ResultExt};
 use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::rc::Rc;
+use std::sync::Mutex;
 
-use parity_processbot::{bamboo, bots, config, github_bot, matrix_bot};
+use parity_processbot::github::{Issue, Payload::IssueComment, PayloadAction};
+use parity_processbot::{
+	bamboo, bots, config, constants::*, error, github, github_bot, matrix_bot,
+};
 
 //const GITHUB_TO_MATRIX_KEY: &str = "GITHUB_TO_MATRIX";
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+#[post("/payload")]
+async fn webhook(state: web::Data<Arc<github_bot::GithubBot>>, payload: web::Json<github::Payload>) -> impl Responder {
+    log::info!("received");
+	match payload.into_inner() {
+		IssueComment {
+			action: PayloadAction::Created,
+			issue:
+				Issue {
+                    number,
+					pull_request: Some(pr),
+					repository_url: Some(repo_url),
+					..
+				},
+			comment,
+		} => {
+            dbg!(&pr);
+            dbg!(&repo_url);
+            dbg!(&number);
+            let github_bot = state.get_ref();
+            if let Some(repo_name) =
+                repo_url.rsplit('/').next().map(|s| s.to_string())
+            {
+                dbg!(&repo_name);
+                if let Ok(pr) =
+                    github_bot.pull_request(&repo_name, number).await
+                {
+                    dbg!(&pr);
+                    if comment.body.to_lowercase().trim()
+                        == AUTO_MERGE_REQUEST.to_lowercase().trim()
+                    {
+                        log::info!("merge requested");
+                        let s = String::new();
+						if let Ok((reviews, issues, status)) = futures::try_join!(
+							github_bot.reviews(&pr),
+							github_bot.linked_issues(
+								&repo_name,
+								pr.body.as_ref().unwrap_or(&s)
+							),
+							github_bot.status(&repo_name, &pr),
+						) {
+							let issue_numbers = std::iter::once(pr.number)
+								.chain(issues.iter().map(|issue| issue.number))
+								.collect::<Vec<i64>>();
+						}
+					}
+				}
+			}
+		}
+		_ => {}
+	}
+	HttpResponse::Ok()
+}
+
+#[actix_rt::main]
+async fn main() -> std::io::Result<()> {
 	match run().await {
 		Err(error) => panic!("{}", error),
 		_ => Ok(()),
@@ -24,7 +84,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 	//	let db = DB::open_default(&config.db_path)?;
 
 	log::info!(
-		"Connecting to matrix homeserver {}",
+		"Connecting to Matrix homeserver {}",
 		config.matrix_homeserver,
 	);
 	let matrix_bot = matrix_bot::MatrixBot::new_with_token(
@@ -41,15 +101,23 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 	)
 	.await?;
 
+//	let mut bot =
+//		bots::Bot::new(github_bot, matrix_bot, vec![], HashMap::new());
+
+	let mut core_devs = match github_bot.team("core-devs").await {
+		Ok(team) => github_bot.team_members(team.id).await?,
+		_ => vec![],
+	};
+
 	let mut gtm = HashMap::new();
 
 	// the bamboo queries can take a long time so only wait for it
 	// on launch. subsequently update in the background.
-	log::info!("Waiting for Bamboo data (may take a few minutes)");
-	match bamboo::github_to_matrix(&config.bamboo_token) {
-		Ok(h) => gtm = h,
-		Err(e) => log::error!("Bamboo error: {}", e),
-	}
+	//	log::info!("Waiting for Bamboo data (may take a few minutes)");
+	//	match bamboo::github_to_matrix(&config.bamboo_token) {
+	//		Ok(h) => gtm = h,
+	//		Err(e) => log::error!("Bamboo error: {}", e),
+	//	}
 
 	let gtm = Arc::new(RwLock::new(gtm));
 
@@ -58,6 +126,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
 	// update github_to_matrix on another thread
 	std::thread::spawn(move || loop {
+		log::info!("Updating Bamboo data");
 		match bamboo::github_to_matrix(&config_clone.bamboo_token) {
 			Ok(h) => *gtm_clone.write() = h,
 			Err(e) => log::error!("Bamboo error: {}", e),
@@ -68,14 +137,15 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 	let mut interval =
 		tokio::time::interval(Duration::from_secs(config.main_tick_secs));
 
-	let mut bot =
-		bots::Bot::new(github_bot, matrix_bot, vec![], HashMap::new());
+    let gbot = Arc::new(github_bot);
+	Ok(HttpServer::new(move || App::new().data(gbot.clone())
+                       .service(webhook))
+		.bind("127.0.0.1:4567")?
+		.run()
+		.await
+		.context(error::Actix)?)
 
-	let mut core_devs = match bot.github_bot.team("core-devs").await {
-		Ok(team) => bot.github_bot.team_members(team.id).await?,
-		_ => vec![],
-	};
-
+	/*
 	loop {
 		interval.tick().await;
 
@@ -101,6 +171,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
 		log::info!("Sleeping for {} seconds", config.main_tick_secs);
 	}
+	*/
 }
 
 #[cfg(test)]

@@ -1,6 +1,161 @@
-use crate::{constants::*, error, github, Result};
+use crate::{
+	constants::*, error, github, github_bot::GithubBot, process, Result,
+};
+use futures_util::future::FutureExt;
 use regex::Regex;
 use snafu::ResultExt;
+
+pub async fn get_process(
+	github_bot: &GithubBot,
+	repo: &github::Repository,
+	issue_numbers: &[i64],
+) -> Option<CombinedProcessInfo> {
+	if issue_numbers.len() == 0 {
+		return None;
+	}
+
+	let maybe_process = github_bot
+		.contents(&repo.name, PROCESS_FILE_NAME)
+		.await
+		.map(|contents| {
+			let proc = process::process_from_contents(contents);
+			if proc.is_err() {
+				log::debug!("{:#?}", proc);
+			}
+			proc.ok()
+		})
+		.ok()
+		.flatten();
+
+	// ignore repos with no valid process file
+	if maybe_process.is_none() {
+		log::warn!(
+			"Repository '{repo_name}' has no valid Process.toml file",
+			repo_name = repo.name,
+		);
+		return None;
+	}
+
+	// ignore repos with no projects
+	let projects = github_bot.projects(&repo.name).await.unwrap_or(vec![]);
+	if projects.is_empty() {
+		log::warn!(
+					"Repository '{repo_name}' contains a Process.toml file but no projects",
+					repo_name = repo.name,
+				);
+		return None;
+	}
+
+	// ignore process entries that do not match a project in the repository
+	let (features, process): (Vec<process::ProcessWrapper>, Vec<process::ProcessWrapper>) = maybe_process.unwrap()
+				.into_iter()
+				.filter(|proc| {
+                    match proc {
+                        process::ProcessWrapper::Features(_) => true,
+                        process::ProcessWrapper::Project(proc) => {
+                            let keep = projects.iter().any(|proj| proj.name.replace(" ", "-") == proc.project_name);
+                            if !keep {
+                                log::warn!(
+                                    "'{proc_name}' in Process.toml file doesn't match any projects in repository '{repo_name}'",
+                                    proc_name = proc.project_name,
+                                    repo_name = repo.name,
+                                );
+                            }
+                            keep
+                        }
+                    }
+				})
+                .partition(|proc| match proc {
+                    process::ProcessWrapper::Features(_) => true,
+                    process::ProcessWrapper::Project(_) => false,
+                });
+	let features = features
+		.first()
+		.and_then(|f| match f {
+			process::ProcessWrapper::Features(feat) => Some(feat.clone()),
+			_ => None,
+		})
+		.unwrap_or(process::ProcessFeatures::default());
+	let process = process
+		.into_iter()
+		.map(|w| match w {
+			process::ProcessWrapper::Project(p) => p,
+			_ => panic!(),
+		})
+		.collect::<Vec<process::ProcessInfo>>();
+
+	// ignore repos with no matching process entries
+	if process.is_empty() {
+		log::warn!(
+					"Process.toml file doesn't match any projects in repository '{repo_name}'",
+					repo_name = repo.name,
+				);
+		return None;
+	}
+
+	let combined_process = combined_process_info(
+		github_bot,
+		&repo,
+		&issue_numbers,
+		&projects,
+		&process,
+	)
+	.await;
+
+	let pr_project = github_bot
+		.issue_project(&repo.name, issue_numbers[0], &projects)
+		.await;
+
+	// ignore issue attached to project not listed in process file
+	if pr_project.is_some() && !combined_process.has_primary() {
+		return None;
+	}
+
+	Some(combined_process)
+}
+
+pub async fn combined_process_info(
+	github_bot: &GithubBot,
+	repo: &github::Repository,
+	issue_numbers: &[i64],
+	projects: &[github::Project],
+	processes: &[process::ProcessInfo],
+) -> process::CombinedProcessInfo {
+	process::CombinedProcessInfo::new(process::process_from_projects(
+		&projects_from_project_events(
+			&futures::future::join_all(issue_numbers.iter().map(|&num| {
+				github_bot
+					.active_project_event(&repo.name, num)
+					.map(|x| x.ok().flatten())
+			}))
+			.await,
+			projects,
+		),
+		processes,
+	))
+}
+
+pub fn projects_from_project_events(
+	events: &[Option<github::IssueEvent>],
+	projects: &[github::Project],
+) -> Vec<Option<github::Project>> {
+	events
+		.iter()
+		.map(|event| {
+			event
+				.as_ref()
+				.map(|event| event.project_card.as_ref())
+				.flatten()
+		})
+		.flatten()
+		.map(|card| {
+			projects
+				.iter()
+				.find(|proj| card.project_id == proj.id)
+				.cloned()
+		})
+		.collect::<_>()
+}
 
 #[derive(Clone, Debug)]
 pub struct CombinedProcessInfo {

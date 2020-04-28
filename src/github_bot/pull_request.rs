@@ -17,7 +17,7 @@ impl GithubBot {
 	/// Returns a single pull request.
 	pub async fn pull_request(
 		&self,
-		repo: &github::Repository,
+		repo_name: &str,
 		pull_number: i64,
 	) -> Result<github::PullRequest> {
 		self.client
@@ -25,7 +25,7 @@ impl GithubBot {
 				"{base_url}/repos/{owner}/{repo}/pulls/{pull_number}",
 				base_url = Self::BASE_URL,
 				owner = self.organization.login,
-				repo = repo.name,
+				repo = repo_name,
 				pull_number = pull_number
 			))
 			.await
