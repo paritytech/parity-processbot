@@ -8,19 +8,18 @@ use std::{collections::HashMap, sync::Arc, time::Duration};
 use std::rc::Rc;
 use std::sync::Mutex;
 
-use parity_processbot::github::{Issue, Payload::IssueComment, PayloadAction};
 use parity_processbot::{
-	bamboo, bots, config, constants::*, error, github, github_bot, matrix_bot,
+	bamboo, bots, config, constants::*, error, github::*, github_bot, matrix_bot,
 };
 
 //const GITHUB_TO_MATRIX_KEY: &str = "GITHUB_TO_MATRIX";
 
 #[post("/payload")]
-async fn webhook(state: web::Data<Arc<github_bot::GithubBot>>, payload: web::Json<github::Payload>) -> impl Responder {
+async fn webhook(state: web::Data<Arc<github_bot::GithubBot>>, payload: web::Json<Payload>) -> impl Responder {
     log::info!("received");
 	match payload.into_inner() {
-		IssueComment {
-			action: PayloadAction::Created,
+		Payload::IssueComment {
+			action: IssueCommentAction::Created,
 			issue:
 				Issue {
                     number,
@@ -63,7 +62,9 @@ async fn webhook(state: web::Data<Arc<github_bot::GithubBot>>, payload: web::Jso
 				}
 			}
 		}
-		_ => {}
+		event => {
+            log::info!("Received payload {:?}", event);
+        }
 	}
 	HttpResponse::Ok()
 }
