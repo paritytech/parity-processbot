@@ -75,6 +75,7 @@ impl GithubBot {
 			.await
 	}
 
+	/*
 	/// Returns check runs associated with a pull request.
 	pub async fn check_runs(
 		&self,
@@ -90,6 +91,7 @@ impl GithubBot {
 		);
 		self.client.get(url).await
 	}
+	*/
 
 	/// Returns statuses associated with a pull request.
 	pub async fn status(

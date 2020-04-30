@@ -1,51 +1,81 @@
-use actix_web::{post, web, Responder, HttpServer, HttpResponse, App};
-use parking_lot::RwLock;
-//use rocksdb::DB;
+use actix_web::{post, web, App, HttpResponse, HttpServer, Responder};
 use futures_util::future::TryFutureExt;
-use serde::Deserialize;
+use parking_lot::RwLock;
+use rocksdb::DB;
+use serde::{Deserialize, Serialize};
 use snafu::{OptionExt, ResultExt};
-use std::{collections::HashMap, sync::Arc, time::Duration};
-use std::rc::Rc;
-use std::sync::Mutex;
+use std::{collections::HashMap, path::Path, sync::Arc, time::Duration};
 
 use parity_processbot::{
-	bamboo, bots, config, constants::*, error, github::*, github_bot, matrix_bot,
+	bamboo, bots,
+	config::{BotConfig, MainConfig},
+	constants::*,
+	error,
+	github::*,
+	github_bot, matrix_bot,
 };
 
-//const GITHUB_TO_MATRIX_KEY: &str = "GITHUB_TO_MATRIX";
+const BAMBOO_DATA_KEY: &str = "BAMBOO_DATA";
+const CORE_DEVS_KEY: &str = "CORE_DEVS";
+
+pub struct AppState {
+	pub db: Arc<RwLock<DB>>,
+	pub github_bot: github_bot::GithubBot,
+	pub matrix_bot: matrix_bot::MatrixBot,
+	pub config: BotConfig,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct MergeRequest {
+	sha: String,
+}
 
 #[post("/payload")]
-async fn webhook(state: web::Data<Arc<github_bot::GithubBot>>, payload: web::Json<Payload>) -> impl Responder {
-    log::info!("received");
+async fn webhook(
+	state: web::Data<Arc<AppState>>,
+	payload: web::Json<Payload>,
+) -> impl Responder {
+	let db = &state.get_ref().db;
+	let github_bot = &state.get_ref().github_bot;
 	match payload.into_inner() {
 		Payload::IssueComment {
 			action: IssueCommentAction::Created,
 			issue:
 				Issue {
-                    number,
+					number,
 					pull_request: Some(pr),
 					repository_url: Some(repo_url),
 					..
 				},
 			comment,
 		} => {
-            dbg!(&pr);
-            dbg!(&repo_url);
-            dbg!(&number);
-            let github_bot = state.get_ref();
-            if let Some(repo_name) =
-                repo_url.rsplit('/').next().map(|s| s.to_string())
-            {
-                dbg!(&repo_name);
-                if let Ok(pr) =
-                    github_bot.pull_request(&repo_name, number).await
-                {
-                    dbg!(&pr);
-                    if comment.body.to_lowercase().trim()
-                        == AUTO_MERGE_REQUEST.to_lowercase().trim()
-                    {
-                        log::info!("merge requested");
-                        let s = String::new();
+			log::info!("Received issue comment {:?}", comment);
+			if let Some(repo_name) =
+				repo_url.rsplit('/').next().map(|s| s.to_string())
+			{
+				if let Ok(PullRequest {
+					head:
+						Head {
+							ref_field,
+							sha: head_sha,
+							..
+						},
+					..
+				}) = github_bot.pull_request(&repo_name, number).await
+				{
+					if comment.body.to_lowercase().trim()
+						== AUTO_MERGE_REQUEST.to_lowercase().trim()
+					{
+						log::info!("merge requested");
+						db.write().put(
+							ref_field.as_bytes(),
+							bincode::serialize(&MergeRequest { sha: head_sha })
+								.expect("bincode serialize"),
+						)
+						.expect("db write");
+
+						/*
+						let s = String::new();
 						if let Ok((reviews, issues, status)) = futures::try_join!(
 							github_bot.reviews(&pr),
 							github_bot.linked_issues(
@@ -58,13 +88,40 @@ async fn webhook(state: web::Data<Arc<github_bot::GithubBot>>, payload: web::Jso
 								.chain(issues.iter().map(|issue| issue.number))
 								.collect::<Vec<i64>>();
 						}
+						*/
 					}
 				}
 			}
 		}
+		Payload::CommitStatus {
+			state, branches, ..
+		} => {
+			log::info!("Received commit status {:?}", state);
+			for Branch {
+				name,
+				commit: BranchCommit { sha, .. },
+				..
+			} in &branches
+			{
+				match db.read().get(name.as_bytes()) {
+					Ok(Some(b)) => {
+						let MergeRequest { sha: head_sha } =
+							bincode::deserialize(&b)
+								.expect("bincode deserialize");
+						log::info!(
+							"commit branch matches request {} {} {}",
+							name,
+							sha,
+							head_sha
+						)
+					}
+					_ => {}
+				}
+			}
+		}
 		event => {
-            log::info!("Received payload {:?}", event);
-        }
+			log::info!("Received unknown event {:?}", event);
+		}
 	}
 	HttpResponse::Ok()
 }
@@ -78,11 +135,11 @@ async fn main() -> std::io::Result<()> {
 }
 
 async fn run() -> Result<(), Box<dyn std::error::Error>> {
-	let config = config::MainConfig::from_env();
+	let config = MainConfig::from_env();
 	env_logger::from_env(env_logger::Env::default().default_filter_or("info"))
 		.init();
 
-	//	let db = DB::open_default(&config.db_path)?;
+	let db = Arc::new(RwLock::new(DB::open_default(&config.db_path)?));
 
 	log::info!(
 		"Connecting to Matrix homeserver {}",
@@ -102,34 +159,49 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 	)
 	.await?;
 
-//	let mut bot =
-//		bots::Bot::new(github_bot, matrix_bot, vec![], HashMap::new());
+	//	let mut bot =
+	//		bots::Bot::new(github_bot, matrix_bot, vec![], HashMap::new());
 
 	let mut core_devs = match github_bot.team("core-devs").await {
 		Ok(team) => github_bot.team_members(team.id).await?,
 		_ => vec![],
 	};
 
-	let mut gtm = HashMap::new();
+	db.write()
+		.put(
+			&CORE_DEVS_KEY.as_bytes(),
+			bincode::serialize(&core_devs).expect("serialize core-devs"),
+		)
+		.expect("put core-devs");
 
 	// the bamboo queries can take a long time so only wait for it
 	// on launch. subsequently update in the background.
-	//	log::info!("Waiting for Bamboo data (may take a few minutes)");
-	//	match bamboo::github_to_matrix(&config.bamboo_token) {
-	//		Ok(h) => gtm = h,
-	//		Err(e) => log::error!("Bamboo error: {}", e),
-	//	}
+	log::info!("Waiting for Bamboo data (may take a few minutes)");
+	match bamboo::github_to_matrix(&config.bamboo_token) {
+		Ok(h) => db
+			.write()
+			.put(
+				BAMBOO_DATA_KEY,
+				bincode::serialize(&h).expect("serialize bamboo"),
+			)
+			.expect("put bamboo"),
+		Err(e) => log::error!("Bamboo error: {}", e),
+	}
 
-	let gtm = Arc::new(RwLock::new(gtm));
-
-	let gtm_clone = gtm.clone();
 	let config_clone = config.clone();
+    let db_clone = db.clone();
 
 	// update github_to_matrix on another thread
 	std::thread::spawn(move || loop {
 		log::info!("Updating Bamboo data");
 		match bamboo::github_to_matrix(&config_clone.bamboo_token) {
-			Ok(h) => *gtm_clone.write() = h,
+			Ok(h) => db_clone
+				.write()
+				.put(
+					BAMBOO_DATA_KEY,
+					bincode::serialize(&h).expect("serialize bamboo"),
+				)
+				.expect("put bamboo"),
 			Err(e) => log::error!("Bamboo error: {}", e),
 		}
 		std::thread::sleep(Duration::from_secs(config_clone.bamboo_tick_secs));
@@ -138,13 +210,20 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 	let mut interval =
 		tokio::time::interval(Duration::from_secs(config.main_tick_secs));
 
-    let gbot = Arc::new(github_bot);
-	Ok(HttpServer::new(move || App::new().data(gbot.clone())
-                       .service(webhook))
-		.bind("127.0.0.1:4567")?
-		.run()
-		.await
-		.context(error::Actix)?)
+	let app_state = Arc::new(AppState {
+		db: db,
+		github_bot: github_bot,
+		matrix_bot: matrix_bot,
+		config: BotConfig::from_env(),
+	});
+
+	Ok(HttpServer::new(move || {
+		App::new().data(app_state.clone()).service(webhook)
+	})
+	.bind("127.0.0.1:4567")?
+	.run()
+	.await
+	.context(error::Actix)?)
 
 	/*
 	loop {
