@@ -13,118 +13,8 @@ use parity_processbot::{
 	error,
 	github::*,
 	github_bot, matrix_bot,
+	webhook::*,
 };
-
-const BAMBOO_DATA_KEY: &str = "BAMBOO_DATA";
-const CORE_DEVS_KEY: &str = "CORE_DEVS";
-
-pub struct AppState {
-	pub db: Arc<RwLock<DB>>,
-	pub github_bot: github_bot::GithubBot,
-	pub matrix_bot: matrix_bot::MatrixBot,
-	pub config: BotConfig,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct MergeRequest {
-	sha: String,
-}
-
-#[post("/payload")]
-async fn webhook(
-	state: web::Data<Arc<AppState>>,
-	payload: web::Json<Payload>,
-) -> impl Responder {
-	let db = &state.get_ref().db;
-	let github_bot = &state.get_ref().github_bot;
-	match payload.into_inner() {
-		Payload::IssueComment {
-			action: IssueCommentAction::Created,
-			issue:
-				Issue {
-					number,
-					pull_request: Some(pr),
-					repository_url: Some(repo_url),
-					..
-				},
-			comment,
-		} => {
-			log::info!("Received issue comment {:?}", comment);
-			if let Some(repo_name) =
-				repo_url.rsplit('/').next().map(|s| s.to_string())
-			{
-				if let Ok(PullRequest {
-					head:
-						Head {
-							ref_field,
-							sha: head_sha,
-							..
-						},
-					..
-				}) = github_bot.pull_request(&repo_name, number).await
-				{
-					if comment.body.to_lowercase().trim()
-						== AUTO_MERGE_REQUEST.to_lowercase().trim()
-					{
-						log::info!("merge requested");
-						db.write().put(
-							ref_field.as_bytes(),
-							bincode::serialize(&MergeRequest { sha: head_sha })
-								.expect("bincode serialize"),
-						)
-						.expect("db write");
-
-						/*
-						let s = String::new();
-						if let Ok((reviews, issues, status)) = futures::try_join!(
-							github_bot.reviews(&pr),
-							github_bot.linked_issues(
-								&repo_name,
-								pr.body.as_ref().unwrap_or(&s)
-							),
-							github_bot.status(&repo_name, &pr),
-						) {
-							let issue_numbers = std::iter::once(pr.number)
-								.chain(issues.iter().map(|issue| issue.number))
-								.collect::<Vec<i64>>();
-						}
-						*/
-					}
-				}
-			}
-		}
-		Payload::CommitStatus {
-			state, branches, ..
-		} => {
-			log::info!("Received commit status {:?}", state);
-			for Branch {
-				name,
-				commit: BranchCommit { sha, .. },
-				..
-			} in &branches
-			{
-				match db.read().get(name.as_bytes()) {
-					Ok(Some(b)) => {
-						let MergeRequest { sha: head_sha } =
-							bincode::deserialize(&b)
-								.expect("bincode deserialize");
-						log::info!(
-							"commit branch matches request {} {} {}",
-							name,
-							sha,
-							head_sha
-						)
-					}
-					_ => {}
-				}
-			}
-		}
-		event => {
-			log::info!("Received unknown event {:?}", event);
-		}
-	}
-	HttpResponse::Ok()
-}
 
 #[actix_rt::main]
 async fn main() -> std::io::Result<()> {
@@ -163,7 +53,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 	//		bots::Bot::new(github_bot, matrix_bot, vec![], HashMap::new());
 
 	let mut core_devs = match github_bot.team("core-devs").await {
-		Ok(team) => github_bot.team_members(team.id).await?,
+		Ok(team) => github_bot.team_members(team.id).await?.map(|u| u.login),
 		_ => vec![],
 	};
 
@@ -189,7 +79,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 	}
 
 	let config_clone = config.clone();
-    let db_clone = db.clone();
+	let db_clone = db.clone();
 
 	// update github_to_matrix on another thread
 	std::thread::spawn(move || loop {

@@ -97,14 +97,14 @@ impl GithubBot {
 	pub async fn status(
 		&self,
 		repo_name: &str,
-		pull_request: &github::PullRequest,
+		sha: &str,
 	) -> Result<github::CombinedStatus> {
 		let url = format!(
 			"{base_url}/repos/{owner}/{repo}/commits/{sha}/status",
 			base_url = Self::BASE_URL,
 			owner = self.organization.login,
 			repo = repo_name,
-			sha = &pull_request.head.sha
+			sha = sha
 		);
 		self.client.get(url).await
 	}

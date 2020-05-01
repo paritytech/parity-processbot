@@ -29,7 +29,7 @@ pub enum AutoMergeState {
 fn pull_request_is_approved(
 	github_bot: &GithubBot,
 	config: &BotConfig,
-	core_devs: &[github::User],
+	core_devs: &[String],
 	process_info: &process::CombinedProcessInfo,
 	reviews: &[github::Review],
 ) -> bool {
@@ -43,7 +43,7 @@ fn pull_request_is_approved(
 	let core_approved = reviews
 		.iter()
 		.filter(|r| {
-			core_devs.iter().any(|u| &u.login == &r.user.login)
+			core_devs.iter().any(|u| u == &r.user.login)
 				&& r.state == Some(github::ReviewState::Approved)
 		})
 		.count() >= config.min_reviewers;
@@ -87,17 +87,14 @@ async fn auto_merge_requested(
 /// Returns the state of any pending auto-merge for a given PR.
 async fn auto_merge_state(
 	github_bot: &GithubBot,
-	repository: &github::Repository,
+	repo_name: &str,
 	pull_request: &github::PullRequest,
 	status: &github::CombinedStatus,
 ) -> Result<AutoMergeState> {
 	Ok(
-		if let Some(merge_request) = auto_merge_requested(
-			github_bot,
-			&repository.name,
-			pull_request.number,
-		)
-		.await?
+		if let Some(merge_request) =
+			auto_merge_requested(github_bot, &repo_name, pull_request.number)
+				.await?
 		{
 			let last_status = status
 				.statuses
@@ -126,13 +123,66 @@ async fn auto_merge_state(
 
 async fn auto_merge_complete(
 	github_bot: &GithubBot,
-	repository: &github::Repository,
+	repo_name: &str,
 	pull_request: &github::PullRequest,
 ) -> Result<()> {
 	github_bot
-		.merge_pull_request(&repository.name, pull_request)
+		.merge_pull_request(&repo_name, pull_request)
 		.await?;
 	Ok(())
+}
+
+pub async fn auto_merge_if_approved(
+	github_bot: &GithubBot,
+	config: &BotConfig,
+	core_devs: &[String],
+	repo_name: &str,
+	pull_request: &github::PullRequest,
+	process: &process::CombinedProcessInfo,
+	reviews: &[github::Review],
+	requested_by: &str,
+) -> Result<bool> {
+	let mergeable = pull_request.mergeable.unwrap_or(false);
+	let approved = pull_request_is_approved(
+		github_bot, config, core_devs, &process, &reviews,
+	);
+	let owner_request = process.is_primary_owner(&requested_by);
+	if mergeable && (approved || owner_request) {
+		log::info!(
+			"{} has necessary approvals; merging.",
+			pull_request.html_url
+		);
+		auto_merge_complete(&github_bot, &repo_name, &pull_request).await?;
+		Ok(true)
+	} else {
+		if !mergeable {
+			log::info!("{} is unmergeable.", pull_request.html_url);
+		}
+		if !(approved || owner_request) {
+			log::info!(
+				"{} lacks approval; cannot merge.",
+				pull_request.html_url
+			);
+		}
+		github_bot
+			.create_issue_comment(
+				&repo_name,
+				pull_request.number,
+				&AUTO_MERGE_FAILED.replace(
+					"{min_reviewers}",
+					&format!("{}", config.min_reviewers),
+				),
+			)
+			.await?;
+		github_bot
+			.create_issue_comment(
+				&repo_name,
+				pull_request.number,
+				AUTO_MERGE_REQUEST_CANCELLED,
+			)
+			.await?;
+		Ok(false)
+	}
 }
 
 /// Merge the PR if it has sufficient approvals and a valid merge request is pending.
@@ -140,60 +190,30 @@ async fn auto_merge_complete(
 pub async fn auto_merge_if_ready(
 	github_bot: &GithubBot,
 	config: &BotConfig,
-	core_devs: &[github::User],
-	repository: &github::Repository,
+	core_devs: &[String],
+	repo_name: &str,
 	pull_request: &github::PullRequest,
 	status: &github::CombinedStatus,
 	process: &process::CombinedProcessInfo,
 	reviews: &[github::Review],
 ) -> Result<bool> {
 	let state =
-		auto_merge_state(github_bot, &repository, &pull_request, &status)
+		auto_merge_state(github_bot, &repo_name, &pull_request, &status)
 			.await?;
 	let mut merged = false;
 	match state {
 		AutoMergeState::Ready(requested_by) => {
-			let mergeable = pull_request.mergeable.unwrap_or(false);
-			let approved = pull_request_is_approved(
-				github_bot, config, core_devs, &process, &reviews,
-			);
-			let owner_request = process.is_primary_owner(&requested_by);
-			if mergeable && (approved || owner_request) {
-				log::info!(
-					"{} has necessary approvals; merging.",
-					pull_request.html_url
-				);
-				auto_merge_complete(&github_bot, &repository, &pull_request)
-					.await?;
-				merged = true;
-			} else {
-				if !mergeable {
-					log::info!("{} is unmergeable.", pull_request.html_url);
-				}
-				if !(approved || owner_request) {
-					log::info!(
-						"{} lacks approval; cannot merge.",
-						pull_request.html_url
-					);
-				}
-				github_bot
-					.create_issue_comment(
-						&repository.name,
-						pull_request.number,
-						&AUTO_MERGE_FAILED.replace(
-							"{min_reviewers}",
-							&format!("{}", config.min_reviewers),
-						),
-					)
-					.await?;
-				github_bot
-					.create_issue_comment(
-						&repository.name,
-						pull_request.number,
-						AUTO_MERGE_REQUEST_CANCELLED,
-					)
-					.await?;
-			}
+			merged = auto_merge_if_approved(
+				github_bot,
+				config,
+				core_devs,
+				repo_name,
+				pull_request,
+				process,
+				reviews,
+				&requested_by,
+			)
+			.await?;
 		}
 		AutoMergeState::Pending => {
 			log::info!("{} checks pending.", pull_request.html_url);
@@ -205,14 +225,14 @@ pub async fn auto_merge_if_ready(
 			);
 			github_bot
 				.create_issue_comment(
-					&repository.name,
+					&repo_name,
 					pull_request.number,
 					AUTO_MERGE_CHECKS_FAILED,
 				)
 				.await?;
 			github_bot
 				.create_issue_comment(
-					&repository.name,
+					&repo_name,
 					pull_request.number,
 					AUTO_MERGE_REQUEST_CANCELLED,
 				)
@@ -222,14 +242,14 @@ pub async fn auto_merge_if_ready(
 			log::info!("{} status error; aborting.", pull_request.html_url);
 			github_bot
 				.create_issue_comment(
-					&repository.name,
+					&repo_name,
 					pull_request.number,
 					AUTO_MERGE_CHECKS_ERROR,
 				)
 				.await?;
 			github_bot
 				.create_issue_comment(
-					&repository.name,
+					&repo_name,
 					pull_request.number,
 					AUTO_MERGE_REQUEST_CANCELLED,
 				)

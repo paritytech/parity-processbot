@@ -18,5 +18,6 @@ pub mod matrix_bot;
 pub mod process;
 //pub mod review;
 //pub mod status;
+pub mod webhook;
 
 pub type Result<T> = std::result::Result<T, error::Error>;

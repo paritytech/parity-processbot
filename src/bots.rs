@@ -186,7 +186,7 @@ impl Bot {
 							&repo.name,
 							pr.body.as_ref().context(error::MissingData)?
 						),
-						self.github_bot.status(&repo.name, &pr),
+						self.github_bot.status(&repo.name, &pr.head.sha),
 						self.github_bot.requested_reviewers(&pr)
 					)?;
 					num_projects += projects.len();
