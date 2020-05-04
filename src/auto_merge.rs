@@ -37,7 +37,7 @@ fn pull_request_is_approved(
 		.iter()
 		.sorted_by_key(|r| r.submitted_at)
 		.rev()
-		.find(|r| process_info.is_primary_owner(&r.user.login))
+		.find(|r| process_info.is_owner(&r.user.login))
 		.map_or(false, |r| r.state == Some(github::ReviewState::Approved));
 
 	let core_approved = reviews
@@ -146,7 +146,7 @@ pub async fn auto_merge_if_approved(
 	let approved = pull_request_is_approved(
 		github_bot, config, core_devs, &process, &reviews,
 	);
-	let owner_request = process.is_primary_owner(&requested_by);
+	let owner_request = process.is_owner(&requested_by);
 	if mergeable && (approved || owner_request) {
 		log::info!(
 			"{} has necessary approvals; merging.",

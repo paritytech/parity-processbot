@@ -13,7 +13,7 @@ use crate::{
 	constants::*,
 	error,
 	github::*,
-	github_bot, matrix_bot,
+	github_bot, matrix_bot, process,
 };
 
 pub const BAMBOO_DATA_KEY: &str = "BAMBOO_DATA";
@@ -60,26 +60,15 @@ pub async fn webhook(
 			if let Some(repo_name) =
 				repo_url.rsplit('/').next().map(|s| s.to_string())
 			{
-				if let Ok(
-					pr
-					@
-					PullRequest {
-						head:
-							Head {
-								ref_field,
-								sha: head_sha,
-								..
-							},
-						..
-					},
-				) = github_bot.pull_request(&repo_name, number).await
+				if let Ok(pr) =
+					github_bot.pull_request(&repo_name, number).await
 				{
 					if body.to_lowercase().trim()
 						== AUTO_MERGE_REQUEST.to_lowercase().trim()
 					{
 						log::info!("merge requested");
 						match github_bot
-							.status(&repo_name, &head_sha)
+							.status(&repo_name, &pr.head.sha)
 							.await
 							.map(|s| s.state)
 						{
@@ -98,18 +87,25 @@ pub async fn webhook(
 									.reviews(&pr)
 									.await
 									.unwrap_or(vec![]);
-								auto_merge_if_approved(
-									github_bot, config, &core_devs, &repo_name,
-									&pr, process, &reviews, &login,
+								if let Some(process) = process::get_process(
+									github_bot, &repo_name, number,
 								)
-								.await;
+								.await
+								{
+									auto_merge_if_approved(
+										github_bot, config, &core_devs,
+										&repo_name, &pr, &process, &reviews,
+										&login,
+									)
+									.await;
+								}
 							}
 							Ok(StatusState::Pending) => {
 								db.write()
 									.put(
-										ref_field.as_bytes(),
+										pr.head.ref_field.as_bytes(),
 										bincode::serialize(&MergeRequest {
-											sha: head_sha,
+											sha: pr.head.sha,
 										})
 										.expect("bincode serialize"),
 									)

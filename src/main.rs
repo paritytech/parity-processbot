@@ -53,7 +53,12 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 	//		bots::Bot::new(github_bot, matrix_bot, vec![], HashMap::new());
 
 	let mut core_devs = match github_bot.team("core-devs").await {
-		Ok(team) => github_bot.team_members(team.id).await?.map(|u| u.login),
+		Ok(team) => github_bot
+			.team_members(team.id)
+			.await?
+			.iter()
+			.map(|u| u.login.clone())
+			.collect::<Vec<String>>(),
 		_ => vec![],
 	};
 

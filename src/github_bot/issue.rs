@@ -80,24 +80,27 @@ impl GithubBot {
 			.await
 	}
 
-	pub async fn issue_project<'a>(
+	pub async fn issue_projects<'a>(
 		&self,
 		repo_name: &str,
 		issue_number: i64,
 		projects: &'a [github::Project],
-	) -> Option<&'a github::Project> {
-		self.active_project_event(repo_name, issue_number)
-			.map(|result| {
-				result
-					.ok()
-					.and_then(|event| {
-						event.map(|event| event.project_card).flatten()
-					})
-					.and_then(|card| {
-						projects.iter().find(|proj| card.project_id == proj.id)
-					})
-			})
+	) -> Result<Vec<&'a github::Project>> {
+		self.active_project_events(repo_name, issue_number)
 			.await
+			.map(|v| {
+				v.iter()
+					.filter_map(|issue_event| {
+						projects.iter().find(|proj| {
+							issue_event
+								.project_card
+								.as_ref()
+								.expect("issue event project card")
+								.id == proj.id
+						})
+					})
+					.collect::<Vec<&'a github::Project>>()
+			})
 	}
 
 	pub async fn create_issue(
