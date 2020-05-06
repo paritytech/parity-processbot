@@ -1,6 +1,10 @@
-use actix_web::{post, web, App, HttpResponse, HttpServer, Responder};
+use actix_web::{
+	error::*, post, web, App, HttpRequest, HttpResponse, HttpServer, Responder,
+};
+use futures::{Future, Stream, StreamExt};
 use futures_util::future::TryFutureExt;
 use parking_lot::RwLock;
+use ring::{digest, hmac, rand};
 use rocksdb::DB;
 use serde::{Deserialize, Serialize};
 use snafu::{OptionExt, ResultExt};
@@ -24,6 +28,7 @@ pub struct AppState {
 	pub github_bot: github_bot::GithubBot,
 	pub matrix_bot: matrix_bot::MatrixBot,
 	pub config: BotConfig,
+	pub webhook_secret: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -31,15 +36,49 @@ pub struct MergeRequest {
 	sha: String,
 }
 
-#[post("/payload")]
+fn verify(
+	secret: &[u8],
+	msg: &[u8],
+	signature: &[u8],
+) -> Result<(), ring::error::Unspecified> {
+	let key = hmac::Key::new(hmac::HMAC_SHA1_FOR_LEGACY_USE_ONLY, secret);
+	hmac::verify(&key, msg, signature)
+}
+
+#[post("/webhook")]
 pub async fn webhook(
+	req: web::HttpRequest,
+	mut body: web::Payload,
 	state: web::Data<Arc<AppState>>,
-	payload: web::Json<Payload>,
-) -> impl Responder {
+) -> actix_web::Result<impl Responder> {
+	let mut msg_bytes = web::BytesMut::new();
+	while let Some(item) = body.next().await {
+		msg_bytes.extend_from_slice(&item?);
+	}
+
+	let sig = req
+		.headers()
+		.get("x-hub-signature")
+		.ok_or(ParseError::Incomplete)?
+		.to_str()
+		.map_err(ErrorBadRequest)?
+		.replace("sha1=", "");
+	let sig_bytes = base16::decode(sig.as_bytes()).map_err(ErrorBadRequest)?;
+
+	verify(
+		state.get_ref().webhook_secret.as_bytes(),
+		&msg_bytes,
+		&sig_bytes,
+	)
+	.map_err(ErrorBadRequest)?;
+
+	let payload = serde_json::from_slice::<Payload>(&msg_bytes)
+		.map_err(ErrorBadRequest)?;
+
 	let db = &state.get_ref().db;
 	let github_bot = &state.get_ref().github_bot;
 	let config = &state.get_ref().config;
-	match payload.into_inner() {
+	match payload {
 		Payload::IssueComment {
 			action: IssueCommentAction::Created,
 			issue:
@@ -92,12 +131,12 @@ pub async fn webhook(
 								)
 								.await
 								{
-									auto_merge_if_approved(
-										github_bot, config, &core_devs,
-										&repo_name, &pr, &process, &reviews,
-										&login,
-									)
-									.await;
+									//									auto_merge_if_approved(
+									//										github_bot, config, &core_devs,
+									//										&repo_name, &pr, &process, &reviews,
+									//										&login,
+									//									)
+									//									.await;
 								}
 							}
 							Ok(StatusState::Pending) => {
@@ -171,5 +210,5 @@ pub async fn webhook(
 			log::info!("Received unknown event {:?}", event);
 		}
 	}
-	HttpResponse::Ok()
+	Ok(HttpResponse::Ok())
 }

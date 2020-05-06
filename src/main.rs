@@ -71,16 +71,18 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
 	// the bamboo queries can take a long time so only wait for it
 	// on launch. subsequently update in the background.
-	log::info!("Waiting for Bamboo data (may take a few minutes)");
-	match bamboo::github_to_matrix(&config.bamboo_token) {
-		Ok(h) => db
-			.write()
-			.put(
-				BAMBOO_DATA_KEY,
-				bincode::serialize(&h).expect("serialize bamboo"),
-			)
-			.expect("put bamboo"),
-		Err(e) => log::error!("Bamboo error: {}", e),
+	if db.read().get(BAMBOO_DATA_KEY).ok().flatten().is_none() {
+		log::info!("Waiting for Bamboo data (may take a few minutes)");
+		match bamboo::github_to_matrix(&config.bamboo_token) {
+			Ok(h) => db
+				.write()
+				.put(
+					BAMBOO_DATA_KEY,
+					bincode::serialize(&h).expect("serialize bamboo"),
+				)
+				.expect("put bamboo"),
+			Err(e) => log::error!("Bamboo error: {}", e),
+		}
 	}
 
 	let config_clone = config.clone();
@@ -110,6 +112,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 		github_bot: github_bot,
 		matrix_bot: matrix_bot,
 		config: BotConfig::from_env(),
+		webhook_secret: config.webhook_secret,
 	});
 
 	Ok(HttpServer::new(move || {
