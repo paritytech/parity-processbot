@@ -69,8 +69,8 @@ dockerize-processbot:
   <<:                              *build_and_push
   environment:
     name:                          parity-build
-  only:
-    - tags
+    #only:
+    # - tags
 
 #### stage:                        deploy
 
@@ -90,8 +90,8 @@ deploy-staging:
     name: staging
   tags:
     - kubernetes-parity-build
-  only:
-    - tags
+      # only:
+      #   - tags
 
 deploy-production:
   stage:                           deploy
