@@ -86,6 +86,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 		bot_config: BotConfig::from_env(),
 		webhook_secret: config.webhook_secret,
 		environment: config.environment,
+		test_repo: config.test_repo,
 	});
 
 	Ok(HttpServer::new(move || {

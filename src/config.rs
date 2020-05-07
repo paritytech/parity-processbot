@@ -1,6 +1,7 @@
 #[derive(Debug, Clone)]
 pub struct MainConfig {
 	pub environment: String,
+	pub test_repo: String,
 	pub installation_login: String,
 	pub webhook_secret: String,
 	pub db_path: String,
@@ -20,6 +21,7 @@ impl MainConfig {
 		dotenv::dotenv().ok();
 
 		let environment = dotenv::var("ENVIRONMENT").expect("ENVIRONMENT");
+		let test_repo = dotenv::var("TEST_REPO_NAME").expect("TEST_REPO_NAME");
 		let installation_login =
 			dotenv::var("INSTALLATION_LOGIN").expect("INSTALLATION_LOGIN");
 		let webhook_secret =
@@ -53,6 +55,7 @@ impl MainConfig {
 
 		Self {
 			environment,
+			test_repo,
 			installation_login,
 			webhook_secret,
 			db_path,
