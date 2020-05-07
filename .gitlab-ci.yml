@@ -86,8 +86,8 @@ dockerize-processbot:
 deploy-staging:
   stage:                           deploy-staging
   <<:                              *deploy-k8s
-  environment: # using this cluster as a staging cluster for now as it has traefik already set up
-    name: paracon-faucet-cluster-1
+  environment:
+    name: staging
   tags:
     - kubernetes-parity-build
   only:
