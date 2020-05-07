@@ -1,5 +1,6 @@
 #[derive(Debug, Clone)]
 pub struct MainConfig {
+	pub environment: String,
 	pub installation_login: String,
 	pub webhook_secret: String,
 	pub db_path: String,
@@ -18,6 +19,7 @@ impl MainConfig {
 	pub fn from_env() -> Self {
 		dotenv::dotenv().ok();
 
+		let environment = dotenv::var("ENVIRONMENT").expect("ENVIRONMENT");
 		let installation_login =
 			dotenv::var("INSTALLATION_LOGIN").expect("INSTALLATION_LOGIN");
 		let webhook_secret =
@@ -50,6 +52,7 @@ impl MainConfig {
 			.expect("Couldn't find private key.");
 
 		Self {
+			environment,
 			installation_login,
 			webhook_secret,
 			db_path,

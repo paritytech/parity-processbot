@@ -17,7 +17,7 @@ pub trait GithubIssue {
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PullRequest {
-	pub url: Option<String>,
+	pub url: String,
 	pub id: i64,
 	pub node_id: Option<String>,
 	pub html_url: String,

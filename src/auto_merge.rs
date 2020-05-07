@@ -1,6 +1,6 @@
 use crate::{
-	bots, config::BotConfig, constants::*, github, github_bot::GithubBot,
-	process, Result,
+	config::BotConfig, constants::*, github, github_bot::GithubBot, process,
+	Result,
 };
 use itertools::Itertools;
 
@@ -27,7 +27,6 @@ pub enum AutoMergeState {
 /// Returns `true` if the pull request has been approved by the project owner or a minimum
 /// number of core developers.
 fn pull_request_is_approved(
-	github_bot: &GithubBot,
 	config: &BotConfig,
 	core_devs: &[String],
 	process_info: &process::CombinedProcessInfo,
@@ -127,7 +126,11 @@ async fn auto_merge_complete(
 	pull_request: &github::PullRequest,
 ) -> Result<()> {
 	github_bot
-		.merge_pull_request(&repo_name, pull_request)
+		.merge_pull_request(
+			&repo_name,
+			pull_request.number,
+			&pull_request.head.sha,
+		)
 		.await?;
 	Ok(())
 }
@@ -143,9 +146,8 @@ pub async fn auto_merge_if_approved(
 	requested_by: &str,
 ) -> Result<bool> {
 	let mergeable = pull_request.mergeable.unwrap_or(false);
-	let approved = pull_request_is_approved(
-		github_bot, config, core_devs, &process, &reviews,
-	);
+	let approved =
+		pull_request_is_approved(config, core_devs, &process, &reviews);
 	let owner_request = process.is_owner(&requested_by);
 	if mergeable && (approved || owner_request) {
 		log::info!(

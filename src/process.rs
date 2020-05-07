@@ -1,28 +1,24 @@
 use crate::{
 	constants::*, error, github, github_bot::GithubBot, process, Result,
 };
-use futures_util::future::FutureExt;
 use regex::Regex;
 use snafu::ResultExt;
+
+pub enum ProcessError {
+	ProcessFile,
+}
 
 pub async fn get_process(
 	github_bot: &GithubBot,
 	repo_name: &str,
 	issue_number: i64,
-) -> Option<CombinedProcessInfo> {
-	let maybe_process = github_bot
+) -> Result<CombinedProcessInfo> {
+	let process = github_bot
 		.contents(&repo_name, PROCESS_FILE_NAME)
 		.await
-		.map(|contents| {
-			let proc = process::process_from_contents(contents);
-			if proc.is_err() {
-				log::debug!("{:#?}", proc);
-			}
-			proc.ok()
-		})
-		.ok()
-		.flatten();
+		.and_then(process::process_from_contents)?;
 
+	/*
 	// ignore repos with no valid process file
 	if maybe_process.is_none() {
 		log::warn!(
@@ -31,19 +27,22 @@ pub async fn get_process(
 		);
 		return None;
 	}
+	*/
 
 	// ignore repos with no projects
-	let projects = github_bot.projects(&repo_name).await.unwrap_or(vec![]);
+	let projects = github_bot.projects(&repo_name).await?;
+	/*
 	if projects.is_empty() {
 		log::warn!(
-            "Repository '{repo_name}' contains a Process.toml file but no projects",
-            repo_name = repo_name,
-        );
+			"Repository '{repo_name}' contains a Process.toml file but no projects",
+			repo_name = repo_name,
+		);
 		return None;
 	}
+	*/
 
 	// ignore process entries that do not match a project in the repository
-	let (features, process): (Vec<process::ProcessWrapper>, Vec<process::ProcessWrapper>) = maybe_process.unwrap()
+	let (features, process): (Vec<process::ProcessWrapper>, Vec<process::ProcessWrapper>) = process
 				.into_iter()
 				.filter(|proc| {
                     match proc {
@@ -66,11 +65,11 @@ pub async fn get_process(
                     process::ProcessWrapper::Project(_) => false,
                 });
 
-	let features = features
+	let _features = features
 		.first()
 		.and_then(|f| match f {
 			process::ProcessWrapper::Features(feat) => Some(feat.clone()),
-			_ => None,
+			_ => panic!(),
 		})
 		.unwrap_or(process::ProcessFeatures::default());
 
@@ -82,16 +81,18 @@ pub async fn get_process(
 		})
 		.collect::<Vec<process::ProcessInfo>>();
 
+	/*
 	// ignore repos with no matching process entries
 	if process.is_empty() {
 		log::warn!(
-            "Process.toml file doesn't match any projects in repository '{repo_name}'",
-            repo_name = repo_name,
-        );
+			"Process.toml file doesn't match any projects in repository '{repo_name}'",
+			repo_name = repo_name,
+		);
 		return None;
 	}
+	*/
 
-	let combined_process = combined_process_info(
+	combined_process_info(
 		github_bot,
 		repo_name,
 		issue_number,
@@ -99,9 +100,6 @@ pub async fn get_process(
 		&process,
 	)
 	.await
-	.ok()?;
-
-	Some(combined_process)
 }
 
 pub async fn combined_process_info(

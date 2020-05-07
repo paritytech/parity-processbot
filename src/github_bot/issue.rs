@@ -6,8 +6,6 @@ use super::GithubBot;
 
 use regex::Regex;
 
-use futures_util::future::FutureExt;
-
 impl GithubBot {
 	/// Returns a single issue.
 	pub async fn issue(

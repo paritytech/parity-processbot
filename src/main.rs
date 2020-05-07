@@ -1,18 +1,13 @@
-use actix_web::{post, web, App, HttpResponse, HttpServer, Responder};
-use futures_util::future::TryFutureExt;
+use actix_web::{App, HttpServer};
 use parking_lot::RwLock;
 use rocksdb::DB;
-use serde::{Deserialize, Serialize};
-use snafu::{OptionExt, ResultExt};
-use std::{collections::HashMap, path::Path, sync::Arc, time::Duration};
+use snafu::ResultExt;
+use std::{sync::Arc, time::Duration};
 
 use parity_processbot::{
-	bamboo, bots,
+	bamboo,
 	config::{BotConfig, MainConfig},
-	constants::*,
-	error,
-	github::*,
-	github_bot, matrix_bot,
+	error, github_bot, matrix_bot,
 	webhook::*,
 };
 
@@ -49,26 +44,6 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 	)
 	.await?;
 
-	//	let mut bot =
-	//		bots::Bot::new(github_bot, matrix_bot, vec![], HashMap::new());
-
-	let mut core_devs = match github_bot.team("core-devs").await {
-		Ok(team) => github_bot
-			.team_members(team.id)
-			.await?
-			.iter()
-			.map(|u| u.login.clone())
-			.collect::<Vec<String>>(),
-		_ => vec![],
-	};
-
-	db.write()
-		.put(
-			&CORE_DEVS_KEY.as_bytes(),
-			bincode::serialize(&core_devs).expect("serialize core-devs"),
-		)
-		.expect("put core-devs");
-
 	// the bamboo queries can take a long time so only wait for it
 	// on launch. subsequently update in the background.
 	if db.read().get(BAMBOO_DATA_KEY).ok().flatten().is_none() {
@@ -104,15 +79,13 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 		std::thread::sleep(Duration::from_secs(config_clone.bamboo_tick_secs));
 	});
 
-	let mut interval =
-		tokio::time::interval(Duration::from_secs(config.main_tick_secs));
-
 	let app_state = Arc::new(AppState {
 		db: db,
 		github_bot: github_bot,
 		matrix_bot: matrix_bot,
-		config: BotConfig::from_env(),
+		bot_config: BotConfig::from_env(),
 		webhook_secret: config.webhook_secret,
+		environment: config.environment,
 	});
 
 	Ok(HttpServer::new(move || {
@@ -122,34 +95,6 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 	.run()
 	.await
 	.context(error::Actix)?)
-
-	/*
-	loop {
-		interval.tick().await;
-
-		log::info!("Updating core-devs");
-		match bot
-			.github_bot
-			.team("core-devs")
-			.and_then(|team| bot.github_bot.team_members(team.id))
-			.await
-		{
-			Ok(members) => core_devs = members,
-			Err(e) => log::error!("{}", e),
-		};
-
-		log::info!("Cloning things");
-		bot.core_devs = core_devs.clone();
-		bot.github_to_matrix = gtm.read().clone();
-
-		log::info!("Bot update");
-		if let Err(e) = bot.update().await {
-			log::error!("{:?}", e);
-		}
-
-		log::info!("Sleeping for {} seconds", config.main_tick_secs);
-	}
-	*/
 }
 
 #[cfg(test)]

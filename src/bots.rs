@@ -181,7 +181,7 @@ impl Bot {
 					open_prs += 1;
 
 					let (reviews, issues, status, _requested_reviewers) = futures::try_join!(
-						self.github_bot.reviews(&pr),
+						self.github_bot.reviews(&pr.url),
 						self.github_bot.linked_issues(
 							&repo.name,
 							pr.body.as_ref().context(error::MissingData)?
