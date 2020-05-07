@@ -1,0 +1,3 @@
+orgName: sjeohp-test-org
+environment: staging
+ingressDomain: processbot.test-installations.parity.io

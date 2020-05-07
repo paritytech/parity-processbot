@@ -1,0 +1,21 @@
+---
+# Ingress for the webapp
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: processbot-ingress
+  namespace: processbot
+  labels:
+    app: processbot
+  annotations:
+    kubernetes.io/ingress.class: traefik
+    traefik.frontend.entryPoints: "https,http"
+spec:
+  rules:
+  - host: {{ .Values.ingressDomain }}
+    http:
+      paths:
+      - backend:
+          serviceName: processbot
+          servicePort: 80
+        path: /

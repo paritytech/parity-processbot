@@ -1,0 +1,3 @@
+orgName: paritytech
+environment: production
+ingressDomain: processbot.parity.io

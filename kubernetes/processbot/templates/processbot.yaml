@@ -16,7 +16,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: parity-processbot
-  namespace: processbot
+  namespace: $KUBE_NAMESPACE
   labels:
     app: parity-processbot
 spec:
@@ -59,10 +59,15 @@ spec:
                   secretKeyRef:
                       name: env-secrets
                       key: bamboo_token
+            - name: WEBOOK_SECRET
+              valueFrom:
+                  secretKeyRef:
+                      name: env-secrets
+                      key: webhook_secret
             - name: RUST_BACKTRACE
               value: full
             - name: INSTALLATION_LOGIN
-              value: paritytech
+              value: {{ .Values.orgName }}
             - name: PRIVATE_KEY_PATH
               value: "/etc/processbot-key/parity-processbot-key.pem"
             - name: GITHUB_APP_ID
@@ -111,6 +116,8 @@ spec:
               value: test-repo
             - name: TEST_INSTALLATION_LOGIN
               value: sjeohp-test-org
+            - name: ENVIRONMENT
+              value: {{ .Values.environment }}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
