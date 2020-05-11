@@ -217,11 +217,13 @@ mod tests {
 			);
 
 			let project_card = github_bot
-				.active_project_event(&test_repo_name, created_issue.number)
+				.active_project_events(&test_repo_name, created_issue.number)
 				.await
 				.expect("active_project_event")
-				.expect("active_project_event option")
+				.first()
+				.expect("active_project_event vec")
 				.project_card
+				.clone()
 				.expect("project card");
 			assert_eq!(
 				project.id,

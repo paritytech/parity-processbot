@@ -34,5 +34,4 @@ actix-web = "2.0"
 actix-rt = "1.0"
 bincode = "1.2"
 ring = "0.16"
-hmac-sha1 = "0.1"
 base16 = { version = "0.2", features = ["alloc"] }

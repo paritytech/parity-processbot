@@ -75,7 +75,7 @@ mod tests {
 				.users
 				.iter()
 				.any(|x| x.login == "sjeohp"));
-			github_bot.reviews(&created).await.expect("reviews");
+			github_bot.reviews(&created.url).await.expect("reviews");
 			github_bot
 				.close_pull_request(&test_repo_name, created.number)
 				.await
