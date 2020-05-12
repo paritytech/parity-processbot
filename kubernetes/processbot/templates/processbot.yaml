@@ -53,17 +53,17 @@ spec:
               valueFrom:
                   secretKeyRef:
                       name: env-secrets
-                      key: matrix_access_token
+                      key: MATRIX_ACCESS_TOKEN
             - name: BAMBOO_TOKEN
               valueFrom:
                   secretKeyRef:
                       name: env-secrets
-                      key: bamboo_token
+                      key: BAMBOO_TOKEN
             - name: WEBHOOK_SECRET
               valueFrom:
                   secretKeyRef:
                       name: env-secrets
-                      key: webhook_secret
+                      key: WEBHOOK_SECRET
             - name: RUST_BACKTRACE
               value: full
             - name: INSTALLATION_LOGIN
