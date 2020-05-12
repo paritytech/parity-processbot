@@ -1,7 +1,6 @@
 variables:
   KUBE_NAMESPACE:                  "processbot"
   CI_REGISTRY:                     "paritytech"
-  DOCKER_TAG:                      "latest"
   GIT_STRATEGY:                    fetch
   GIT_DEPTH:                       3
 
@@ -68,7 +67,6 @@ test-build:
     DOCKER_HOST:                   tcp://localhost:2375
     DOCKER_IMAGE:                  "${CI_REGISTRY}/${KUBE_NAMESPACE}"
   script:
-    - export DOCKER_IMAGE_FULL_NAME
     - echo "$Docker_Hub_Pass_Parity" | docker login -u "$Docker_Hub_User_Parity" --password-stdin
     - cd ./artifacts
     - docker build -t "$DOCKER_IMAGE:$CI_COMMIT_REF_NAME" .
