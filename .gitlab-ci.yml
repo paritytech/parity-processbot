@@ -1,7 +1,7 @@
 variables:
   KUBE_NAMESPACE:                  "processbot"
   CI_REGISTRY:                     "paritytech"
-  DOCKER_TAG:                      "latest"
+  DOCKER_TAG:                      "${CI_COMMIT_TAG}"
   GIT_STRATEGY:                    fetch
   GIT_DEPTH:                       3
 
@@ -9,7 +9,6 @@ stages:
   - check
   - test
   - dockerize
-  - deploy-staging
   - deploy
 
 .docker-env:                       &docker-env
@@ -48,9 +47,9 @@ test:
 #### stage:                        dockerize
 
 .build_and_push:                   &build_and_push
-  image:                           docker:18-git
+  image:                           docker:git
   services:
-    - docker:18-dind
+    - docker:dind
   variables:
     DOCKER_DRIVER:                 overlay2
     DOCKER_HOST:                   tcp://localhost:2375
@@ -59,39 +58,42 @@ test:
   script:
     - export DOCKER_IMAGE_FULL_NAME
     - echo "$Docker_Hub_Pass_Parity" | docker login -u "$Docker_Hub_User_Parity" --password-stdin
-    - eval "docker build -t" "$DOCKER_IMAGE_FULL_NAME" .
-    - eval "docker push" "$DOCKER_IMAGE_FULL_NAME"
+    - docker build -t $DOCKER_IMAGE_FULL_NAME .
+    - docker push $DOCKER_IMAGE_FULL_NAME
   tags:
-    - linux-docker
+    - kubernetes-parity-build
       
 dockerize-processbot:
   stage:                           dockerize
   <<:                              *build_and_push
   environment:
     name:                          parity-build
-    #only:
-    # - tags
+  only:
+    - tags
 
 #### stage:                        deploy
 
 .deploy-k8s:                       &deploy-k8s
   image:                           parity/kubetools:helm3
   script:
-    - helm upgrade processbot kubernetes/processbot
-      --install
-      --namespace ${KUBE_NAMESPACE}
-      --values kubernetes/processbot/values-${CI_ENVIRONMENT_NAME}.yaml
-      --set dockerTag=${DOCKER_TAG}
+    - export DOCKER_TAG
+    - export KUBE_NAMESPACE
+    # check syntax
+    - for f in kubernetes/processbot/*yaml; do echo $f; cat $f | envsubst | kubectl --dry-run --validate -n $KUBE_NAMESPACE apply -f -; done
+    # print rendered yaml
+    - for f in kubernetes/processbot/*yaml; do echo $f; cat $f | envsubst; echo '---'; done
+    # deploy yaml to cluster
+    - for f in kubernetes/processbot/*yaml; do cat $f | envsubst | kubectl -n $KUBE_NAMESPACE apply -f -; done
 
 deploy-staging:
-  stage:                           deploy-staging
+  stage:                           deploy
   <<:                              *deploy-k8s
   environment:
-    name: staging
+    name: staging-cluster-1
   tags:
     - kubernetes-parity-build
-      # only:
-      #   - tags
+  only:
+    - tags
 
 deploy-production:
   stage:                           deploy
