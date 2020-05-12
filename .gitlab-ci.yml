@@ -90,8 +90,9 @@ dockerize-processbot:
 .deploy-k8s:                       &deploy-k8s
   image:                           parity/kubetools:helm3
   script:
-    - helm upgrade --install --force processbot kubernetes/processbot
+    - helm upgrade processbot kubernetes/processbot
       --install
+      --force
       --namespace ${KUBE_NAMESPACE}
       --values kubernetes/processbot/values-${CI_ENVIRONMENT_NAME}.yaml
       --set dockerTag=${DOCKER_TAG}
