@@ -90,7 +90,7 @@ dockerize-processbot:
 .deploy-k8s:                       &deploy-k8s
   image:                           parity/kubetools:helm3
   script:
-    - helm upgrade processbot kubernetes/processbot
+    - helm upgrade --install --force processbot kubernetes/processbot
       --install
       --namespace ${KUBE_NAMESPACE}
       --values kubernetes/processbot/values-${CI_ENVIRONMENT_NAME}.yaml
