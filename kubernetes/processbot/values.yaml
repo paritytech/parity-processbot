@@ -1,7 +1,10 @@
 processbot:
+  config:
+    KUBE_NAMESPACE: processbot
   secret: 
     PROCESSBOT_KEY: from-gitlab-vars
     BAMBOO_TOKEN: from-gitlab-vars
     MATRIX_ACCESS_TOKEN: from-gitlab-vars
     WEBHOOK_SECRET: from-gitlab-vars
+
 
