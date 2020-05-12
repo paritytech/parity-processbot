@@ -275,7 +275,7 @@ mod tests {
 				.expect("create_pull_request");
 			let pr_issues = github_bot
 				.linked_issues(
-					&repo,
+					&test_repo_name,
 					&created_pr.body.expect("created_pr body"),
 				)
 				.await

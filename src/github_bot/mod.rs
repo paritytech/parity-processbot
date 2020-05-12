@@ -160,7 +160,7 @@ mod tests {
 				.await
 				.expect("create_pull_request");
 			let status = github_bot
-				.status(&test_repo_name, &created_pr)
+				.status(&test_repo_name, &created_pr.head.sha)
 				.await
 				.expect("statuses");
 			assert!(status.state != github::StatusState::Failure);
