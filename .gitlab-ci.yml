@@ -1,7 +1,7 @@
 variables:
   KUBE_NAMESPACE:                  "processbot"
   CI_REGISTRY:                     "paritytech"
-  DOCKER_TAG:                      "webhook-test"
+  DOCKER_TAG:                      "latest"
   GIT_STRATEGY:                    fetch
   GIT_DEPTH:                       3
 
@@ -48,9 +48,9 @@ test:
 #### stage:                        dockerize
 
 .build_and_push:                   &build_and_push
-  image:                           docker:git
+  image:                           docker:18-git
   services:
-    - docker:dind
+    - docker:18-dind
   variables:
     DOCKER_DRIVER:                 overlay2
     DOCKER_HOST:                   tcp://localhost:2375
