@@ -1,0 +1,9 @@
+processbot-key:
+  secret: 
+    PROCESSBOT_KEY: from-gitlab-vars
+env-secrets:
+  secret:
+    BAMBOO_TOKEN: from-gitlab-vars
+    MATRIX_ACCESS_TOKEN: from-gitlab-vars
+    WEBHOOK_SECRET: from-gitlab-vars
+

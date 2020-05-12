@@ -59,7 +59,7 @@ spec:
                   secretKeyRef:
                       name: env-secrets
                       key: bamboo_token
-            - name: WEBOOK_SECRET
+            - name: WEBHOOK_SECRET
               valueFrom:
                   secretKeyRef:
                       name: env-secrets
