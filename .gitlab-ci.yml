@@ -95,10 +95,10 @@ dockerize-processbot:
       --namespace ${KUBE_NAMESPACE}
       --values kubernetes/processbot/values-${CI_ENVIRONMENT_NAME}.yaml
       --set dockerTag=${DOCKER_TAG}
-      --set processbot-key.secret.PROCESSBOT_KEY=${PROCESSBOT_KEY}
-      --set env_secrets.secret.BAMBOO_TOKEN=${BAMBOO_TOKEN}
-      --set env_secrets.secret.MATRIX_ACCESS_TOKEN=${MATRIX_ACCESS_TOKEN}
-      --set env_secrets.secret.WEBHOOK_SECRET=${WEBHOOK_SECRET}
+      --set processbot.secret.PROCESSBOT_KEY=${PROCESSBOT_KEY}
+      --set processbot.secret.BAMBOO_TOKEN=${BAMBOO_TOKEN}
+      --set processbot.secret.MATRIX_ACCESS_TOKEN=${MATRIX_ACCESS_TOKEN}
+      --set processbot.secret.WEBHOOK_SECRET=${WEBHOOK_SECRET}
 
 deploy-staging:
   stage:                           deploy-staging
