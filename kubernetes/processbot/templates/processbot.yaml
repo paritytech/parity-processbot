@@ -71,7 +71,7 @@ spec:
             - name: PRIVATE_KEY_PATH
               value: "/etc/processbot-key/PROCESSBOT_KEY"
             - name: WEBHOOK_PORT
-              value: {{ .Values.processbot.config.WEBHOOK_PORT }}
+              value: {{ quote .Values.processbot.config.WEBHOOK_PORT }}
             - name: GITHUB_APP_ID
               value: "51719"
             - name: DB_PATH
