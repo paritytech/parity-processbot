@@ -9,7 +9,7 @@ metadata:
 spec:
   ports:
     - name: backend
-      containerPort: {{ .Values.processbot.config.WEBHOOK_PORT }}
+      port: {{ .Values.processbot.config.WEBHOOK_PORT }}
   selector:
     app: parity-processbot
 ---
@@ -49,6 +49,9 @@ spec:
         - name: processbot-key-volume
           mountPath: "/etc/processbot-key"
           readOnly: true
+        ports:
+        - name: backend
+          containerPort: {{ .Values.processbot.config.WEBHOOK_PORT }}
         env:
             - name: MATRIX_ACCESS_TOKEN
               valueFrom:
