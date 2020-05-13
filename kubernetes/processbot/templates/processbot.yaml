@@ -23,7 +23,7 @@ spec:
   selector:
     matchLabels:
       app: parity-processbot
-  serviceName: "parity-processbot"
+  serviceName: parity-processbot
   updateStrategy:
     type: RollingUpdate
   replicas: 1
