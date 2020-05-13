@@ -1,5 +1,5 @@
 ---
-# Ingress for the webapp
+# Ingress for the webhook
 apiVersion: extensions/v1beta1
 kind: Ingress
 metadata:
@@ -10,6 +10,7 @@ metadata:
   annotations:
     kubernetes.io/ingress.class: traefik
     traefik.frontend.entryPoints: "https,http"
+    traefik.ingress.kubernetes.io/redirect-entry-point: https
 spec:
   rules:
   - host: {{ .Values.ingressDomain }}
