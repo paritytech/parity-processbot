@@ -8,7 +8,8 @@ metadata:
     app: parity-processbot
 spec:
   ports:
-    - port: {{ .Values.processbot.config.WEBHOOK_PORT }}
+    - name: backend
+      containerPort: {{ .Values.processbot.config.WEBHOOK_PORT }}
   selector:
     app: parity-processbot
 ---
