@@ -4,6 +4,7 @@ pub struct MainConfig {
 	pub test_repo: String,
 	pub installation_login: String,
 	pub webhook_secret: String,
+	pub webhook_port: String,
 	pub db_path: String,
 	pub bamboo_token: String,
 	pub private_key: Vec<u8>,
@@ -26,6 +27,7 @@ impl MainConfig {
 			dotenv::var("INSTALLATION_LOGIN").expect("INSTALLATION_LOGIN");
 		let webhook_secret =
 			dotenv::var("WEBHOOK_SECRET").expect("WEBHOOK_SECRET");
+		let webhook_port = dotenv::var("WEBHOOK_PORT").expect("WEBHOOK_PORT");
 		let db_path = dotenv::var("DB_PATH").expect("DB_PATH");
 		let bamboo_token = dotenv::var("BAMBOO_TOKEN").expect("BAMBOO_TOKEN");
 		let matrix_homeserver =
@@ -58,6 +60,7 @@ impl MainConfig {
 			test_repo,
 			installation_login,
 			webhook_secret,
+			webhook_port,
 			db_path,
 			bamboo_token,
 			private_key,
