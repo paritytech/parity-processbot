@@ -3,7 +3,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: parity-processbot
-  namespace: $KUBE_NAMESPACE
+  namespace: {{ .Values.processbot.namespace.KUBE_NAMESPACE }}
   labels:
     app: parity-processbot
 spec:
@@ -16,7 +16,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: parity-processbot
-  namespace: $KUBE_NAMESPACE
+  namespace: {{ .Values.processbot.namespace.KUBE_NAMESPACE }}
   labels:
     app: parity-processbot
 spec:
