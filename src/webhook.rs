@@ -8,8 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use crate::{
-	config::BotConfig, constants::*, github::*, github_bot::GithubBot,
-	matrix_bot::MatrixBot, process,
+	config::BotConfig, constants::*, github::*, github_bot::GithubBot, process,
 };
 
 pub const BAMBOO_DATA_KEY: &str = "BAMBOO_DATA";
@@ -18,7 +17,7 @@ pub const CORE_DEVS_KEY: &str = "CORE_DEVS";
 pub struct AppState {
 	pub db: Arc<RwLock<DB>>,
 	pub github_bot: GithubBot,
-	pub matrix_bot: MatrixBot,
+	//	pub matrix_bot: MatrixBot,
 	pub bot_config: BotConfig,
 	pub webhook_secret: String,
 	pub environment: String,
