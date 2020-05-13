@@ -40,7 +40,7 @@ pub async fn webhook(
 	mut body: web::Payload,
 	state: web::Data<Arc<AppState>>,
 ) -> actix_web::Result<impl Responder> {
-	log::info!("Received webhook: {:?}", req);
+	log::info!("{:?}", req);
 
 	let mut msg_bytes = web::BytesMut::new();
 	while let Some(item) = body.next().await {
@@ -65,7 +65,7 @@ pub async fn webhook(
 
 	let payload = serde_json::from_slice::<Payload>(&msg_bytes)
 		.map_err(ErrorBadRequest)?;
-	log::info!("Verified payload: {:?}", payload);
+	log::info!("Valid payload {:?}", payload);
 
 	let db = &state.get_ref().db;
 	let github_bot = &state.get_ref().github_bot;
@@ -396,6 +396,8 @@ fn verify(
 	signature: &[u8],
 ) -> Result<(), ring::error::Unspecified> {
 	let key = hmac::Key::new(hmac::HMAC_SHA1_FOR_LEGACY_USE_ONLY, secret);
+	let signed = hmac::sign(&key, msg);
+	log::info!("{:?}", signed);
 	hmac::verify(&key, msg, signature)
 }
 
