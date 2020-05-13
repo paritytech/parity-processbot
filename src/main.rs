@@ -94,7 +94,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 	Ok(HttpServer::new(move || {
 		App::new().data(app_state.clone()).service(webhook)
 	})
-	.bind(format!("127.0.0.1:{}", config.webhook_port))?
+	.bind(format!("0.0.0.0:{}", config.webhook_port))?
 	.run()
 	.await
 	.context(error::Actix)?)
