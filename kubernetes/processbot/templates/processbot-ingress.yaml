@@ -4,13 +4,12 @@ apiVersion: extensions/v1beta1
 kind: Ingress
 metadata:
   name: processbot-ingress
-  namespace: processbot
+  namespace: {{ .Values.processbot.config.KUBE_NAMESPACE }}
   labels:
     app: parity-processbot
   annotations:
     kubernetes.io/ingress.class: traefik
     traefik.frontend.entryPoints: "https,http"
-    traefik.ingress.kubernetes.io/redirect-entry-point: https
 spec:
   rules:
   - host: {{ .Values.ingressDomain }}
