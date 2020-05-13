@@ -17,5 +17,5 @@ spec:
       paths:
       - backend:
           serviceName: processbot
-          servicePort: 80
+          servicePort: {{ .Values.processbot.config.WEBHOOK_PORT }}
         path: /

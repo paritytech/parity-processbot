@@ -8,7 +8,7 @@ metadata:
     app: parity-processbot
 spec:
   ports:
-    - port: 80
+    - port: {{ .Values.processbot.config.WEBHOOK_PORT }}
   selector:
     app: parity-processbot
 ---
