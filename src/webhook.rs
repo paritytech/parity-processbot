@@ -1,5 +1,6 @@
 use actix_web::{error::*, post, web, HttpResponse, Responder};
 use futures::StreamExt;
+use itertools::Itertools;
 use parking_lot::RwLock;
 use ring::hmac;
 use rocksdb::DB;
@@ -7,8 +8,8 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use crate::{
-	auto_merge::*, config::BotConfig, constants::*, github::*,
-	github_bot::GithubBot, matrix_bot::MatrixBot, process,
+	config::BotConfig, constants::*, github::*, github_bot::GithubBot,
+	matrix_bot::MatrixBot, process,
 };
 
 pub const BAMBOO_DATA_KEY: &str = "BAMBOO_DATA";
@@ -442,18 +443,88 @@ async fn try_merge(
 			}
 		}
 		Ok(process) => {
-			if environment == "production" || repo_name == test_repo {
-				let _ = auto_merge_if_approved(
-					github_bot,
-					bot_config,
-					&core_devs,
-					repo_name,
-					pr,
-					&process,
-					&reviews,
-					requested_by,
-				)
-				.await;
+			let mergeable = pr.mergeable.unwrap_or(false);
+			if mergeable {
+				log::info!("{} is mergeable.", pr.html_url);
+
+				let core_approved = reviews
+					.iter()
+					.filter(|r| {
+						core_devs.iter().any(|u| u == &r.user.login)
+							&& r.state == Some(ReviewState::Approved)
+					})
+					.count() >= bot_config.min_reviewers;
+
+				let owner_approved = reviews
+					.iter()
+					.sorted_by_key(|r| r.submitted_at)
+					.rev()
+					.find(|r| process.is_owner(&r.user.login))
+					.map_or(false, |r| r.state == Some(ReviewState::Approved));
+
+				let owner_requested = process.is_owner(&requested_by);
+
+				if core_approved || owner_approved || owner_requested {
+					log::info!("{} has approval; merging.", pr.html_url);
+					if environment == "production" || repo_name == test_repo {
+						let _ = github_bot
+							.merge_pull_request(
+								&repo_name,
+								pr.number,
+								&pr.head.sha,
+							)
+							.await
+							.map_err(|e| {
+								log::error!("Error merging: {}", e);
+							});
+					}
+				} else {
+					if process.is_empty() {
+						log::info!("{} lacks process info - it might not belong to a valid project column.", pr.html_url);
+						if environment == "production" || repo_name == test_repo
+						{
+							let _ = github_bot
+                                .create_issue_comment(
+                                    &repo_name,
+                                    pr.number,
+                                    &format!("PR lacks process info - check that it belongs to a valid project column."),
+                                )
+                                .await
+                                .map_err(|e| {
+                                    log::error!("Error posting comment: {}", e);
+                                });
+						}
+					} else {
+						log::info!("{} lacks approval from the project owner or at least {} core developers.", pr.html_url, bot_config.min_reviewers);
+						if environment == "production" || repo_name == test_repo
+						{
+							let _ = github_bot
+                                .create_issue_comment(
+                                    &repo_name,
+                                    pr.number,
+                                    &format!("PR lacks approval from the project owner or at least {} core developers.", bot_config.min_reviewers),
+                                )
+                                .await
+                                .map_err(|e| {
+                                    log::error!("Error posting comment: {}", e);
+                                });
+						}
+					}
+				}
+			} else {
+				log::info!("{} is unmergeable.", pr.html_url);
+				if environment == "production" || repo_name == test_repo {
+					let _ = github_bot
+						.create_issue_comment(
+							&repo_name,
+							pr.number,
+							&format!("PR is currently unmergeable."),
+						)
+						.await
+						.map_err(|e| {
+							log::error!("Error posting comment: {}", e);
+						});
+				}
 			}
 		}
 	}

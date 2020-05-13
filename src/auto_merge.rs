@@ -135,6 +135,12 @@ async fn auto_merge_complete(
 	Ok(())
 }
 
+pub enum AutoMergeResult {
+	Success,
+	Unmergeable,
+	Unapproved,
+}
+
 pub async fn auto_merge_if_approved(
 	github_bot: &GithubBot,
 	config: &BotConfig,
