@@ -40,6 +40,8 @@ pub async fn webhook(
 	mut body: web::Payload,
 	state: web::Data<Arc<AppState>>,
 ) -> actix_web::Result<impl Responder> {
+	log::info!("Received webhook: {:?}", req);
+
 	let mut msg_bytes = web::BytesMut::new();
 	while let Some(item) = body.next().await {
 		msg_bytes.extend_from_slice(&item?);
@@ -63,6 +65,7 @@ pub async fn webhook(
 
 	let payload = serde_json::from_slice::<Payload>(&msg_bytes)
 		.map_err(ErrorBadRequest)?;
+	log::info!("Verified payload: {:?}", payload);
 
 	let db = &state.get_ref().db;
 	let github_bot = &state.get_ref().github_bot;
