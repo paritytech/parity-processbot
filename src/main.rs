@@ -91,10 +91,12 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 		test_repo: config.test_repo,
 	});
 
+	let addr = format!("127.0.0.1:{}", config.webhook_port);
+	log::info!("Listening on {}", addr);
 	Ok(HttpServer::new(move || {
 		App::new().data(app_state.clone()).service(webhook)
 	})
-	.bind(format!("127.0.0.1:{}", config.webhook_port))?
+	.bind(&addr)?
 	.run()
 	.await
 	.context(error::Actix)?)
