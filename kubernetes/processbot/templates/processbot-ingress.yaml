@@ -16,7 +16,7 @@ spec:
   - host: {{ .Values.ingressDomain }}
     http:
       paths:
-      - path: /webhook
+      - path: /
         backend:
           serviceName: parity-processbot
           servicePort: {{ .Values.processbot.config.WEBHOOK_PORT }}
