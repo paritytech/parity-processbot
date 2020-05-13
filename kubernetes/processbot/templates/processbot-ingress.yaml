@@ -16,7 +16,7 @@ spec:
   - host: {{ .Values.ingressDomain }}
     http:
       paths:
-      - backend:
+      - path: /
+        backend:
           serviceName: processbot
           servicePort: {{ .Values.processbot.config.WEBHOOK_PORT }}
-        path: /
