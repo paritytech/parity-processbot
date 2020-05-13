@@ -46,6 +46,7 @@ pub async fn webhook(
 	while let Some(item) = body.next().await {
 		msg_bytes.extend_from_slice(&item?);
 	}
+	log::info!("{:?}", String::from_utf8(msg_bytes.to_vec()));
 
 	let sig = req
 		.headers()
