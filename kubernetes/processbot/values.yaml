@@ -2,7 +2,7 @@ dockerTag: from-gitlab-vars
 processbot:
   config:
     KUBE_NAMESPACE: processbot
-    WEBHOOK_PORT: 8080
+    WEBHOOK_PORT: 80
   secret: 
     PROCESSBOT_KEY: from-gitlab-vars
     BAMBOO_TOKEN: from-gitlab-vars
