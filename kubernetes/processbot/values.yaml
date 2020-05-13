@@ -1,3 +1,4 @@
+dockerTag: from-gitlab-vars
 processbot:
   config:
     KUBE_NAMESPACE: processbot

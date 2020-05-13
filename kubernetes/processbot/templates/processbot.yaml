@@ -43,7 +43,7 @@ spec:
       containers:
       - name: parity-processbot
         imagePullPolicy: Always
-        image: paritytech/processbot:$DOCKER_TAG
+        image: paritytech/processbot:{{ .Values.dockerTag }}
         volumeMounts:
         - name: processbot-key-volume
           mountPath: "/etc/processbot-key"
