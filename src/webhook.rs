@@ -57,6 +57,7 @@ pub async fn webhook(
 		.replace("sha1=", "");
 	let sig_bytes = base16::decode(sig.as_bytes()).map_err(ErrorBadRequest)?;
 
+	log::info!("webhook secret {:?}", state.get_ref().webhook_secret);
 	verify(
 		state.get_ref().webhook_secret.as_bytes(),
 		&msg_bytes,
