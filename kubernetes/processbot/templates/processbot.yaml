@@ -6,6 +6,7 @@ metadata:
   namespace: {{ .Values.processbot.config.KUBE_NAMESPACE }}
   labels:
     app: parity-processbot
+  loadBalancerIP: 35.187.37.0
 spec:
   ports:
     - name: backend
