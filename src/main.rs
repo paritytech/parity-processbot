@@ -81,6 +81,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 		std::thread::sleep(Duration::from_secs(config_clone.bamboo_tick_secs));
 	});
 
+	log::info!("webhook secret {:?}", &config.webhook_secret);
 	let app_state = Arc::new(AppState {
 		db: db,
 		github_bot: github_bot,
