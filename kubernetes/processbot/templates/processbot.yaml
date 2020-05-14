@@ -12,6 +12,7 @@ spec:
       port: {{ .Values.processbot.config.WEBHOOK_PORT }}
   selector:
     app: parity-processbot
+  type: LoadBalancer
 ---
 apiVersion: apps/v1
 kind: StatefulSet
