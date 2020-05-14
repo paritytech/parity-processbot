@@ -8,7 +8,8 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use crate::{
-	config::BotConfig, constants::*, github::*, github_bot::GithubBot, process,
+	config::BotConfig, constants::*, github::*, github_bot::GithubBot,
+	matrix_bot::MatrixBot, process,
 };
 
 pub const BAMBOO_DATA_KEY: &str = "BAMBOO_DATA";
@@ -17,7 +18,7 @@ pub const CORE_DEVS_KEY: &str = "CORE_DEVS";
 pub struct AppState {
 	pub db: Arc<RwLock<DB>>,
 	pub github_bot: GithubBot,
-	//	pub matrix_bot: MatrixBot,
+	pub matrix_bot: MatrixBot,
 	pub bot_config: BotConfig,
 	pub webhook_secret: String,
 	pub environment: String,
@@ -397,12 +398,6 @@ fn verify(
 	signature: &[u8],
 ) -> Result<(), ring::error::Unspecified> {
 	let key = hmac::Key::new(hmac::HMAC_SHA1_FOR_LEGACY_USE_ONLY, secret);
-	log::info!(
-		"test signature {:?}",
-		hmac::sign(&key, "testing 123".as_bytes())
-	);
-	let signed = hmac::sign(&key, msg);
-	log::info!("{:?}", signed);
 	hmac::verify(&key, msg, signature)
 }
 

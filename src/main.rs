@@ -7,7 +7,7 @@ use std::{sync::Arc, time::Duration};
 use parity_processbot::{
 	bamboo,
 	config::{BotConfig, MainConfig},
-	error, github_bot,
+	error, github_bot, matrix_bot,
 	webhook::*,
 };
 
@@ -26,7 +26,6 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
 	let db = Arc::new(RwLock::new(DB::open_default(&config.db_path)?));
 
-	/*
 	log::info!(
 		"Connecting to Matrix homeserver {}",
 		config.matrix_homeserver,
@@ -37,7 +36,6 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 		&config.matrix_default_channel_id,
 		config.matrix_silent,
 	)?;
-	*/
 
 	log::info!("Connecting to Github account {}", config.installation_login);
 	let github_bot = github_bot::GithubBot::new(
@@ -84,7 +82,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 	let app_state = Arc::new(AppState {
 		db: db,
 		github_bot: github_bot,
-		//		matrix_bot: matrix_bot,
+		matrix_bot: matrix_bot,
 		bot_config: BotConfig::from_env(),
 		webhook_secret: config.webhook_secret,
 		environment: config.environment,
