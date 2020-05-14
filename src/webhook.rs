@@ -397,7 +397,10 @@ fn verify(
 	signature: &[u8],
 ) -> Result<(), ring::error::Unspecified> {
 	let key = hmac::Key::new(hmac::HMAC_SHA1_FOR_LEGACY_USE_ONLY, secret);
-	log::info!("test signature {:?}", hmac::sign(&key, "testing 123".as_bytes()));
+	log::info!(
+		"test signature {:?}",
+		hmac::sign(&key, "testing 123".as_bytes())
+	);
 	let signed = hmac::sign(&key, msg);
 	log::info!("{:?}", signed);
 	hmac::verify(&key, msg, signature)
