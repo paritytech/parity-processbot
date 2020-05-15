@@ -1,5 +1,6 @@
 use actix_web::{error::*, post, web, HttpResponse, Responder};
 use futures::StreamExt;
+use futures_util::future::TryFutureExt;
 use itertools::Itertools;
 use parking_lot::RwLock;
 use ring::hmac;
@@ -35,19 +36,42 @@ pub struct MergeRequest {
 	requested_by: String,
 }
 
+fn verify(
+	secret: &[u8],
+	msg: &[u8],
+	signature: &[u8],
+) -> Result<(), ring::error::Unspecified> {
+	let key = hmac::Key::new(hmac::HMAC_SHA1_FOR_LEGACY_USE_ONLY, secret);
+	hmac::verify(&key, msg, signature)
+}
+
 #[post("/webhook")]
 pub async fn webhook(
+	req: web::HttpRequest,
+	body: web::Payload,
+	state: web::Data<Arc<AppState>>,
+) -> actix_web::Result<impl Responder> {
+	match handle_webhook(req, body, state).await {
+		Err(e) => {
+			log::error!("{:?}", e);
+			Err(e)
+		}
+		x => x,
+	}
+}
+
+async fn handle_webhook(
 	req: web::HttpRequest,
 	mut body: web::Payload,
 	state: web::Data<Arc<AppState>>,
 ) -> actix_web::Result<impl Responder> {
-	log::info!("{:?}", req);
+	log::debug!("{:?}", req);
 
 	let mut msg_bytes = web::BytesMut::new();
 	while let Some(item) = body.next().await {
 		msg_bytes.extend_from_slice(&item?);
 	}
-	log::info!("{:?}", String::from_utf8(msg_bytes.to_vec()));
+	log::debug!("{:?}", String::from_utf8(msg_bytes.to_vec()));
 
 	let sig = req
 		.headers()
@@ -67,7 +91,7 @@ pub async fn webhook(
 
 	let payload = serde_json::from_slice::<Payload>(&msg_bytes)
 		.map_err(ErrorBadRequest)?;
-	log::info!("Valid payload {:?}", payload);
+	log::debug!("Valid payload {:?}", payload);
 
 	let db = &state.get_ref().db;
 	let github_bot = &state.get_ref().github_bot;
@@ -82,6 +106,7 @@ pub async fn webhook(
 				Issue {
 					number,
 					repository_url: Some(repo_url),
+					pull_request: Some(_), // indicates the issue is a pr
 					..
 				},
 			comment:
@@ -94,11 +119,12 @@ pub async fn webhook(
 			if let Some(repo_name) =
 				repo_url.rsplit('/').next().map(|s| s.to_string())
 			{
-				match github_bot.pull_request(&repo_name, number).await {
-					Ok(pr) => {
-						if body.to_lowercase().trim()
-							== AUTO_MERGE_REQUEST.to_lowercase().trim()
-						{
+				if body.to_lowercase().trim()
+					== AUTO_MERGE_REQUEST.to_lowercase().trim()
+				{
+					// Fetch the pr to get all fields (eg. mergeable).
+					match github_bot.pull_request(&repo_name, number).await {
+						Ok(pr) => {
 							log::info!(
 								"Received merge request for PR {} from user {}",
 								pr.html_url,
@@ -243,13 +269,13 @@ pub async fn webhook(
 								}
 							}
 						}
-					}
-					Err(e) => {
-						log::error!("Error getting PR: {}", e);
+						Err(e) => {
+							log::error!("Error getting PR: {}", e);
+						}
 					}
 				}
 			} else {
-				log::warn!("Failed parsing repo name in url: {}", repo_url);
+				log::error!("Failed parsing repo name in url: {}", repo_url);
 			}
 		}
 		Payload::CommitStatus {
@@ -392,15 +418,6 @@ pub async fn webhook(
 	Ok(HttpResponse::Ok())
 }
 
-fn verify(
-	secret: &[u8],
-	msg: &[u8],
-	signature: &[u8],
-) -> Result<(), ring::error::Unspecified> {
-	let key = hmac::Key::new(hmac::HMAC_SHA1_FOR_LEGACY_USE_ONLY, secret);
-	hmac::verify(&key, msg, signature)
-}
-
 async fn try_merge(
 	github_bot: &GithubBot,
 	repo_name: &str,
@@ -411,17 +428,12 @@ async fn try_merge(
 	environment: &str,
 	test_repo: &str,
 ) {
-	let core_devs_bytes: Vec<u8> = db
-		.read()
-		.get(CORE_DEVS_KEY.as_bytes())
+	let core_devs = github_bot
+		.team("core-devs")
+		.and_then(|team| github_bot.team_members(team.id))
+		.await
 		.unwrap_or_else(|e| {
-			log::error!("Error getting core devs from db: {}", e);
-			None
-		})
-		.unwrap_or(vec![]);
-	let core_devs: Vec<String> = bincode::deserialize(&core_devs_bytes)
-		.unwrap_or_else(|e| {
-			log::error!("Error deserializing core devs: {}", e);
+			log::error!("Error getting core devs: {}", e);
 			vec![]
 		});
 	let reviews = github_bot.reviews(&pr.url).await.unwrap_or_else(|e| {
@@ -454,7 +466,7 @@ async fn try_merge(
 				let core_approved = reviews
 					.iter()
 					.filter(|r| {
-						core_devs.iter().any(|u| u == &r.user.login)
+						core_devs.iter().any(|u| u.login == r.user.login)
 							&& r.state == Some(ReviewState::Approved)
 					})
 					.count() >= bot_config.min_reviewers;
