@@ -3,12 +3,13 @@ apiVersion: v1
 kind: Service
 metadata:
   name: parity-processbot
-  namespace: $KUBE_NAMESPACE
+  namespace: {{ .Values.processbot.config.KUBE_NAMESPACE }}
   labels:
     app: parity-processbot
 spec:
   ports:
-    - port: 80
+    - name: backend
+      port: {{ .Values.processbot.config.WEBHOOK_PORT }}
   selector:
     app: parity-processbot
 ---
@@ -16,14 +17,14 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: parity-processbot
-  namespace: processbot
+  namespace: {{ .Values.processbot.config.KUBE_NAMESPACE }}
   labels:
     app: parity-processbot
 spec:
   selector:
     matchLabels:
       app: parity-processbot
-  serviceName: "parity-processbot"
+  serviceName: parity-processbot
   updateStrategy:
     type: RollingUpdate
   replicas: 1
@@ -43,28 +44,38 @@ spec:
       containers:
       - name: parity-processbot
         imagePullPolicy: Always
-        image: paritytech/processbot:$DOCKER_TAG
+        image: paritytech/processbot:{{ .Values.dockerTag }}
         volumeMounts:
         - name: processbot-key-volume
           mountPath: "/etc/processbot-key"
           readOnly: true
+        ports:
+        - name: backend
+          containerPort: {{ .Values.processbot.config.WEBHOOK_PORT }}
         env:
             - name: MATRIX_ACCESS_TOKEN
               valueFrom:
                   secretKeyRef:
                       name: env-secrets
-                      key: matrix_access_token
+                      key: MATRIX_ACCESS_TOKEN
             - name: BAMBOO_TOKEN
               valueFrom:
                   secretKeyRef:
                       name: env-secrets
-                      key: bamboo_token
+                      key: BAMBOO_TOKEN
+            - name: WEBHOOK_SECRET
+              valueFrom:
+                  secretKeyRef:
+                      name: env-secrets
+                      key: WEBHOOK_SECRET
             - name: RUST_BACKTRACE
               value: full
             - name: INSTALLATION_LOGIN
-              value: paritytech
+              value: {{ .Values.orgName }}
             - name: PRIVATE_KEY_PATH
-              value: "/etc/processbot-key/parity-processbot-key.pem"
+              value: "/etc/processbot-key/PROCESSBOT_KEY"
+            - name: WEBHOOK_PORT
+              value: {{ quote .Values.processbot.config.WEBHOOK_PORT }}
             - name: GITHUB_APP_ID
               value: "51719"
             - name: DB_PATH
@@ -111,6 +122,8 @@ spec:
               value: test-repo
             - name: TEST_INSTALLATION_LOGIN
               value: sjeohp-test-org
+            - name: ENVIRONMENT
+              value: {{ .Values.environment }}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
