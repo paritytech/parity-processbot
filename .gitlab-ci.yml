@@ -108,7 +108,7 @@ deploy-staging:
   tags:
     - kubernetes-parity-build
   only:
-    - /^pre-v[0-9]+\.[0-9]+-[0-9a-f]+$/
+    - /^pre-v[0-9]+\.[0-9]+.*+$/
 
 deploy-production:
   stage:                           deploy
