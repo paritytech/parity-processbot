@@ -21,12 +21,17 @@ impl MatrixBot {
 		default_channel_id: &str,
 		silent: bool,
 	) -> Result<Self> {
-		matrix::sync(homeserver, access_token).map(|_s| Self {
-			homeserver: homeserver.to_owned(),
-			access_token: access_token.to_owned(),
-			default_channel_id: default_channel_id.to_owned(),
-			silent: silent,
-		})
+		matrix::sync(homeserver, access_token)
+			.map(|_| Self {
+				homeserver: homeserver.to_owned(),
+				access_token: access_token.to_owned(),
+				default_channel_id: default_channel_id.to_owned(),
+				silent: silent,
+			})
+			.map_err(|e| {
+				log::error!("Error syncing with Matrix: {}", e);
+				e
+			})
 	}
 
 	pub fn new_with_credentials(

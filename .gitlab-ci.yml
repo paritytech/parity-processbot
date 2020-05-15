@@ -8,6 +8,7 @@ stages:
   - check
   - test
   - dockerize
+  - deploy-staging
   - deploy
 
 .docker-env:                       &docker-env
@@ -66,7 +67,6 @@ test-build:
     DOCKER_HOST:                   tcp://localhost:2375
     DOCKER_IMAGE:                  "${CI_REGISTRY}/${KUBE_NAMESPACE}"
   script:
-    - export DOCKER_IMAGE_FULL_NAME
     - echo "$Docker_Hub_Pass_Parity" | docker login -u "$Docker_Hub_User_Parity" --password-stdin
     - cd ./artifacts
     - docker build -t "$DOCKER_IMAGE:$CI_COMMIT_REF_NAME" .
@@ -90,23 +90,25 @@ dockerize-processbot:
 .deploy-k8s:                       &deploy-k8s
   image:                           parity/kubetools:helm3
   script:
-    - export KUBE_NAMESPACE
-    # check syntax
-    - for f in kubernetes/processbot/*yaml; do echo $f; cat $f | envsubst | kubectl --dry-run --validate -n $KUBE_NAMESPACE apply -f -; done
-    # print rendered yaml
-    - for f in kubernetes/processbot/*yaml; do echo $f; cat $f | envsubst; echo '---'; done
-    # deploy yaml to cluster
-    - for f in kubernetes/processbot/*yaml; do cat $f | envsubst | kubectl -n $KUBE_NAMESPACE apply -f -; done
+    - helm upgrade processbot kubernetes/processbot
+      --install
+      --namespace ${KUBE_NAMESPACE}
+      --values kubernetes/processbot/values-${CI_ENVIRONMENT_NAME}.yaml
+      --set dockerTag=${CI_COMMIT_REF_NAME}
+      --set processbot.secret.PROCESSBOT_KEY=${PROCESSBOT_KEY}
+      --set processbot.secret.BAMBOO_TOKEN=${BAMBOO_TOKEN}
+      --set processbot.secret.MATRIX_ACCESS_TOKEN=${MATRIX_ACCESS_TOKEN}
+      --set processbot.secret.WEBHOOK_SECRET=${WEBHOOK_SECRET}
 
 deploy-staging:
-  stage:                           deploy
+  stage:                           deploy-staging
   <<:                              *deploy-k8s
   environment:
-    name: staging-cluster-1
+    name: staging
   tags:
     - kubernetes-parity-build
   only:
-    - tags
+    - /^pre-v[0-9]+\.[0-9]+-[0-9a-f]+$/
 
 deploy-production:
   stage:                           deploy
@@ -116,4 +118,4 @@ deploy-production:
   tags:
     - kubernetes-parity-build
   only:
-    - tags
+    - /^v[0-9]+\.[0-9]+.*$/

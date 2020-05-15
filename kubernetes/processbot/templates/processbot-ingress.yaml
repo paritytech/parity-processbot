@@ -1,0 +1,21 @@
+---
+# Ingress for the webhook
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: processbot-ingress
+  namespace: {{ .Values.processbot.config.KUBE_NAMESPACE }}
+  labels:
+    app: parity-processbot
+  annotations:
+    kubernetes.io/ingress.class: traefik
+    traefik.frontend.entryPoints: "https,http"
+spec:
+  rules:
+  - host: {{ .Values.ingressDomain }}
+    http:
+      paths:
+      - path: /
+        backend:
+          serviceName: parity-processbot
+          servicePort: {{ .Values.processbot.config.WEBHOOK_PORT }}

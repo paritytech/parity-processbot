@@ -10,6 +10,12 @@ pub fn unwrap_field<T>(x: Option<T>) -> Result<T> {
 #[derive(Debug, Snafu)]
 #[snafu(visibility = "pub")]
 pub enum Error {
+	#[snafu(display("Source: {}\nBacktrace:\n{}", source, backtrace))]
+	Actix {
+		source: std::io::Error,
+		backtrace: Backtrace,
+	},
+
 	/// An error occurred while sending or receiving a HTTP request or response
 	/// respectively.
 	#[snafu(display("Source: {}\nBacktrace:\n{}", source, backtrace))]

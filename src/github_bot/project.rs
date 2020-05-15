@@ -71,23 +71,46 @@ impl GithubBot {
 
 	/// Return the most recent AddedToProject event that is not followed by a RemovedFromProject
 	/// event.
-	pub async fn active_project_event(
+	pub async fn active_project_events(
 		&self,
 		repo_name: &str,
 		issue_number: i64,
-	) -> Result<Option<github::IssueEvent>> {
-		Ok(self
+	) -> Result<Vec<github::IssueEvent>> {
+		let events = self
 			.issue_events(repo_name, issue_number)
 			.await?
 			.into_iter()
-			.sorted_by_key(|ie| ie.created_at)
-			.rev()
-			.take_while(|issue_event| {
-				issue_event.event != Some(github::Event::RemovedFromProject)
+			.filter(|issue_event| {
+				issue_event.project_card.is_some()
+					&& (issue_event.event
+						== Some(github::Event::RemovedFromProject)
+						|| issue_event.event
+							== Some(github::Event::AddedToProject))
 			})
-			.find(|issue_event| {
-				issue_event.event == Some(github::Event::AddedToProject)
-			}))
+			.collect::<Vec<github::IssueEvent>>();
+		let active_project_events = events
+			.iter()
+			.cloned()
+			.unique_by(|a| a.project_card.as_ref().map(|p| p.id))
+			.filter(|a| {
+				// filter for unique projects with more 'added' than 'removed' events
+				events
+					.iter()
+					.filter(|b| {
+						b.project_card == a.project_card
+							&& b.event == Some(github::Event::AddedToProject)
+					})
+					.count() > events
+					.iter()
+					.filter(|b| {
+						b.project_card == a.project_card
+							&& b.event
+								== Some(github::Event::RemovedFromProject)
+					})
+					.count()
+			})
+			.collect::<Vec<github::IssueEvent>>();
+		Ok(active_project_events)
 	}
 
 	pub async fn create_project_card<A>(
@@ -194,11 +217,13 @@ mod tests {
 			);
 
 			let project_card = github_bot
-				.active_project_event(&test_repo_name, created_issue.number)
+				.active_project_events(&test_repo_name, created_issue.number)
 				.await
 				.expect("active_project_event")
-				.expect("active_project_event option")
+				.first()
+				.expect("active_project_event vec")
 				.project_card
+				.clone()
 				.expect("project card");
 			assert_eq!(
 				project.id,

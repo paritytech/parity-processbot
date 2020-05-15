@@ -1,19 +1,11 @@
-use crate::{error, github, Result};
-
-use snafu::OptionExt;
+use crate::{github, Result};
 
 use super::GithubBot;
 
 impl GithubBot {
 	/// Returns all reviews associated with a pull request.
-	pub async fn reviews(
-		&self,
-		pull_request: &github::PullRequest,
-	) -> Result<Vec<github::Review>> {
-		let url = format!(
-			"{}/reviews",
-			pull_request.url.as_ref().context(error::MissingData)?
-		);
+	pub async fn reviews(&self, pr_url: &str) -> Result<Vec<github::Review>> {
+		let url = format!("{}/reviews", pr_url);
 		self.client.get_all(url).await
 	}
 
@@ -22,10 +14,7 @@ impl GithubBot {
 		&self,
 		pull_request: &github::PullRequest,
 	) -> Result<github::RequestedReviewers> {
-		let url = format!(
-			"{}/requested_reviewers",
-			pull_request.url.as_ref().context(error::MissingData)?
-		);
+		let url = format!("{}/requested_reviewers", pull_request.url);
 		self.client.get(url).await
 	}
 
@@ -35,10 +24,7 @@ impl GithubBot {
 		pull_request: &github::PullRequest,
 		reviewers: &[&str],
 	) -> Result<github::PullRequest> {
-		let url = format!(
-			"{}/requested_reviewers",
-			pull_request.url.as_ref().context(error::MissingData)?
-		);
+		let url = format!("{}/requested_reviewers", pull_request.url);
 		let body = &serde_json::json!({ "reviewers": reviewers });
 		self.client.post(url, body).await
 	}
@@ -89,7 +75,7 @@ mod tests {
 				.users
 				.iter()
 				.any(|x| x.login == "sjeohp"));
-			github_bot.reviews(&created).await.expect("reviews");
+			github_bot.reviews(&created.url).await.expect("reviews");
 			github_bot
 				.close_pull_request(&test_repo_name, created.number)
 				.await

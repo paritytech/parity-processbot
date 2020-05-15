@@ -1,6 +1,6 @@
-pub mod auto_merge;
+//pub mod auto_merge;
 pub mod bamboo;
-pub mod bots;
+//pub mod bots;
 pub mod config;
 pub mod constants;
 //pub mod db;
@@ -18,5 +18,6 @@ pub mod matrix_bot;
 pub mod process;
 //pub mod review;
 //pub mod status;
+pub mod webhook;
 
 pub type Result<T> = std::result::Result<T, error::Error>;

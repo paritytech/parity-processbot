@@ -17,7 +17,7 @@ pub trait GithubIssue {
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PullRequest {
-	pub url: Option<String>,
+	pub url: String,
 	pub id: i64,
 	pub node_id: Option<String>,
 	pub html_url: String,
@@ -113,6 +113,7 @@ pub struct Issue {
 	pub updated_at: String,
 	pub closed_at: Option<String>,
 	pub repository: Option<Repository>,
+	pub repository_url: Option<String>,
 }
 
 impl GithubIssue for Issue {
@@ -265,12 +266,12 @@ pub struct IssueEvent {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Comment {
-	pub id: Option<i64>,
+	pub id: i64,
+	pub body: String,
+	pub user: User,
 	pub node_id: Option<String>,
 	pub url: Option<String>,
 	pub html_url: Option<String>,
-	pub body: Option<String>,
-	pub user: User,
 	pub created_at: chrono::DateTime<chrono::Utc>,
 	pub updated_at: chrono::DateTime<chrono::Utc>,
 }
@@ -568,6 +569,7 @@ pub struct Permissions {
 	pull: Option<bool>,
 }
 
+/*
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CheckRuns {
 	pub total_count: i32,
@@ -596,6 +598,7 @@ pub enum CheckStatus {
 	Completed,
 	InProgress,
 }
+*/
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CombinedStatus {
@@ -728,4 +731,84 @@ pub struct InstallationToken {
 	pub expires_at: Option<String>,
 	pub permissions: Permissions,
 	pub repositories: Option<Vec<Repository>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IssueCommentAction {
+	Created,
+	Edited,
+	Deleted,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CheckRunAction {
+	Created,
+	Completed,
+	Rerequested,
+	RequestedAction,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged, rename_all = "snake_case")]
+pub enum CheckRunStatus {
+	Queued,
+	InProgress,
+	Completed,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged, rename_all = "snake_case")]
+pub enum CheckRunConclusion {
+	Success,
+	Failure,
+	Neutral,
+	Cancelled,
+	TimedOut,
+	ActionRequired,
+	Stale,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckRun {
+	status: CheckRunStatus,
+	conclusion: CheckRunConclusion,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BranchCommit {
+	pub sha: String,
+	pub url: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Branch {
+	pub name: String,
+	pub commit: BranchCommit,
+	pub protected: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged, rename_all = "camelCase")]
+pub enum Payload {
+	IssueComment {
+		action: IssueCommentAction,
+		issue: Issue,
+		comment: Comment,
+	},
+	CommitStatus {
+		sha: String,
+		state: StatusState,
+		description: String,
+		target_url: String,
+		branches: Vec<Branch>,
+	},
+	CheckRun {
+		action: CheckRunAction,
+		check_run: CheckRun,
+	},
 }

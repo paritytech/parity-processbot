@@ -1,15 +1,18 @@
+use actix_web::{App, HttpServer};
 use parking_lot::RwLock;
-//use rocksdb::DB;
-use futures_util::future::TryFutureExt;
-//use snafu::ResultExt;
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use rocksdb::DB;
+use snafu::ResultExt;
+use std::{sync::Arc, time::Duration};
 
-use parity_processbot::{bamboo, bots, config, github_bot, matrix_bot};
+use parity_processbot::{
+	bamboo,
+	config::{BotConfig, MainConfig},
+	error, github_bot, matrix_bot,
+	webhook::*,
+};
 
-//const GITHUB_TO_MATRIX_KEY: &str = "GITHUB_TO_MATRIX";
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+#[actix_rt::main]
+async fn main() -> std::io::Result<()> {
 	match run().await {
 		Err(error) => panic!("{}", error),
 		_ => Ok(()),
@@ -17,14 +20,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn run() -> Result<(), Box<dyn std::error::Error>> {
-	let config = config::MainConfig::from_env();
+	let config = MainConfig::from_env();
 	env_logger::from_env(env_logger::Env::default().default_filter_or("info"))
 		.init();
 
-	//	let db = DB::open_default(&config.db_path)?;
+	let db = Arc::new(RwLock::new(DB::open_default(&config.db_path)?));
 
 	log::info!(
-		"Connecting to matrix homeserver {}",
+		"Connecting to Matrix homeserver {}",
 		config.matrix_homeserver,
 	);
 	let matrix_bot = matrix_bot::MatrixBot::new_with_token(
@@ -41,66 +44,60 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 	)
 	.await?;
 
-	let mut gtm = HashMap::new();
-
 	// the bamboo queries can take a long time so only wait for it
 	// on launch. subsequently update in the background.
-	log::info!("Waiting for Bamboo data (may take a few minutes)");
-	match bamboo::github_to_matrix(&config.bamboo_token) {
-		Ok(h) => gtm = h,
-		Err(e) => log::error!("Bamboo error: {}", e),
+	if db.read().get(BAMBOO_DATA_KEY).ok().flatten().is_none() {
+		log::info!("Waiting for Bamboo data (may take a few minutes)");
+		match bamboo::github_to_matrix(&config.bamboo_token) {
+			Ok(h) => db
+				.write()
+				.put(
+					BAMBOO_DATA_KEY,
+					bincode::serialize(&h).expect("serialize bamboo"),
+				)
+				.expect("put bamboo"),
+			Err(e) => log::error!("Bamboo error: {}", e),
+		}
 	}
 
-	let gtm = Arc::new(RwLock::new(gtm));
-
-	let gtm_clone = gtm.clone();
 	let config_clone = config.clone();
+	let db_clone = db.clone();
 
 	// update github_to_matrix on another thread
 	std::thread::spawn(move || loop {
+		log::info!("Updating Bamboo data");
 		match bamboo::github_to_matrix(&config_clone.bamboo_token) {
-			Ok(h) => *gtm_clone.write() = h,
+			Ok(h) => db_clone
+				.write()
+				.put(
+					BAMBOO_DATA_KEY,
+					bincode::serialize(&h).expect("serialize bamboo"),
+				)
+				.expect("put bamboo"),
 			Err(e) => log::error!("Bamboo error: {}", e),
 		}
 		std::thread::sleep(Duration::from_secs(config_clone.bamboo_tick_secs));
 	});
 
-	let mut interval =
-		tokio::time::interval(Duration::from_secs(config.main_tick_secs));
+	let app_state = Arc::new(AppState {
+		db: db,
+		github_bot: github_bot,
+		matrix_bot: matrix_bot,
+		bot_config: BotConfig::from_env(),
+		webhook_secret: config.webhook_secret,
+		environment: config.environment,
+		test_repo: config.test_repo,
+	});
 
-	let mut bot =
-		bots::Bot::new(github_bot, matrix_bot, vec![], HashMap::new());
-
-	let mut core_devs = match bot.github_bot.team("core-devs").await {
-		Ok(team) => bot.github_bot.team_members(team.id).await?,
-		_ => vec![],
-	};
-
-	loop {
-		interval.tick().await;
-
-		log::info!("Updating core-devs");
-		match bot
-			.github_bot
-			.team("core-devs")
-			.and_then(|team| bot.github_bot.team_members(team.id))
-			.await
-		{
-			Ok(members) => core_devs = members,
-			Err(e) => log::error!("{}", e),
-		};
-
-		log::info!("Cloning things");
-		bot.core_devs = core_devs.clone();
-		bot.github_to_matrix = gtm.read().clone();
-
-		log::info!("Bot update");
-		if let Err(e) = bot.update().await {
-			log::error!("{:?}", e);
-		}
-
-		log::info!("Sleeping for {} seconds", config.main_tick_secs);
-	}
+	let addr = format!("0.0.0.0:{}", config.webhook_port);
+	log::info!("Listening on {}", addr);
+	Ok(HttpServer::new(move || {
+		App::new().data(app_state.clone()).service(webhook)
+	})
+	.bind(&addr)?
+	.run()
+	.await
+	.context(error::Actix)?)
 }
 
 #[cfg(test)]

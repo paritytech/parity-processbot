@@ -1,119 +1,195 @@
-use crate::{constants::*, error, github, Result};
+use crate::{
+	constants::*, error, github, github_bot::GithubBot, process, Result,
+};
 use regex::Regex;
 use snafu::ResultExt;
 
-#[derive(Clone, Debug)]
-pub struct CombinedProcessInfo {
-	pub primary: Option<ProcessInfo>,
-	pub linked: Vec<ProcessInfo>,
+pub enum ProcessError {
+	ProcessFile,
 }
 
-impl CombinedProcessInfo {
-	pub fn new(mut v: Vec<Option<ProcessInfo>>) -> Self {
-		let linked = if v.len() > 1 { v.split_off(1) } else { vec![] };
-		Self {
-			primary: v.first().cloned().flatten(),
-			linked: linked.into_iter().filter_map(|x| x).collect::<_>(),
-		}
-	}
+pub async fn get_process(
+	github_bot: &GithubBot,
+	repo_name: &str,
+	issue_number: i64,
+) -> Result<CombinedProcessInfo> {
+	let process = github_bot
+		.contents(&repo_name, PROCESS_FILE_NAME)
+		.await
+		.and_then(process::process_from_contents)?;
 
+	/*
+	// ignore repos with no valid process file
+	if maybe_process.is_none() {
+		log::warn!(
+			"Repository '{repo_name}' has no valid Process.toml file",
+			repo_name = repo_name,
+		);
+		return None;
+	}
+	*/
+
+	// ignore repos with no projects
+	let projects = github_bot.projects(&repo_name).await?;
+	/*
+	if projects.is_empty() {
+		log::warn!(
+			"Repository '{repo_name}' contains a Process.toml file but no projects",
+			repo_name = repo_name,
+		);
+		return None;
+	}
+	*/
+
+	// ignore process entries that do not match a project in the repository
+	let (features, process): (Vec<process::ProcessWrapper>, Vec<process::ProcessWrapper>) = process
+				.into_iter()
+				.filter(|proc| {
+                    match proc {
+                        process::ProcessWrapper::Features(_) => true,
+                        process::ProcessWrapper::Project(proc) => {
+                            let keep = projects.iter().any(|proj| proj.name.replace(" ", "-") == proc.project_name);
+                            if !keep {
+                                log::warn!(
+                                    "'{proc_name}' in Process.toml file doesn't match any projects in repository '{repo_name}'",
+                                    proc_name = proc.project_name,
+                                    repo_name = repo_name,
+                                );
+                            }
+                            keep
+                        }
+                    }
+				})
+                .partition(|proc| match proc {
+                    process::ProcessWrapper::Features(_) => true,
+                    process::ProcessWrapper::Project(_) => false,
+                });
+
+	let _features = features
+		.first()
+		.and_then(|f| match f {
+			process::ProcessWrapper::Features(feat) => Some(feat.clone()),
+			_ => panic!(),
+		})
+		.unwrap_or(process::ProcessFeatures::default());
+
+	let process = process
+		.into_iter()
+		.map(|w| match w {
+			process::ProcessWrapper::Project(p) => p,
+			_ => panic!(),
+		})
+		.collect::<Vec<process::ProcessInfo>>();
+
+	/*
+	// ignore repos with no matching process entries
+	if process.is_empty() {
+		log::warn!(
+			"Process.toml file doesn't match any projects in repository '{repo_name}'",
+			repo_name = repo_name,
+		);
+		return None;
+	}
+	*/
+
+	combined_process_info(
+		github_bot,
+		repo_name,
+		issue_number,
+		&projects,
+		&process,
+	)
+	.await
+}
+
+pub async fn combined_process_info(
+	github_bot: &GithubBot,
+	repo_name: &str,
+	number: i64,
+	projects: &[github::Project],
+	processes: &[process::ProcessInfo],
+) -> Result<CombinedProcessInfo> {
+	Ok(CombinedProcessInfo(process_from_projects(
+		&projects_from_project_events(
+			&github_bot.active_project_events(&repo_name, number).await?,
+			projects,
+		),
+		processes,
+	)))
+}
+
+pub fn projects_from_project_events(
+	events: &[github::IssueEvent],
+	projects: &[github::Project],
+) -> Vec<github::Project> {
+	events
+		.iter()
+		.filter_map(|event| event.project_card.clone())
+		.filter_map(|card| {
+			projects
+				.iter()
+				.find(|proj| card.project_id == proj.id)
+				.cloned()
+		})
+		.collect::<_>()
+}
+
+pub fn process_from_projects(
+	projects: &[github::Project],
+	processes: &[ProcessInfo],
+) -> Vec<ProcessInfo> {
+	projects
+		.iter()
+		.filter_map(|proj| process_matching_project(processes, proj))
+		.cloned()
+		.collect::<_>()
+}
+
+pub fn process_matching_project<'a>(
+	processes: &'a [ProcessInfo],
+	project: &github::Project,
+) -> Option<&'a ProcessInfo> {
+	processes
+		.iter()
+		.find(|proc| project.name == proc.project_name)
+}
+
+#[derive(Clone, Debug)]
+pub struct CombinedProcessInfo(Vec<ProcessInfo>);
+
+impl CombinedProcessInfo {
 	pub fn len(&self) -> usize {
-		self.primary.iter().len() + self.linked.len()
+		self.0.len()
 	}
 
 	pub fn is_empty(&self) -> bool {
 		self.len() == 0
 	}
 
-	pub fn has_primary(&self) -> bool {
-		self.primary.is_some()
-	}
-
-	pub fn has_linked(&self) -> bool {
-		!self.linked.is_empty()
-	}
-
 	pub fn iter(&self) -> impl Iterator<Item = &ProcessInfo> {
-		self.primary.iter().chain(self.linked.iter())
+		self.0.iter()
 	}
 
 	pub fn get(&self, project_name: &str) -> Option<&ProcessInfo> {
-		self.primary
-			.iter()
-			.chain(self.linked.iter())
-			.find(|x| x.project_name == project_name)
-	}
-
-	pub fn primary_owner(&self) -> Option<String> {
-		self.primary
-			.as_ref()
-			.map(|p| p.delegated_reviewer.as_ref().unwrap_or(&p.owner))
-			.cloned()
-	}
-
-	pub fn iter_linked_owners(&self) -> impl Iterator<Item = &String> {
-		self.linked.iter().map(|p| p.owner_or_delegate())
+		self.0.iter().find(|x| x.project_name == project_name)
 	}
 
 	pub fn iter_owners(&self) -> impl Iterator<Item = &String> {
-		self.primary
-			.iter()
-			.chain(self.linked.iter())
-			.map(|p| p.owner_or_delegate())
-	}
-
-	pub fn primary_room_id(&self) -> Option<String> {
-		self.primary.as_ref().map(|p| p.matrix_room_id.clone())
-	}
-
-	pub fn iter_linked_room_ids(&self) -> impl Iterator<Item = &String> {
-		self.linked.iter().map(|p| &p.matrix_room_id)
+		self.0.iter().map(|p| p.owner_or_delegate())
 	}
 
 	pub fn iter_room_ids(&self) -> impl Iterator<Item = &String> {
-		self.primary
-			.iter()
-			.chain(self.linked.iter())
-			.map(|p| &p.matrix_room_id)
-	}
-
-	pub fn is_primary_owner(&self, login: &str) -> bool {
-		self.primary_owner().map_or(false, |owner| owner == login)
-	}
-
-	pub fn is_linked_owner(&self, login: &str) -> bool {
-		self.iter_linked_owners().any(|owner| owner == login)
+		self.0.iter().map(|p| &p.matrix_room_id)
 	}
 
 	pub fn is_owner(&self, login: &str) -> bool {
 		self.iter_owners().any(|p| p == login)
 	}
 
-	pub fn is_primary_whitelisted(&self, login: &str) -> bool {
-		self.primary
-			.as_ref()
-			.map_or(false, |p| p.whitelist.iter().any(|user| user == login))
-	}
-
-	pub fn is_linked_whitelisted(&self, login: &str) -> bool {
-		self.linked
-			.iter()
-			.any(|p| p.whitelist.iter().any(|user| user == login))
-	}
-
 	pub fn is_whitelisted(&self, login: &str) -> bool {
-		self.primary
+		self.0
 			.iter()
-			.chain(self.linked.iter())
 			.any(|p| p.whitelist.iter().any(|user| user == login))
-	}
-
-	pub fn is_primary_special(&self, login: &str) -> bool {
-		self.is_primary_owner(login) || self.is_primary_whitelisted(login)
-	}
-
-	pub fn is_linked_special(&self, login: &str) -> bool {
-		self.is_linked_owner(login) || self.is_linked_whitelisted(login)
 	}
 
 	pub fn is_special(&self, login: &str) -> bool {
@@ -208,29 +284,6 @@ impl ProcessInfo {
 			|| self.is_delegated_reviewer(login)
 			|| self.is_whitelisted(login)
 	}
-}
-
-pub fn process_matching_project<'a>(
-	processes: &'a [ProcessInfo],
-	project: &github::Project,
-) -> Option<&'a ProcessInfo> {
-	processes
-		.iter()
-		.find(|proc| project.name == proc.project_name)
-}
-
-pub fn process_from_projects(
-	projects: &[Option<github::Project>],
-	processes: &[ProcessInfo],
-) -> Vec<Option<ProcessInfo>> {
-	projects
-		.iter()
-		.map(|proj| {
-			proj.as_ref()
-				.and_then(|proj| process_matching_project(processes, proj))
-				.cloned()
-		})
-		.collect::<_>()
 }
 
 pub fn remove_spaces_from_project_keys(mut s: String) -> String {

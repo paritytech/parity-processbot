@@ -75,6 +75,7 @@ impl GithubBot {
 			.await
 	}
 
+	/*
 	/// Returns check runs associated with a pull request.
 	pub async fn check_runs(
 		&self,
@@ -90,19 +91,20 @@ impl GithubBot {
 		);
 		self.client.get(url).await
 	}
+	*/
 
 	/// Returns statuses associated with a pull request.
 	pub async fn status(
 		&self,
 		repo_name: &str,
-		pull_request: &github::PullRequest,
+		sha: &str,
 	) -> Result<github::CombinedStatus> {
 		let url = format!(
 			"{base_url}/repos/{owner}/{repo}/commits/{sha}/status",
 			base_url = Self::BASE_URL,
 			owner = self.organization.login,
 			repo = repo_name,
-			sha = &pull_request.head.sha
+			sha = sha
 		);
 		self.client.get(url).await
 	}
@@ -158,7 +160,7 @@ mod tests {
 				.await
 				.expect("create_pull_request");
 			let status = github_bot
-				.status(&test_repo_name, &created_pr)
+				.status(&test_repo_name, &created_pr.head.sha)
 				.await
 				.expect("statuses");
 			assert!(status.state != github::StatusState::Failure);

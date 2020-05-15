@@ -36,7 +36,7 @@ impl GithubBot {
 	/// Returns a list of issues mentioned in the body of a pull request.
 	pub async fn linked_issues(
 		&self,
-		repo: &github::Repository,
+		repo_name: &str,
 		body: &str,
 	) -> Result<Vec<github::Issue>> {
 		let re = Regex::new(r"#([0-9]+)").unwrap();
@@ -50,7 +50,7 @@ impl GithubBot {
 						"{base_url}/repos/{owner}/{repo}/issues/{issue_number}",
 						base_url = Self::BASE_URL,
 						owner = self.organization.login,
-						repo = &repo.name,
+						repo = &repo_name,
 						issue_number = num
 					))
 				}),
@@ -76,6 +76,29 @@ impl GithubBot {
                 issue_number = issue_number
             ))
 			.await
+	}
+
+	pub async fn issue_projects<'a>(
+		&self,
+		repo_name: &str,
+		issue_number: i64,
+		projects: &'a [github::Project],
+	) -> Result<Vec<&'a github::Project>> {
+		self.active_project_events(repo_name, issue_number)
+			.await
+			.map(|v| {
+				v.iter()
+					.filter_map(|issue_event| {
+						projects.iter().find(|proj| {
+							issue_event
+								.project_card
+								.as_ref()
+								.expect("issue event project card")
+								.id == proj.id
+						})
+					})
+					.collect::<Vec<&'a github::Project>>()
+			})
 	}
 
 	pub async fn create_issue(
@@ -252,7 +275,7 @@ mod tests {
 				.expect("create_pull_request");
 			let pr_issues = github_bot
 				.linked_issues(
-					&repo,
+					&test_repo_name,
 					&created_pr.body.expect("created_pr body"),
 				)
 				.await

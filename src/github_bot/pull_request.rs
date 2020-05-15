@@ -17,7 +17,7 @@ impl GithubBot {
 	/// Returns a single pull request.
 	pub async fn pull_request(
 		&self,
-		repo: &github::Repository,
+		repo_name: &str,
 		pull_number: i64,
 	) -> Result<github::PullRequest> {
 		self.client
@@ -25,7 +25,7 @@ impl GithubBot {
 				"{base_url}/repos/{owner}/{repo}/pulls/{pull_number}",
 				base_url = Self::BASE_URL,
 				owner = self.organization.login,
-				repo = repo.name,
+				repo = repo_name,
 				pull_number = pull_number
 			))
 			.await
@@ -67,17 +67,18 @@ impl GithubBot {
 	pub async fn merge_pull_request(
 		&self,
 		repo_name: &str,
-		pull_request: &github::PullRequest,
+		number: i64,
+		head_sha: &str,
 	) -> Result<()> {
 		let url = format!(
 			"{base_url}/repos/{owner}/{repo}/pulls/{number}/merge",
 			base_url = Self::BASE_URL,
 			owner = self.organization.login,
 			repo = repo_name,
-			number = pull_request.number,
+			number = number,
 		);
 		let params = serde_json::json!({
-			"sha": pull_request.head.sha,
+			"sha": head_sha,
 			"merge_method": "squash"
 		});
 		self.client.put_response(&url, &params).await.map(|_| ())

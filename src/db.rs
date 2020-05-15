@@ -7,9 +7,6 @@ use snafu::ResultExt;
 use std::sync::Arc;
 
 pub trait DBEntry: Serialize + DeserializeOwned + Default {
-	/// Add key to self.
-	fn with_key(self, k: Vec<u8>) -> Self;
-
 	/// Return an existing value if one exists, or else the default value.
 	fn get_or_default(db: &Arc<RwLock<DB>>, k: Vec<u8>) -> Result<Self> {
 		match db
@@ -23,6 +20,9 @@ pub trait DBEntry: Serialize + DeserializeOwned + Default {
 			None => Ok(Self::default().with_key(k)),
 		}
 	}
+
+	/// Add key to self.
+	fn with_key(self, k: Vec<u8>) -> Self;
 
 	/// delete this entry from the db
 	fn delete<K: AsRef<[u8]>>(

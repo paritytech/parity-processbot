@@ -163,7 +163,7 @@ impl Bot {
 					// the `mergeable` key is only returned with an individual GET request
 					let pr = match self
 						.github_bot
-						.pull_request(&repo, issue.number)
+						.pull_request(&repo.name, issue.number)
 						.await
 					{
 						Err(e) => {
@@ -181,12 +181,12 @@ impl Bot {
 					open_prs += 1;
 
 					let (reviews, issues, status, _requested_reviewers) = futures::try_join!(
-						self.github_bot.reviews(&pr),
+						self.github_bot.reviews(&pr.url),
 						self.github_bot.linked_issues(
-							&repo,
+							&repo.name,
 							pr.body.as_ref().context(error::MissingData)?
 						),
-						self.github_bot.status(&repo.name, &pr),
+						self.github_bot.status(&repo.name, &pr.head.sha),
 						self.github_bot.requested_reviewers(&pr)
 					)?;
 					num_projects += projects.len();
@@ -197,30 +197,39 @@ impl Bot {
 					let issue_numbers = std::iter::once(pr.number)
 						.chain(issues.iter().map(|issue| issue.number))
 						.collect::<Vec<i64>>();
-					let combined_process = self
-						.combined_process_info(
-							&repo,
-							&issue_numbers,
-							&projects,
-							&process,
-						)
-						.await;
+					let combined_process = match process::combined_process_info(
+						&self.github_bot,
+						&repo.name,
+						pr.number,
+						&projects,
+						&process,
+					)
+					.await
+					{
+						Err(e) => {
+							log::error!(
+                                "Error getting combined process info for PR #{issue_number} in repo {repo_name}: {error}",
+                                issue_number = pr.number,
+                                repo_name = repo.name,
+                                error = e
+                            );
+							continue 'issue_loop;
+						}
+						Ok(c) => c,
+					};
 
 					let pr_project = self
-						.issue_project(&repo.name, pr.number, &projects)
-						.await;
-
-					// ignore issue attached to project not listed in process file
-					if pr_project.is_some() && !combined_process.has_primary() {
-						continue 'issue_loop;
-					}
+						.github_bot
+						.issue_projects(&repo.name, pr.number, &projects)
+						.await
+						.unwrap_or(vec![]);
 
 					// if the issue has no project but:
 					// - there is only one project in the repo, OR
 					// - the author is owner/whitelisted on only one.
 					// then attach that project
 					if features.issue_project {
-						if pr_project.is_none() {
+						if pr_project.is_empty() {
 							//							self.try_attach_project(
 							//								&mut local_state,
 							//								&repo,
@@ -237,6 +246,7 @@ impl Bot {
 					// CHECK MERGE
 					//
 					if features.auto_merge {
+						/*
 						match self
 							.auto_merge_if_ready(
 								&repo,
@@ -253,14 +263,15 @@ impl Bot {
 							}
 							Err(e) => {
 								log::error!(
-                                    "Error auto-merging pull request #{issue_number} in repo {repo_name}: {error}", 
-                                    issue_number = pr.number,
-                                    repo_name = repo.name,
-                                    error = e,
-                                );
+									"Error auto-merging pull request #{issue_number} in repo {repo_name}: {error}",
+									issue_number = pr.number,
+									repo_name = repo.name,
+									error = e,
+								);
 							}
 							_ => {}
 						}
+						*/
 					}
 
 					//
@@ -422,92 +433,5 @@ impl Bot {
 		//			.send_to_room(&self.config.logs_room_id, stats_msg)?;
 
 		Ok(())
-	}
-
-	pub async fn combined_process_info(
-		&self,
-		repo: &github::Repository,
-		issue_numbers: &[i64],
-		projects: &[github::Project],
-		processes: &[process::ProcessInfo],
-	) -> process::CombinedProcessInfo {
-		process::CombinedProcessInfo::new(process::process_from_projects(
-			&Self::projects_from_project_events(
-				&futures::future::join_all(issue_numbers.iter().map(|&num| {
-					self.github_bot
-						.active_project_event(&repo.name, num)
-						.map(|x| x.ok().flatten())
-				}))
-				.await,
-				projects,
-			),
-			processes,
-		))
-	}
-
-	pub async fn issue_project<'a>(
-		&self,
-		repo_name: &str,
-		issue_number: i64,
-		projects: &'a [github::Project],
-	) -> Option<&'a github::Project> {
-		self.github_bot
-			.active_project_event(repo_name, issue_number)
-			.map(|result| {
-				result
-					.ok()
-					.and_then(|event| {
-						event.map(|event| event.project_card).flatten()
-					})
-					.and_then(|card| {
-						projects.iter().find(|proj| card.project_id == proj.id)
-					})
-			})
-			.await
-	}
-
-	pub async fn issue_projects<'a>(
-		&self,
-		repo: &github::Repository,
-		issues: &'a [github::Issue],
-		projects: &[github::Project],
-	) -> Vec<(&'a github::Issue, Option<github::Project>)> {
-		issues
-			.iter()
-			.zip(
-				Self::projects_from_project_events(
-					&futures::future::join_all(issues.iter().map(|issue| {
-						self.github_bot
-							.active_project_event(&repo.name, issue.number)
-							.map(|x| x.ok().flatten())
-					}))
-					.await,
-					&projects,
-				)
-				.into_iter(),
-			)
-			.collect::<_>()
-	}
-
-	pub fn projects_from_project_events(
-		events: &[Option<github::IssueEvent>],
-		projects: &[github::Project],
-	) -> Vec<Option<github::Project>> {
-		events
-			.iter()
-			.map(|event| {
-				event
-					.as_ref()
-					.map(|event| event.project_card.as_ref())
-					.flatten()
-			})
-			.flatten()
-			.map(|card| {
-				projects
-					.iter()
-					.find(|proj| card.project_id == proj.id)
-					.cloned()
-			})
-			.collect::<_>()
 	}
 }
