@@ -1,5 +1,6 @@
 use actix_web::{error::*, post, web, HttpResponse, Responder};
 use futures::StreamExt;
+use futures_util::future::TryFutureExt;
 use itertools::Itertools;
 use parking_lot::RwLock;
 use ring::hmac;
@@ -427,17 +428,12 @@ async fn try_merge(
 	environment: &str,
 	test_repo: &str,
 ) {
-	let core_devs_bytes: Vec<u8> = db
-		.read()
-		.get(CORE_DEVS_KEY.as_bytes())
+	let core_devs = github_bot
+		.team("core-devs")
+		.and_then(|team| github_bot.team_members(team.id))
+		.await
 		.unwrap_or_else(|e| {
-			log::error!("Error getting core devs from db: {}", e);
-			None
-		})
-		.unwrap_or(vec![]);
-	let core_devs: Vec<String> = bincode::deserialize(&core_devs_bytes)
-		.unwrap_or_else(|e| {
-			log::error!("Error deserializing core devs: {}", e);
+			log::error!("Error getting core devs: {}", e);
 			vec![]
 		});
 	let reviews = github_bot.reviews(&pr.url).await.unwrap_or_else(|e| {
@@ -470,7 +466,7 @@ async fn try_merge(
 				let core_approved = reviews
 					.iter()
 					.filter(|r| {
-						core_devs.iter().any(|u| u == &r.user.login)
+						core_devs.iter().any(|u| u.login == r.user.login)
 							&& r.state == Some(ReviewState::Approved)
 					})
 					.count() >= bot_config.min_reviewers;
