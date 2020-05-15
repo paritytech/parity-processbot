@@ -105,8 +105,9 @@ async fn handle_webhook(
 			issue:
 				Issue {
 					number,
+					html_url,
 					repository_url: Some(repo_url),
-					pull_request: Some(_), // indicates the issue is a pr
+					pull_request: Some(incomplete_pr), // indicates the issue is a pr
 					..
 				},
 			comment:
@@ -122,14 +123,15 @@ async fn handle_webhook(
 				if body.to_lowercase().trim()
 					== AUTO_MERGE_REQUEST.to_lowercase().trim()
 				{
+					log::info!("{:?}", incomplete_pr);
+					log::info!(
+						"Received merge request for PR {} from user {}",
+						html_url,
+						login
+					);
 					// Fetch the pr to get all fields (eg. mergeable).
 					match github_bot.pull_request(&repo_name, number).await {
 						Ok(pr) => {
-							log::info!(
-								"Received merge request for PR {} from user {}",
-								pr.html_url,
-								login
-							);
 							match github_bot
 								.status(&repo_name, &pr.head.sha)
 								.await
