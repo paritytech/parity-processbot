@@ -100,6 +100,7 @@ impl GithubBot {
 	}
 }
 
+/*
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -168,3 +169,4 @@ mod tests {
 		});
 	}
 }
+*/
