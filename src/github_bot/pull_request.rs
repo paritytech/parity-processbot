@@ -17,6 +17,7 @@ impl GithubBot {
 	/// Returns a single pull request.
 	pub async fn pull_request(
 		&self,
+		owner: &str,
 		repo_name: &str,
 		pull_number: i64,
 	) -> Result<github::PullRequest> {
@@ -24,7 +25,7 @@ impl GithubBot {
 			.get(format!(
 				"{base_url}/repos/{owner}/{repo}/pulls/{pull_number}",
 				base_url = Self::BASE_URL,
-				owner = self.organization.login,
+				owner = owner,
 				repo = repo_name,
 				pull_number = pull_number
 			))
@@ -34,6 +35,7 @@ impl GithubBot {
 	/// Creates a new pull request to merge `head` into `base`.
 	pub async fn create_pull_request<A>(
 		&self,
+		owner: &str,
 		repo_name: A,
 		title: A,
 		body: A,
@@ -46,7 +48,7 @@ impl GithubBot {
 		let url = format!(
 			"{base_url}/repos/{owner}/{repo}/pulls",
 			base_url = Self::BASE_URL,
-			owner = self.organization.login,
+			owner = owner,
 			repo = repo_name.as_ref(),
 		);
 		let params = serde_json::json!({
@@ -66,6 +68,7 @@ impl GithubBot {
 	/// Merges a pull request.
 	pub async fn merge_pull_request(
 		&self,
+		owner: &str,
 		repo_name: &str,
 		number: i64,
 		head_sha: &str,
@@ -73,7 +76,7 @@ impl GithubBot {
 		let url = format!(
 			"{base_url}/repos/{owner}/{repo}/pulls/{number}/merge",
 			base_url = Self::BASE_URL,
-			owner = self.organization.login,
+			owner = owner,
 			repo = repo_name,
 			number = number,
 		);
@@ -87,6 +90,7 @@ impl GithubBot {
 	/// Closes a pull request.
 	pub async fn close_pull_request<A>(
 		&self,
+		owner: &str,
 		repo_name: A,
 		pull_number: i64,
 	) -> Result<()>
@@ -96,7 +100,7 @@ impl GithubBot {
 		let url = format!(
 			"{base_url}/repos/{owner}/{repo}/pulls/{pull_number}",
 			base_url = Self::BASE_URL,
-			owner = self.organization.login,
+			owner = owner,
 			repo = repo_name.as_ref(),
 			pull_number = pull_number
 		);

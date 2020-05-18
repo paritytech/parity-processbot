@@ -6,13 +6,14 @@ impl GithubBot {
 	/// Returns a tag in a repository.
 	pub async fn tag(
 		&self,
+		owner: &str,
 		repo_name: &str,
 		tag_name: &str,
 	) -> Result<github::Ref> {
 		let url = format!(
 			"{base_url}/repos/{owner}/{repo}/git/ref/tags/{tag_name}",
 			base_url = Self::BASE_URL,
-			owner = self.organization.login,
+			owner = owner,
 			repo = repo_name,
 			tag_name = tag_name,
 		);

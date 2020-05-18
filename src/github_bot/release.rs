@@ -6,12 +6,13 @@ impl GithubBot {
 	/// Returns the latest release in a repository.
 	pub async fn latest_release(
 		&self,
+		owner: &str,
 		repo_name: &str,
 	) -> Result<github::Release> {
 		let url = format!(
 			"{base_url}/repos/{owner}/{repo}/releases/latest",
 			base_url = Self::BASE_URL,
-			owner = self.organization.login,
+			owner = owner,
 			repo = repo_name,
 		);
 		self.client.get(url).await

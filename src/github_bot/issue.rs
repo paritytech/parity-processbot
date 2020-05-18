@@ -10,6 +10,7 @@ impl GithubBot {
 	/// Returns a single issue.
 	pub async fn issue(
 		&self,
+		owner: &str,
 		repo: &github::Repository,
 		number: i64,
 	) -> Result<github::Issue> {
@@ -17,7 +18,7 @@ impl GithubBot {
 			.get(format!(
 				"{base_url}/repos/{owner}/{repo}/issues/{number}",
 				base_url = Self::BASE_URL,
-				owner = self.organization.login,
+				owner = owner,
 				repo = repo.name,
 				number = number
 			))
@@ -36,6 +37,7 @@ impl GithubBot {
 	/// Returns a list of issues mentioned in the body of a pull request.
 	pub async fn linked_issues(
 		&self,
+		owner: &str,
 		repo_name: &str,
 		body: &str,
 	) -> Result<Vec<github::Issue>> {
@@ -49,7 +51,7 @@ impl GithubBot {
 					self.client.get(format!(
 						"{base_url}/repos/{owner}/{repo}/issues/{issue_number}",
 						base_url = Self::BASE_URL,
-						owner = self.organization.login,
+						owner = owner,
 						repo = &repo_name,
 						issue_number = num
 					))
@@ -64,6 +66,7 @@ impl GithubBot {
 	/// Returns events associated with an issue.
 	pub async fn issue_events(
 		&self,
+		owner: &str,
 		repo_name: &str,
 		issue_number: i64,
 	) -> Result<Vec<github::IssueEvent>> {
@@ -71,7 +74,7 @@ impl GithubBot {
 			.get_all(format!(
                 "{base_url}/repos/{owner}/{repo_name}/issues/{issue_number}/events",
                 base_url = Self::BASE_URL,
-                owner = self.organization.login,
+                owner = owner,
                 repo_name = repo_name,
                 issue_number = issue_number
             ))
@@ -80,11 +83,12 @@ impl GithubBot {
 
 	pub async fn issue_projects<'a>(
 		&self,
+		owner: &str,
 		repo_name: &str,
 		issue_number: i64,
 		projects: &'a [github::Project],
 	) -> Result<Vec<&'a github::Project>> {
-		self.active_project_events(repo_name, issue_number)
+		self.active_project_events(owner, repo_name, issue_number)
 			.await
 			.map(|v| {
 				v.iter()
@@ -103,6 +107,7 @@ impl GithubBot {
 
 	pub async fn create_issue(
 		&self,
+		owner: &str,
 		repo_name: &str,
 		title: &str,
 		body: &str,
@@ -111,7 +116,7 @@ impl GithubBot {
 		let url = format!(
 			"{base_url}/repos/{owner}/{repo}/issues",
 			base_url = Self::BASE_URL,
-			owner = self.organization.login,
+			owner = owner,
 			repo = repo_name,
 		);
 		let params = serde_json::json!({
@@ -130,13 +135,14 @@ impl GithubBot {
 	/// Fetches the list of comments on an issue.
 	pub async fn get_issue_comments(
 		&self,
+		owner: &str,
 		repo_name: &str,
 		issue_number: i64,
 	) -> Result<Vec<github::Comment>> {
 		let url = format!(
 			"{base}/repos/{owner}/{repo}/issues/{issue_number}/comments",
 			base = Self::BASE_URL,
-			owner = self.organization.login,
+			owner = owner,
 			repo = repo_name,
 			issue_number = issue_number
 		);
@@ -146,14 +152,15 @@ impl GithubBot {
 	/// Adds a comment to an issue.
 	pub async fn create_issue_comment(
 		&self,
+		owner: &str,
 		repo_name: &str,
 		issue_number: i64,
 		comment: &str,
 	) -> Result<()> {
 		let url = format!(
-			"{base}/repos/{org}/{repo}/issues/{issue_number}/comments",
+			"{base}/repos/{owner}/{repo}/issues/{issue_number}/comments",
 			base = Self::BASE_URL,
-			org = self.organization.login,
+			owner = owner,
 			repo = repo_name,
 			issue_number = issue_number
 		);
@@ -165,6 +172,7 @@ impl GithubBot {
 
 	pub async fn assign_issue<A, B>(
 		&self,
+		owner: &str,
 		repo_name: A,
 		issue_number: i64,
 		assignee_login: B,
@@ -176,7 +184,7 @@ impl GithubBot {
 		let url = format!(
 			"{base_url}/repos/{owner}/{repo}/issues/{issue_number}/assignees",
 			base_url = Self::BASE_URL,
-			owner = &self.organization.login,
+			owner = owner,
 			repo = repo_name.as_ref(),
 			issue_number = issue_number
 		);
@@ -191,6 +199,7 @@ impl GithubBot {
 
 	pub async fn close_issue<A>(
 		&self,
+		owner: &str,
 		repo_name: A,
 		issue_number: i64,
 	) -> Result<github::Issue>
@@ -200,7 +209,7 @@ impl GithubBot {
 		let url = format!(
 			"{base_url}/repos/{owner}/{repo}/issues/{issue_number}",
 			base_url = Self::BASE_URL,
-			owner = &self.organization.login,
+			owner = owner,
 			repo = repo_name.as_ref(),
 			issue_number = issue_number
 		);

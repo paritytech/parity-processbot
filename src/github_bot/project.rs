@@ -10,13 +10,14 @@ impl GithubBot {
 	/// Returns projects associated with a repository.
 	pub async fn projects(
 		&self,
+		owner: &str,
 		repo_name: &str,
 	) -> Result<Vec<github::Project>> {
 		self.client
 			.get_all(&format!(
 				"{base_url}/repos/{owner}/{repo_name}/projects",
 				base_url = Self::BASE_URL,
-				owner = self.organization.login,
+				owner = owner,
 				repo_name = repo_name,
 			))
 			.await
@@ -73,11 +74,12 @@ impl GithubBot {
 	/// event.
 	pub async fn active_project_events(
 		&self,
+		owner: &str,
 		repo_name: &str,
 		issue_number: i64,
 	) -> Result<Vec<github::IssueEvent>> {
 		let events = self
-			.issue_events(repo_name, issue_number)
+			.issue_events(owner, repo_name, issue_number)
 			.await?
 			.into_iter()
 			.filter(|issue_event| {

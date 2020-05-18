@@ -30,6 +30,7 @@ pub struct AppState {
 #[repr(C)]
 pub struct MergeRequest {
 	sha: String,
+	owner: String,
 	repo_name: String,
 	number: i64,
 	html_url: String,
@@ -117,57 +118,68 @@ async fn handle_webhook(
 					..
 				},
 		} => {
-			if let Some(repo_name) =
-				repo_url.rsplit('/').next().map(|s| s.to_string())
-			{
-				if body.to_lowercase().trim()
-					== AUTO_MERGE_REQUEST.to_lowercase().trim()
+			if let Some(owner) = GithubBot::owner_from_html_url(&html_url) {
+				if let Some(repo_name) =
+					repo_url.rsplit('/').next().map(|s| s.to_string())
 				{
-					log::info!(
-						"Received merge request for PR {} from user {}",
-						html_url,
-						login
-					);
-					// Fetch the pr to get all fields (eg. mergeable).
-					match github_bot.pull_request(&repo_name, number).await {
-						Ok(pr) => {
-							match github_bot
-								.status(&repo_name, &pr.head.sha)
-								.await
-								.map(|s| s.state)
-							{
-								Ok(StatusState::Success) => {
-									try_merge(
-										&github_bot,
-										&repo_name,
-										&pr,
-										db,
-										&bot_config,
-										&login,
-										&environment,
-										&test_repo,
-									)
+					if body.to_lowercase().trim()
+						== AUTO_MERGE_REQUEST.to_lowercase().trim()
+					{
+						log::info!(
+							"Received merge request for PR {} from user {}",
+							html_url,
+							login
+						);
+						// Fetch the pr to get all fields (eg. mergeable).
+						match github_bot
+							.pull_request(owner, &repo_name, number)
+							.await
+						{
+							Ok(pr) => {
+								match github_bot
+									.status(owner, &repo_name, &pr.head.sha)
 									.await
-								}
-								Ok(StatusState::Pending) => {
-									match bincode::serialize(&MergeRequest {
-										sha: pr.head.sha.clone(),
-										repo_name: repo_name.clone(),
-										number: pr.number,
-										html_url: pr.html_url.clone(),
-										requested_by: login,
-									}) {
-										Ok(m) => match db.write().put(
-											pr.head.ref_field.as_bytes(),
-											m,
+									.map(|s| s.state)
+								{
+									Ok(StatusState::Success) => {
+										try_merge(
+											&github_bot,
+											owner,
+											&repo_name,
+											&pr,
+											db,
+											&bot_config,
+											&login,
+											&environment,
+											&test_repo,
+										)
+										.await
+									}
+									Ok(StatusState::Pending) => {
+										match bincode::serialize(
+											&MergeRequest {
+												sha: pr.head.sha.clone(),
+												owner: owner.to_string(),
+												repo_name: repo_name.clone(),
+												number: pr.number,
+												html_url: pr.html_url.clone(),
+												requested_by: login,
+											},
 										) {
-											Ok(_) => {
-												log::info!("Auto-merge pending for PR {}", pr.html_url);
-												if environment == "production"
-													|| &repo_name == test_repo
-												{
-													let _ = github_bot
+											Ok(m) => match db.write().put(
+												pr.head.ref_field.as_bytes(),
+												m,
+											) {
+												Ok(_) => {
+													log::info!("Auto-merge pending for PR {}", pr.html_url);
+													if environment
+														== "production"
+														|| &repo_name
+															== test_repo
+													{
+														let _ = github_bot
                                                     .create_issue_comment(
+                                                        owner,
                                                         &repo_name,
                                                         pr.number,
                                                         &format!("Waiting for commit status."),
@@ -179,17 +191,41 @@ async fn handle_webhook(
                                                             e
                                                         );
                                                     });
+													}
 												}
-											}
+												Err(e) => {
+													log::error!("Error adding merge request to db: {}", e);
+													if environment
+														== "production"
+														|| &repo_name
+															== test_repo
+													{
+														let _ = github_bot.create_issue_comment(
+                                                            owner,
+                                                            &repo_name,
+                                                            pr.number,
+                                                            "Auto-merge failed due to db error; see logs for details.",
+                                                        )
+                                                        .await
+                                                        .map_err(|e| {
+                                                            log::error!(
+                                                                "Error posting comment: {}",
+                                                                e
+                                                            );
+                                                        });
+													}
+												}
+											},
 											Err(e) => {
-												log::error!("Error adding merge request to db: {}", e);
+												log::error!("Error serializing merge request: {}", e);
 												if environment == "production"
 													|| &repo_name == test_repo
 												{
 													let _ = github_bot.create_issue_comment(
+                                                        owner,
                                                         &repo_name,
                                                         pr.number,
-                                                        &format!("Auto-merge failed due to db error; see logs for details."),
+                                                        "Auto-merge failed due to serialization error; see logs for details.",
                                                     )
                                                     .await
                                                     .map_err(|e| {
@@ -200,16 +236,121 @@ async fn handle_webhook(
                                                     });
 												}
 											}
-										},
-										Err(e) => {
-											log::error!("Error serializing merge request: {}", e);
-											if environment == "production"
-												|| &repo_name == test_repo
-											{
+										}
+									}
+									Ok(StatusState::Failure)
+									| Ok(StatusState::Error) => {
+										status_failure(
+											&github_bot,
+											owner,
+											&repo_name,
+											pr.number,
+											&pr.html_url,
+											&pr.head.ref_field,
+											db,
+											&environment,
+											&test_repo,
+										)
+										.await
+									}
+									Err(e) => {
+										log::error!(
+											"Error getting PR status: {}",
+											e
+										);
+										// Notify people of merge failure.
+										if environment == "production"
+											|| &repo_name == test_repo
+										{
+											let _ = github_bot.create_issue_comment(
+                                                owner,
+                                                &repo_name,
+                                                pr.number,
+                                                "Auto-merge failed due to network error; see logs for details.",
+                                            )
+                                            .await
+                                            .map_err(|e| {
+                                                log::error!(
+                                                    "Error posting comment: {}",
+                                                    e
+                                                );
+                                            });
+										}
+										// Clean db.
+										let _ = db.write().delete(
+                                            pr.head.ref_field.as_bytes(),
+                                        ).map_err(|e| {
+                                            log::error!(
+                                                "Error deleting merge request from db: {}",
+                                                e
+                                            );
+                                        });
+									}
+								}
+							}
+							Err(e) => {
+								log::error!("Error getting PR: {}", e);
+							}
+						}
+					} else if body.to_lowercase().trim()
+						== COMPARE_RELEASE_REQUEST.to_lowercase().trim()
+					{
+						log::info!(
+							"Received diff request for PR {} from user {}",
+							html_url,
+							login
+						);
+						// Fetch the pr to get all fields (eg. mergeable).
+						match github_bot
+							.pull_request(owner, &repo_name, number)
+							.await
+						{
+							Ok(pr) => {
+								match github_bot
+									.latest_release(owner, &repo_name)
+									.await
+								{
+									Ok(rel) => {
+										match github_bot
+											.tag(
+												owner,
+												&repo_name,
+												&rel.tag_name,
+											)
+											.await
+										{
+											Ok(rel_tag) => {
+												let link = github_bot.diff_url(
+													owner,
+													&repo_name,
+													&rel_tag.object.sha,
+													&pr.head.sha,
+												);
+												let _ = github_bot
+												.create_issue_comment(
+                                                    owner,
+													&repo_name,
+                                                    number,
+                                                    &link,
+												)
+												.await
+												.map_err(|e| {
+													log::error!(
+                                                        "Error posting comment: {}",
+                                                        e
+                                                    );
+												});
+											}
+											Err(e) => {
+												log::error!(
+												"Error getting release tag: {}",
+												e
+											);
 												let _ = github_bot.create_issue_comment(
+                                                    owner,
                                                     &repo_name,
-                                                    pr.number,
-                                                    &format!("Auto-merge failed due to serialization error; see logs for details."),
+                                                    number,
+                                                    "Failed getting latest release tag; see logs for details.",
                                                 )
                                                 .await
                                                 .map_err(|e| {
@@ -221,34 +362,16 @@ async fn handle_webhook(
 											}
 										}
 									}
-								}
-								Ok(StatusState::Failure)
-								| Ok(StatusState::Error) => {
-									status_failure(
-										&github_bot,
-										&repo_name,
-										pr.number,
-										&pr.html_url,
-										&pr.head.ref_field,
-										db,
-										&environment,
-										&test_repo,
-									)
-									.await
-								}
-								Err(e) => {
-									log::error!(
-										"Error getting PR status: {}",
-										e
-									);
-									// Notify people of merge failure.
-									if environment == "production"
-										|| &repo_name == test_repo
-									{
+									Err(e) => {
+										log::error!(
+											"Error getting latest release: {}",
+											e
+										);
 										let _ = github_bot.create_issue_comment(
+                                            owner,
                                             &repo_name,
-                                            pr.number,
-                                            &format!("Auto-merge failed due to network error; see logs for details."),
+                                            number,
+                                            "Failed getting latest release; see logs for details.",
                                         )
                                         .await
                                         .map_err(|e| {
@@ -258,104 +381,21 @@ async fn handle_webhook(
                                             );
                                         });
 									}
-									// Clean db.
-									let _ = db.write().delete(
-                                        pr.head.ref_field.as_bytes(),
-                                    ).map_err(|e| {
-                                        log::error!(
-                                            "Error deleting merge request from db: {}",
-                                            e
-                                        );
-                                    });
 								}
 							}
-						}
-						Err(e) => {
-							log::error!("Error getting PR: {}", e);
+							Err(e) => {
+								log::error!("Error getting PR: {}", e);
+							}
 						}
 					}
-				} else if body.to_lowercase().trim()
-					== COMPARE_RELEASE_REQUEST.to_lowercase().trim()
-				{
-					log::info!(
-						"Received diff request for PR {} from user {}",
-						html_url,
-						login
+				} else {
+					log::error!(
+						"Failed parsing repo name in url: {}",
+						repo_url
 					);
-					// Fetch the pr to get all fields (eg. mergeable).
-					match github_bot.pull_request(&repo_name, number).await {
-						Ok(pr) => {
-							match github_bot.latest_release(&repo_name).await {
-								Ok(rel) => {
-									match github_bot
-										.tag(&repo_name, &rel.tag_name)
-										.await
-									{
-										Ok(rel_tag) => {
-											let link = github_bot.diff_url(
-												&repo_name,
-												&rel_tag.object.sha,
-												&pr.head.sha,
-											);
-											let _ = github_bot
-												.create_issue_comment(
-													&repo_name, number, &link,
-												)
-												.await
-												.map_err(|e| {
-													log::error!(
-                                                        "Error posting comment: {}",
-                                                        e
-                                                    );
-												});
-										}
-										Err(e) => {
-											log::error!(
-												"Error getting release tag: {}",
-												e
-											);
-											let _ = github_bot.create_issue_comment(
-                                                &repo_name,
-                                                number,
-                                                &format!("Failed getting latest release tag; see logs for details."),
-                                            )
-                                            .await
-                                            .map_err(|e| {
-                                                log::error!(
-                                                    "Error posting comment: {}",
-                                                    e
-                                                );
-                                            });
-										}
-									}
-								}
-								Err(e) => {
-									log::error!(
-										"Error getting latest release: {}",
-										e
-									);
-									let _ = github_bot.create_issue_comment(
-                                        &repo_name,
-                                        number,
-                                        &format!("Failed getting latest release; see logs for details."),
-                                    )
-                                    .await
-                                    .map_err(|e| {
-                                        log::error!(
-                                            "Error posting comment: {}",
-                                            e
-                                        );
-                                    });
-								}
-							}
-						}
-						Err(e) => {
-							log::error!("Error getting PR: {}", e);
-						}
-					}
 				}
 			} else {
-				log::error!("Failed parsing repo name in url: {}", repo_url);
+				log::error!("Failed parsing owner in url: {}", html_url);
 			}
 		}
 		Payload::CommitStatus {
@@ -371,6 +411,7 @@ async fn handle_webhook(
 					Ok(Some(b)) => match bincode::deserialize(&b) {
 						Ok(MergeRequest {
 							sha: head_sha,
+							owner,
 							repo_name,
 							number,
 							html_url,
@@ -381,13 +422,16 @@ async fn handle_webhook(
 								// made.
 								if sha == &head_sha {
 									match github_bot
-										.pull_request(&repo_name, number)
+										.pull_request(
+											&owner, &repo_name, number,
+										)
 										.await
 									{
 										Ok(pr) => {
 											log::info!("Commit {} on branch '{}' in repo '{}' is green; attempting merge.", sha, head_ref, repo_name);
 											try_merge(
 												&github_bot,
+												&owner,
 												&repo_name,
 												&pr,
 												db,
@@ -408,6 +452,7 @@ async fn handle_webhook(
 											{
 												// Notify people of merge failure.
 												let _ = github_bot.create_issue_comment(
+                                                    &owner,
                                                     &repo_name,
                                                     number,
                                                     &format!("Auto-merge failed due to network error; see logs for details."),
@@ -441,6 +486,7 @@ async fn handle_webhook(
 									{
 										// Notify people of merge failure.
 										let _ = github_bot.create_issue_comment(
+                                                &owner,
                                                 &repo_name,
                                                 number,
                                                 &format!("Head SHA has changed since merge was requested; cancelling."),
@@ -468,6 +514,7 @@ async fn handle_webhook(
 								log::info!("Commit {} on branch '{}' in repo '{}' failed status checks.", sha, head_ref, repo_name);
 								status_failure(
 									&github_bot,
+									&owner,
 									&repo_name,
 									number,
 									&html_url,
@@ -500,6 +547,7 @@ async fn handle_webhook(
 
 async fn try_merge(
 	github_bot: &GithubBot,
+	owner: &str,
 	repo_name: &str,
 	pr: &PullRequest,
 	db: &Arc<RwLock<DB>>,
@@ -509,7 +557,7 @@ async fn try_merge(
 	test_repo: &str,
 ) {
 	let core_devs = github_bot
-		.team("core-devs")
+		.team(owner, "core-devs")
 		.and_then(|team| github_bot.team_members(team.id))
 		.await
 		.unwrap_or_else(|e| {
@@ -520,7 +568,7 @@ async fn try_merge(
 		log::error!("Error getting reviews: {}", e);
 		vec![]
 	});
-	match process::get_process(github_bot, &repo_name, pr.number).await {
+	match process::get_process(github_bot, owner, repo_name, pr.number).await {
 		Err(e) => {
 			log::error!("Error getting process info: {}", e);
 			if environment == "production" || repo_name == test_repo {
@@ -528,7 +576,8 @@ async fn try_merge(
 				// let people know.
 				let _ = github_bot
 					.create_issue_comment(
-						&repo_name,
+						owner,
+						repo_name,
 						pr.number,
 						&format!("Error getting process info: {}", e),
 					)
@@ -565,7 +614,8 @@ async fn try_merge(
 					if environment == "production" || repo_name == test_repo {
 						let _ = github_bot
 							.merge_pull_request(
-								&repo_name,
+								owner,
+								repo_name,
 								pr.number,
 								&pr.head.sha,
 							)
@@ -581,7 +631,8 @@ async fn try_merge(
 						{
 							let _ = github_bot
                                 .create_issue_comment(
-                                    &repo_name,
+                                    owner,
+                                    repo_name,
                                     pr.number,
                                     &format!("PR lacks process info - check that it belongs to a valid project column."),
                                 )
@@ -596,7 +647,8 @@ async fn try_merge(
 						{
 							let _ = github_bot
                                 .create_issue_comment(
-                                    &repo_name,
+                                    owner,
+                                    repo_name,
                                     pr.number,
                                     &format!("PR lacks approval from the project owner or at least {} core developers.", bot_config.min_reviewers),
                                 )
@@ -612,7 +664,8 @@ async fn try_merge(
 				if environment == "production" || repo_name == test_repo {
 					let _ = github_bot
 						.create_issue_comment(
-							&repo_name,
+							owner,
+							repo_name,
 							pr.number,
 							&format!("PR is currently unmergeable."),
 						)
@@ -635,6 +688,7 @@ async fn try_merge(
 
 async fn status_failure(
 	github_bot: &GithubBot,
+	owner: &str,
 	repo_name: &str,
 	number: i64,
 	html_url: &str,
@@ -648,7 +702,8 @@ async fn status_failure(
 	if environment == "production" || repo_name == test_repo {
 		let _ = github_bot
 			.create_issue_comment(
-				&repo_name,
+				owner,
+				repo_name,
 				number,
 				&format!("Status failure; auto-merge cancelled."),
 			)

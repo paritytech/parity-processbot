@@ -3,14 +3,10 @@ use crate::{github, Result};
 use super::GithubBot;
 
 impl GithubBot {
-	/// Returns all of the repositories managed by the organization.
-	pub async fn repositories(&self) -> Result<Vec<github::Repository>> {
-		self.client.get_all(&self.organization.repos_url).await
-	}
-
 	/// Returns a repository with the given name.
 	pub async fn repository<A>(
 		&self,
+		owner: &str,
 		repo_name: A,
 	) -> Result<github::Repository>
 	where
@@ -19,7 +15,7 @@ impl GithubBot {
 		let url = format!(
 			"{base_url}/repos/{owner}/{repo_name}",
 			base_url = Self::BASE_URL,
-			owner = self.organization.login,
+			owner = owner,
 			repo_name = repo_name
 		);
 		self.client.get(url).await
@@ -50,12 +46,6 @@ mod tests {
 				.await
 				.expect("github_bot");
 			assert!(github_bot.repository(&test_repo_name).await.is_ok());
-			assert!(github_bot
-				.repositories()
-				.await
-				.expect("repositories")
-				.iter()
-				.any(|repo| repo.name == test_repo_name));
 		});
 	}
 }

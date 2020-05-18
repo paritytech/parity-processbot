@@ -476,7 +476,7 @@ pub struct Repository {
 	pub full_name: Option<String>,
 	pub owner: User,
 	pub private: Option<bool>,
-	pub html_url: Option<String>,
+	pub html_url: String,
 	pub description: Option<String>,
 	pub fork: Option<bool>,
 	pub url: Option<String>,
