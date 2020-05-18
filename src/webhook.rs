@@ -107,7 +107,7 @@ async fn handle_webhook(
 					number,
 					html_url,
 					repository_url: Some(repo_url),
-					pull_request: Some(incomplete_pr), // indicates the issue is a pr
+					pull_request: Some(_), // indicates the issue is a pr
 					..
 				},
 			comment:
@@ -123,7 +123,6 @@ async fn handle_webhook(
 				if body.to_lowercase().trim()
 					== AUTO_MERGE_REQUEST.to_lowercase().trim()
 				{
-					log::info!("{:?}", incomplete_pr);
 					log::info!(
 						"Received merge request for PR {} from user {}",
 						html_url,
@@ -188,17 +187,17 @@ async fn handle_webhook(
 													|| &repo_name == test_repo
 												{
 													let _ = github_bot.create_issue_comment(
-                                                    &repo_name,
-                                                    pr.number,
-                                                    &format!("Auto-merge failed due to db error; see logs for details."),
-                                                )
-                                                .await
-                                                .map_err(|e| {
-                                                    log::error!(
-                                                        "Error posting comment: {}",
-                                                        e
-                                                    );
-                                                });
+                                                        &repo_name,
+                                                        pr.number,
+                                                        &format!("Auto-merge failed due to db error; see logs for details."),
+                                                    )
+                                                    .await
+                                                    .map_err(|e| {
+                                                        log::error!(
+                                                            "Error posting comment: {}",
+                                                            e
+                                                        );
+                                                    });
 												}
 											}
 										},
@@ -208,17 +207,17 @@ async fn handle_webhook(
 												|| &repo_name == test_repo
 											{
 												let _ = github_bot.create_issue_comment(
-                                                &repo_name,
-                                                pr.number,
-                                                &format!("Auto-merge failed due to serialization error; see logs for details."),
-                                            )
-                                            .await
-                                            .map_err(|e| {
-                                                log::error!(
-                                                    "Error posting comment: {}",
-                                                    e
-                                                );
-                                            });
+                                                    &repo_name,
+                                                    pr.number,
+                                                    &format!("Auto-merge failed due to serialization error; see logs for details."),
+                                                )
+                                                .await
+                                                .map_err(|e| {
+                                                    log::error!(
+                                                        "Error posting comment: {}",
+                                                        e
+                                                    );
+                                                });
 											}
 										}
 									}
@@ -247,17 +246,17 @@ async fn handle_webhook(
 										|| &repo_name == test_repo
 									{
 										let _ = github_bot.create_issue_comment(
-                                        &repo_name,
-                                        pr.number,
-                                        &format!("Auto-merge failed due to network error; see logs for details."),
-                                    )
-                                    .await
-                                    .map_err(|e| {
-                                        log::error!(
-                                            "Error posting comment: {}",
-                                            e
-                                        );
-                                    });
+                                            &repo_name,
+                                            pr.number,
+                                            &format!("Auto-merge failed due to network error; see logs for details."),
+                                        )
+                                        .await
+                                        .map_err(|e| {
+                                            log::error!(
+                                                "Error posting comment: {}",
+                                                e
+                                            );
+                                        });
 									}
 									// Clean db.
 									let _ = db.write().delete(
@@ -265,6 +264,85 @@ async fn handle_webhook(
                                     ).map_err(|e| {
                                         log::error!(
                                             "Error deleting merge request from db: {}",
+                                            e
+                                        );
+                                    });
+								}
+							}
+						}
+						Err(e) => {
+							log::error!("Error getting PR: {}", e);
+						}
+					}
+				} else if body.to_lowercase().trim()
+					== COMPARE_RELEASE_REQUEST.to_lowercase().trim()
+				{
+					log::info!(
+						"Received diff request for PR {} from user {}",
+						html_url,
+						login
+					);
+					// Fetch the pr to get all fields (eg. mergeable).
+					match github_bot.pull_request(&repo_name, number).await {
+						Ok(pr) => {
+							match github_bot.latest_release(&repo_name).await {
+								Ok(rel) => {
+									match github_bot
+										.tag(&repo_name, &rel.tag_name)
+										.await
+									{
+										Ok(rel_tag) => {
+											let link = github_bot.diff_url(
+												&repo_name,
+												&rel_tag.object.sha,
+												&pr.head.sha,
+											);
+											let _ = github_bot
+												.create_issue_comment(
+													&repo_name, number, &link,
+												)
+												.await
+												.map_err(|e| {
+													log::error!(
+                                                        "Error posting comment: {}",
+                                                        e
+                                                    );
+												});
+										}
+										Err(e) => {
+											log::error!(
+												"Error getting release tag: {}",
+												e
+											);
+											let _ = github_bot.create_issue_comment(
+                                                &repo_name,
+                                                number,
+                                                &format!("Failed getting latest release tag; see logs for details."),
+                                            )
+                                            .await
+                                            .map_err(|e| {
+                                                log::error!(
+                                                    "Error posting comment: {}",
+                                                    e
+                                                );
+                                            });
+										}
+									}
+								}
+								Err(e) => {
+									log::error!(
+										"Error getting latest release: {}",
+										e
+									);
+									let _ = github_bot.create_issue_comment(
+                                        &repo_name,
+                                        number,
+                                        &format!("Failed getting latest release; see logs for details."),
+                                    )
+                                    .await
+                                    .map_err(|e| {
+                                        log::error!(
+                                            "Error posting comment: {}",
                                             e
                                         );
                                     });
@@ -330,17 +408,17 @@ async fn handle_webhook(
 											{
 												// Notify people of merge failure.
 												let _ = github_bot.create_issue_comment(
-                                                &repo_name,
-                                                number,
-                                                &format!("Auto-merge failed due to network error; see logs for details."),
-                                            )
-                                            .await
-                                            .map_err(|e| {
-                                                log::error!(
-                                                    "Error posting comment: {}",
-                                                    e
-                                                );
-                                            });
+                                                    &repo_name,
+                                                    number,
+                                                    &format!("Auto-merge failed due to network error; see logs for details."),
+                                                )
+                                                .await
+                                                .map_err(|e| {
+                                                    log::error!(
+                                                        "Error posting comment: {}",
+                                                        e
+                                                    );
+                                                });
 											}
 											// Clean db.
 											let _ = db.write().delete(

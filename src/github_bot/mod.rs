@@ -5,8 +5,10 @@ use snafu::OptionExt;
 pub mod issue;
 pub mod project;
 pub mod pull_request;
+pub mod release;
 pub mod repository;
 pub mod review;
+pub mod tag;
 pub mod team;
 
 pub struct GithubBot {
@@ -16,6 +18,7 @@ pub struct GithubBot {
 
 impl GithubBot {
 	pub(crate) const BASE_URL: &'static str = "https://api.github.com";
+	pub(crate) const BASE_HTML_URL: &'static str = "https://github.com";
 
 	pub fn organization_login(&self) -> &str {
 		self.organization.login.as_ref()
@@ -124,6 +127,18 @@ impl GithubBot {
 				path = path
 			))
 			.await
+	}
+
+	/// Returns a link to a diff.
+	pub fn diff_url(&self, repo_name: &str, base: &str, head: &str) -> String {
+		format!(
+			"{base_url}/{owner}/{repo}/compare/{base}...{head}",
+			base_url = Self::BASE_HTML_URL,
+			owner = self.organization.login,
+			repo = repo_name,
+			base = base,
+			head = head,
+		)
 	}
 }
 

@@ -9,6 +9,8 @@ pub const AUTO_MERGE_CHECKS_ERROR: &str =
 pub const AUTO_MERGE_INVALIDATED: &str =
 	"Something has changed since auto-merge was requested; cancelling.";
 
+pub const COMPARE_RELEASE_REQUEST: &str = "bot diff release";
+
 pub const FEATURES_KEY: &str = "features";
 
 pub const PROJECT_NEEDS_BACKLOG: &str =

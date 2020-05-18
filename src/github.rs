@@ -569,37 +569,6 @@ pub struct Permissions {
 	pull: Option<bool>,
 }
 
-/*
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct CheckRuns {
-	pub total_count: i32,
-	pub check_runs: Vec<CheckRun>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct CheckRun {
-	pub id: Option<i64>,
-	pub head_sha: Option<String>,
-	pub node_id: Option<String>,
-	pub external_id: Option<String>,
-	pub url: Option<String>,
-	pub html_url: Option<String>,
-	pub details_url: Option<String>,
-	pub status: Option<CheckStatus>,
-	pub conclusion: Option<String>,
-	pub started_at: Option<chrono::DateTime<chrono::Utc>>,
-	pub completed_at: Option<chrono::DateTime<chrono::Utc>>,
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum CheckStatus {
-	Queued,
-	Completed,
-	InProgress,
-}
-*/
-
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CombinedStatus {
 	pub state: StatusState,
@@ -731,6 +700,38 @@ pub struct InstallationToken {
 	pub expires_at: Option<String>,
 	pub permissions: Permissions,
 	pub repositories: Option<Vec<Repository>>,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Release {
+	pub url: String,
+	pub html_url: String,
+	pub tarball_url: String,
+	pub zipball_url: String,
+	pub id: i64,
+	pub tag_name: String,
+	pub target_commitish: String,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Ref {
+	pub object: RefObject,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RefObject {
+	#[serde(rename = "type")]
+	pub ref_type: String,
+	pub sha: String,
+	pub url: String,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Diff {
+	pub url: String,
+	pub html_url: String,
+	pub permalink_url: Option<String>,
+	pub diff_url: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
