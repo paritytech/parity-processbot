@@ -54,7 +54,7 @@ pub async fn webhook(
 ) -> actix_web::Result<impl Responder> {
 	match handle_webhook(req, body, state).await {
 		Err(e) => {
-			log::error!("{:?}", e);
+			log::debug!("{:?}", e);
 			Err(e)
 		}
 		x => x,
@@ -182,7 +182,7 @@ async fn handle_webhook(
                                                         owner,
                                                         &repo_name,
                                                         pr.number,
-                                                        &format!("Waiting for commit status."),
+                                                        &format!("Waiting for commit status..."),
                                                     )
                                                     .await
                                                     .map_err(|e| {
@@ -455,7 +455,7 @@ async fn handle_webhook(
                                                     &owner,
                                                     &repo_name,
                                                     number,
-                                                    &format!("Auto-merge failed due to network error; see logs for details."),
+                                                    "Auto-merge failed due to network error; see logs for details.",
                                                 )
                                                 .await
                                                 .map_err(|e| {
@@ -478,7 +478,7 @@ async fn handle_webhook(
 									}
 								} else {
 									// branch matches but head sha has changed since merge request
-									log::warn!(
+									log::info!(
                                         "Head sha has changed since merge was requested on {}", html_url
                                     );
 									if environment == "production"
@@ -489,7 +489,7 @@ async fn handle_webhook(
                                                 &owner,
                                                 &repo_name,
                                                 number,
-                                                &format!("Head SHA has changed since merge was requested; cancelling."),
+                                                "Head SHA has changed since merge was requested; cancelling.",
                                             )
                                             .await
                                             .map_err(|e| {
@@ -534,12 +534,15 @@ async fn handle_webhook(
 							);
 						}
 					},
-					_ => {}
+					Ok(None) => {}
+					Err(e) => {
+						log::error!("Error reading from db: {}", e);
+					}
 				}
 			}
 		}
 		event => {
-			log::info!("Received unknown event {:?}", event);
+			log::debug!("Received unknown event {:?}", event);
 		}
 	}
 	Ok(HttpResponse::Ok())

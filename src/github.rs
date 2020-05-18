@@ -806,6 +806,7 @@ pub enum Payload {
 		state: StatusState,
 		description: String,
 		target_url: String,
+		repository: Repository,
 		branches: Vec<Branch>,
 	},
 	CheckRun {
