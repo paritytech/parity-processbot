@@ -1,35 +1,21 @@
-use crate::{error, github, Result};
-
-use snafu::OptionExt;
+use crate::{github, Result};
 
 pub mod issue;
 pub mod project;
 pub mod pull_request;
+pub mod release;
 pub mod repository;
 pub mod review;
+pub mod tag;
 pub mod team;
 
 pub struct GithubBot {
 	client: crate::http::Client,
-	organization: github::Organization,
 }
 
 impl GithubBot {
 	pub(crate) const BASE_URL: &'static str = "https://api.github.com";
-
-	pub fn organization_login(&self) -> &str {
-		self.organization.login.as_ref()
-	}
-
-	/// This method doesn't use `self`, as we need to use it before we
-	/// initialise `Self`.
-	async fn installations(
-		client: &crate::http::Client,
-	) -> Result<Vec<github::Installation>> {
-		client
-			.jwt_get(&format!("{}/app/installations", Self::BASE_URL))
-			.await
-	}
+	pub(crate) const BASE_HTML_URL: &'static str = "https://github.com";
 
 	/// Creates a new instance of `GithubBot` from a GitHub organization defined
 	/// by `org`, and a GitHub authenication key defined by `auth_key`.
@@ -45,26 +31,11 @@ impl GithubBot {
 			installation_login.to_owned(),
 		);
 
-		let installations = Self::installations(&client).await?;
-		let installation = installations
-			.iter()
-			.find(|installation| {
-				installation.account.login == installation_login
-			})
-			.context(error::MissingData)?;
+		Ok(Self { client })
+	}
 
-		let organization = client
-			.get(&format!(
-				"{}/orgs/{}",
-				Self::BASE_URL,
-				&installation.account.login
-			))
-			.await?;
-
-		Ok(Self {
-			client,
-			organization,
-		})
+	pub fn owner_from_html_url(url: &str) -> Option<&str> {
+		url.split("/").skip(3).next()
 	}
 
 	pub async fn installation_repositories(
@@ -75,34 +46,17 @@ impl GithubBot {
 			.await
 	}
 
-	/*
-	/// Returns check runs associated with a pull request.
-	pub async fn check_runs(
-		&self,
-		repo_name: &str,
-		pull_request: &github::PullRequest,
-	) -> Result<github::CheckRuns> {
-		let url = format!(
-			"{base_url}/repos/{owner}/{repo}/commits/{sha}/check-runs",
-			base_url = Self::BASE_URL,
-			owner = self.organization.login,
-			repo = repo_name,
-			sha = &pull_request.head.sha
-		);
-		self.client.get(url).await
-	}
-	*/
-
 	/// Returns statuses associated with a pull request.
 	pub async fn status(
 		&self,
+		owner: &str,
 		repo_name: &str,
 		sha: &str,
 	) -> Result<github::CombinedStatus> {
 		let url = format!(
 			"{base_url}/repos/{owner}/{repo}/commits/{sha}/status",
 			base_url = Self::BASE_URL,
-			owner = self.organization.login,
+			owner = owner,
 			repo = repo_name,
 			sha = sha
 		);
@@ -112,6 +66,7 @@ impl GithubBot {
 	/// Returns the contents of a file in a repository.
 	pub async fn contents(
 		&self,
+		owner: &str,
 		repo_name: &str,
 		path: &str,
 	) -> Result<github::Contents> {
@@ -119,14 +74,33 @@ impl GithubBot {
 			.get(format!(
 				"{base_url}/repos/{owner}/{repo_name}/contents/{path}",
 				base_url = Self::BASE_URL,
-				owner = self.organization.login,
+				owner = owner,
 				repo_name = repo_name,
 				path = path
 			))
 			.await
 	}
+
+	/// Returns a link to a diff.
+	pub fn diff_url(
+		&self,
+		owner: &str,
+		repo_name: &str,
+		base: &str,
+		head: &str,
+	) -> String {
+		format!(
+			"{base_url}/{owner}/{repo}/compare/{base}...{head}",
+			base_url = Self::BASE_HTML_URL,
+			owner = owner,
+			repo = repo_name,
+			base = base,
+			head = head,
+		)
+	}
 }
 
+/*
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -195,3 +169,4 @@ mod tests {
 		});
 	}
 }
+*/

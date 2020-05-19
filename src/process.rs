@@ -10,11 +10,12 @@ pub enum ProcessError {
 
 pub async fn get_process(
 	github_bot: &GithubBot,
+	owner: &str,
 	repo_name: &str,
 	issue_number: i64,
 ) -> Result<CombinedProcessInfo> {
 	let process = github_bot
-		.contents(&repo_name, PROCESS_FILE_NAME)
+		.contents(owner, repo_name, PROCESS_FILE_NAME)
 		.await
 		.and_then(process::process_from_contents)?;
 
@@ -30,7 +31,7 @@ pub async fn get_process(
 	*/
 
 	// ignore repos with no projects
-	let projects = github_bot.projects(&repo_name).await?;
+	let projects = github_bot.projects(owner, repo_name).await?;
 	/*
 	if projects.is_empty() {
 		log::warn!(
@@ -94,6 +95,7 @@ pub async fn get_process(
 
 	combined_process_info(
 		github_bot,
+		owner,
 		repo_name,
 		issue_number,
 		&projects,
@@ -104,6 +106,7 @@ pub async fn get_process(
 
 pub async fn combined_process_info(
 	github_bot: &GithubBot,
+	owner: &str,
 	repo_name: &str,
 	number: i64,
 	projects: &[github::Project],
@@ -111,7 +114,9 @@ pub async fn combined_process_info(
 ) -> Result<CombinedProcessInfo> {
 	Ok(CombinedProcessInfo(process_from_projects(
 		&projects_from_project_events(
-			&github_bot.active_project_events(&repo_name, number).await?,
+			&github_bot
+				.active_project_events(owner, repo_name, number)
+				.await?,
 			projects,
 		),
 		processes,

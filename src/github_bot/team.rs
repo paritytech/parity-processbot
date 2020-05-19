@@ -1,14 +1,17 @@
-use crate::{error, github, Result};
-
-use snafu::OptionExt;
+use crate::{github, Result};
 
 use super::GithubBot;
 
 impl GithubBot {
 	/// Returns the team with a given team slug (eg. 'core-devs').
-	pub async fn team(&self, slug: &str) -> Result<github::Team> {
-		let url = self.organization.url.as_ref().context(error::MissingData)?;
-		self.client.get(format!("{}/teams/{}", url, slug)).await
+	pub async fn team(&self, owner: &str, slug: &str) -> Result<github::Team> {
+		let url = format!(
+			"{base_url}/orgs/{owner}/teams/{slug}",
+			base_url = Self::BASE_URL,
+			owner = owner,
+			slug = slug
+		);
+		self.client.get(url).await
 	}
 
 	/// Returns members of the team with a id.
@@ -22,6 +25,7 @@ impl GithubBot {
 	}
 }
 
+/*
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -51,3 +55,4 @@ mod tests {
 		});
 	}
 }
+*/

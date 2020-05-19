@@ -3,20 +3,17 @@ use crate::{github, Result};
 use super::GithubBot;
 
 impl GithubBot {
-	/// Returns a repository with the given name.
-	pub async fn repository<A>(
+	/// Returns the latest release in a repository.
+	pub async fn latest_release(
 		&self,
 		owner: &str,
-		repo_name: A,
-	) -> Result<github::Repository>
-	where
-		A: std::fmt::Display,
-	{
+		repo_name: &str,
+	) -> Result<github::Release> {
 		let url = format!(
-			"{base_url}/repos/{owner}/{repo_name}",
+			"{base_url}/repos/{owner}/{repo}/releases/latest",
 			base_url = Self::BASE_URL,
 			owner = owner,
-			repo_name = repo_name
+			repo = repo_name,
 		);
 		self.client.get(url).await
 	}
@@ -29,9 +26,8 @@ mod tests {
 
 	#[ignore]
 	#[test]
-	fn test_repositories() {
+	fn test_release() {
 		dotenv::dotenv().ok();
-
 		let installation = dotenv::var("TEST_INSTALLATION_LOGIN")
 			.expect("TEST_INSTALLATION_LOGIN");
 		let private_key_path =
@@ -40,13 +36,15 @@ mod tests {
 			.expect("Couldn't find private key.");
 		let test_repo_name =
 			dotenv::var("TEST_REPO_NAME").expect("TEST_REPO_NAME");
-
 		let mut rt = tokio::runtime::Runtime::new().expect("runtime");
 		rt.block_on(async {
 			let github_bot = GithubBot::new(private_key, &installation)
 				.await
 				.expect("github_bot");
-			assert!(github_bot.repository(&test_repo_name).await.is_ok());
+			let release = dbg!(github_bot
+				.latest_release(&test_repo_name)
+				.await
+				.expect("release"));
 		});
 	}
 }
