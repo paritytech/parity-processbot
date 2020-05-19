@@ -26,7 +26,7 @@ pub struct AppState {
 	pub test_repo: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[repr(C)]
 pub struct MergeRequest {
 	sha: String,
@@ -156,51 +156,59 @@ async fn handle_webhook(
 										.await
 									}
 									Ok(StatusState::Pending) => {
-										match bincode::serialize(
-											&MergeRequest {
-												sha: pr.head.sha.clone(),
-												owner: owner.to_string(),
-												repo_name: repo_name.clone(),
-												number: pr.number,
-												html_url: pr.html_url.clone(),
-												requested_by: login,
-											},
-										) {
-											Ok(m) => match db.write().put(
-												pr.head.ref_field.as_bytes(),
-												m,
-											) {
-												Ok(_) => {
-													log::info!("Auto-merge pending for PR {}", pr.html_url);
-													if environment
-														== "production"
-														|| &repo_name
-															== test_repo
-													{
-														let _ = github_bot
-                                                    .create_issue_comment(
-                                                        owner,
-                                                        &repo_name,
-                                                        pr.number,
-                                                        &format!("Waiting for commit status..."),
-                                                    )
-                                                    .await
-                                                    .map_err(|e| {
-                                                        log::error!(
-                                                            "Error posting comment: {}",
-                                                            e
-                                                        );
-                                                    });
+										let m = MergeRequest {
+											sha: pr.head.sha.clone(),
+											owner: owner.to_string(),
+											repo_name: repo_name.clone(),
+											number: pr.number,
+											html_url: pr.html_url.clone(),
+											requested_by: login,
+										};
+										log::info!(
+											"Serializing merge request: {:?}",
+											m
+										);
+										match bincode::serialize(&m) {
+											Ok(bytes) => {
+												log::info!("Writing merge request to db (head ref: {})", pr.head.ref_field);
+												match db.write().put(
+													pr.head
+														.ref_field
+														.trim()
+														.as_bytes(),
+													bytes,
+												) {
+													Ok(_) => {
+														log::info!("Auto-merge pending for PR {}", pr.html_url);
+														if environment
+															== "production"
+															|| &repo_name
+																== test_repo
+														{
+															let _ = github_bot
+                                                            .create_issue_comment(
+                                                                owner,
+                                                                &repo_name,
+                                                                pr.number,
+                                                                "Waiting for commit status...",
+                                                            )
+                                                            .await
+                                                            .map_err(|e| {
+                                                                log::error!(
+                                                                    "Error posting comment: {}",
+                                                                    e
+                                                                );
+                                                            });
+														}
 													}
-												}
-												Err(e) => {
-													log::error!("Error adding merge request to db: {}", e);
-													if environment
-														== "production"
-														|| &repo_name
-															== test_repo
-													{
-														let _ = github_bot.create_issue_comment(
+													Err(e) => {
+														log::error!("Error adding merge request to db: {}", e);
+														if environment
+															== "production"
+															|| &repo_name
+																== test_repo
+														{
+															let _ = github_bot.create_issue_comment(
                                                             owner,
                                                             &repo_name,
                                                             pr.number,
@@ -213,9 +221,10 @@ async fn handle_webhook(
                                                                 e
                                                             );
                                                         });
+														}
 													}
 												}
-											},
+											}
 											Err(e) => {
 												log::error!("Error serializing merge request: {}", e);
 												if environment == "production"
@@ -399,59 +408,65 @@ async fn handle_webhook(
 			}
 		}
 		Payload::CommitStatus {
-			state, branches, ..
+			sha: commit_sha,
+			state,
+			branches,
+			..
 		} => {
 			for Branch {
 				name: head_ref,
-				commit: BranchCommit { sha, .. },
+				commit: BranchCommit { sha: head_sha, .. },
 				..
 			} in &branches
 			{
-				match db.read().get(head_ref.as_bytes()) {
+				match db.read().get(head_ref.trim().as_bytes()) {
 					Ok(Some(b)) => match bincode::deserialize(&b) {
-						Ok(MergeRequest {
-							sha: head_sha,
-							owner,
-							repo_name,
-							number,
-							html_url,
-							requested_by,
-						}) => match state {
-							StatusState::Success => {
-								// Head sha of branch should not have changed since request was
-								// made.
-								if sha == &head_sha {
-									match github_bot
-										.pull_request(
-											&owner, &repo_name, number,
-										)
-										.await
-									{
-										Ok(pr) => {
-											log::info!("Commit {} on branch '{}' in repo '{}' is green; attempting merge.", sha, head_ref, repo_name);
-											try_merge(
-												&github_bot,
-												&owner,
-												&repo_name,
-												&pr,
-												db,
-												&bot_config,
-												&requested_by,
-												environment,
-												test_repo,
+						Ok(m) => {
+							log::info!("Deserialized merge request: {:?}", m);
+							let MergeRequest {
+								sha,
+								owner,
+								repo_name,
+								number,
+								html_url,
+								requested_by,
+							} = m;
+							match state {
+								StatusState::Success => {
+									// Head sha of branch should not have changed since request was
+									// made.
+									if &sha == head_sha {
+										match github_bot
+											.pull_request(
+												&owner, &repo_name, number,
 											)
 											.await
-										}
-										Err(e) => {
-											log::error!(
-												"Error getting PR: {}",
-												e
-											);
-											if environment == "production"
-												|| &repo_name == test_repo
-											{
-												// Notify people of merge failure.
-												let _ = github_bot.create_issue_comment(
+										{
+											Ok(pr) => {
+												log::info!("{} is green; attempting merge.", html_url);
+												try_merge(
+													&github_bot,
+													&owner,
+													&repo_name,
+													&pr,
+													db,
+													&bot_config,
+													&requested_by,
+													environment,
+													test_repo,
+												)
+												.await
+											}
+											Err(e) => {
+												log::error!(
+													"Error getting PR: {}",
+													e
+												);
+												if environment == "production"
+													|| &repo_name == test_repo
+												{
+													// Notify people of merge failure.
+													let _ = github_bot.create_issue_comment(
                                                     &owner,
                                                     &repo_name,
                                                     number,
@@ -464,9 +479,9 @@ async fn handle_webhook(
                                                         e
                                                     );
                                                 });
-											}
-											// Clean db.
-											let _ = db.write().delete(
+												}
+												// Clean db.
+												let _ = db.write().delete(
                                                 head_ref.as_bytes(),
                                             ).map_err(|e| {
                                                 log::error!(
@@ -474,18 +489,18 @@ async fn handle_webhook(
                                                     e
                                                 );
                                             });
+											}
 										}
-									}
-								} else {
-									// branch matches but head sha has changed since merge request
-									log::info!(
-                                        "Head sha has changed since merge was requested on {}", html_url
-                                    );
-									if environment == "production"
-										|| &repo_name == test_repo
-									{
-										// Notify people of merge failure.
-										let _ = github_bot.create_issue_comment(
+									} else {
+										// branch matches but head sha has changed since merge request
+										log::info!(
+                                            "Head sha has changed since merge was requested on {}", html_url
+                                        );
+										if environment == "production"
+											|| &repo_name == test_repo
+										{
+											// Notify people of merge failure.
+											let _ = github_bot.create_issue_comment(
                                                 &owner,
                                                 &repo_name,
                                                 number,
@@ -498,9 +513,9 @@ async fn handle_webhook(
                                                     e
                                                 );
                                             });
-									}
-									// Clean db.
-									let _ = db.write().delete(
+										}
+										// Clean db.
+										let _ = db.write().delete(
                                                 head_ref.as_bytes(),
                                             ).map_err(|e| {
                                                 log::error!(
@@ -508,25 +523,31 @@ async fn handle_webhook(
                                                     e
                                                 );
                                             });
+									}
+								}
+								StatusState::Failure | StatusState::Error => {
+									log::info!(
+										"{} failed status checks.",
+										html_url
+									);
+									status_failure(
+										&github_bot,
+										&owner,
+										&repo_name,
+										number,
+										&html_url,
+										&head_ref,
+										db,
+										environment,
+										test_repo,
+									)
+									.await
+								}
+								StatusState::Pending => {
+									log::info!("{} is pending.", html_url);
 								}
 							}
-							StatusState::Failure | StatusState::Error => {
-								log::info!("Commit {} on branch '{}' in repo '{}' failed status checks.", sha, head_ref, repo_name);
-								status_failure(
-									&github_bot,
-									&owner,
-									&repo_name,
-									number,
-									&html_url,
-									&head_ref,
-									db,
-									environment,
-									test_repo,
-								)
-								.await
-							}
-							_ => {}
-						},
+						}
 						Err(e) => {
 							log::error!(
 								"Error deserializing merge request: {}",
@@ -534,9 +555,15 @@ async fn handle_webhook(
 							);
 						}
 					},
-					Ok(None) => {}
+					Ok(None) => {
+						// branch not stored for merge
+					}
 					Err(e) => {
-						log::error!("Error reading from db: {}", e);
+						log::error!(
+							"Error reading from db (head ref: {}): {}",
+							head_ref,
+							e
+						);
 					}
 				}
 			}
