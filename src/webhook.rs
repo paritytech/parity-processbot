@@ -94,20 +94,17 @@ async fn handle_webhook(
 		.map_err(ErrorBadRequest)?;
 	log::debug!("Valid payload {:?}", payload);
 
-	let db = &state.get_ref().db;
+	let db = &state.get_ref().db.write();
 	let github_bot = &state.get_ref().github_bot;
 	let bot_config = &state.get_ref().bot_config;
 	let environment = &state.get_ref().environment;
 	let test_repo = &state.get_ref().test_repo;
 
-	match db.read().get("sanity key".as_bytes()) {
+	match db.get("sanity key".as_bytes()) {
 		Ok(Some(_)) => {}
 		Ok(None) => {
 			log::info!("no sanity key in db.  this should only happen once.");
-			match db
-				.write()
-				.put("sanity key".as_bytes(), "sanity check".as_bytes())
-			{
+			match db.put("sanity key".as_bytes(), "sanity check".as_bytes()) {
 				Ok(_) => {
 					log::info!("put sanity check in db.");
 				}
@@ -192,7 +189,7 @@ async fn handle_webhook(
 										match bincode::serialize(&m) {
 											Ok(bytes) => {
 												log::info!("Writing merge request to db (head ref: {})", pr.head.ref_field);
-												match db.write().put(
+												match db.put(
 													pr.head
 														.ref_field
 														.trim()
@@ -307,7 +304,7 @@ async fn handle_webhook(
                                             });
 										}
 										// Clean db.
-										let _ = db.write().delete(
+										let _ = db.delete(
                                             pr.head.ref_field.as_bytes(),
                                         ).map_err(|e| {
                                             log::error!(
@@ -440,7 +437,7 @@ async fn handle_webhook(
 				..
 			} in &branches
 			{
-				match db.read().get(head_ref.trim().as_bytes()) {
+				match db.get(head_ref.trim().as_bytes()) {
 					Ok(Some(b)) => match bincode::deserialize(&b) {
 						Ok(m) => {
 							log::info!("Deserialized merge request: {:?}", m);
@@ -502,14 +499,14 @@ async fn handle_webhook(
                                                 });
 												}
 												// Clean db.
-												let _ = db.write().delete(
-                                                head_ref.as_bytes(),
-                                            ).map_err(|e| {
-                                                log::error!(
-                                                    "Error deleting merge request from db: {}",
-                                                    e
-                                                );
-                                            });
+												let _ = db.delete(
+                                                    head_ref.as_bytes(),
+                                                ).map_err(|e| {
+                                                    log::error!(
+                                                        "Error deleting merge request from db: {}",
+                                                        e
+                                                    );
+                                                });
 											}
 										}
 									} else {
@@ -536,7 +533,7 @@ async fn handle_webhook(
                                             });
 										}
 										// Clean db.
-										let _ = db.write().delete(
+										let _ = db.delete(
                                                 head_ref.as_bytes(),
                                             ).map_err(|e| {
                                                 log::error!(
@@ -601,7 +598,7 @@ async fn try_merge(
 	owner: &str,
 	repo_name: &str,
 	pr: &PullRequest,
-	db: &Arc<RwLock<DB>>,
+	db: &DB,
 	bot_config: &BotConfig,
 	requested_by: &str,
 	environment: &str,
@@ -729,12 +726,9 @@ async fn try_merge(
 		}
 	}
 	// Clean db.
-	let _ = db
-		.write()
-		.delete(pr.head.ref_field.as_bytes())
-		.map_err(|e| {
-			log::error!("Error deleting from db: {}", e);
-		});
+	let _ = db.delete(pr.head.ref_field.as_bytes()).map_err(|e| {
+		log::error!("Error deleting from db: {}", e);
+	});
 }
 
 async fn status_failure(
@@ -744,7 +738,7 @@ async fn status_failure(
 	number: i64,
 	html_url: &str,
 	head_ref: &str,
-	db: &Arc<RwLock<DB>>,
+	db: &DB,
 	environment: &str,
 	test_repo: &str,
 ) {
@@ -764,7 +758,7 @@ async fn status_failure(
 			});
 	}
 	// Clean db.
-	let _ = db.write().delete(head_ref.as_bytes()).map_err(|e| {
+	let _ = db.delete(head_ref.as_bytes()).map_err(|e| {
 		log::error!("Error deleting from db: {}", e);
 	});
 }
