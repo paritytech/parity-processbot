@@ -49,6 +49,8 @@ spec:
         - name: processbot-key-volume
           mountPath: "/etc/processbot-key"
           readOnly: true
+        - name: processbot-database
+          mountPath: /usr/local/share/db
         ports:
         - name: backend
           containerPort: {{ .Values.processbot.config.WEBHOOK_PORT }}
