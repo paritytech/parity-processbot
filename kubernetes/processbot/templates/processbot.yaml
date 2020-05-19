@@ -50,7 +50,7 @@ spec:
           mountPath: "/etc/processbot-key"
           readOnly: true
         - name: database
-          mountPath: /usr/local/share/db
+          mountPath: "/usr/local/share/db"
         ports:
         - name: backend
           containerPort: {{ .Values.processbot.config.WEBHOOK_PORT }}
@@ -81,7 +81,7 @@ spec:
             - name: GITHUB_APP_ID
               value: "51719"
             - name: DB_PATH
-              value: /usr/local/share/db
+              value: "/usr/local/share/db"
             - name: BAMBOO_TICK_SECS
               value: "7200"
             - name: MATRIX_SILENT
