@@ -1,6 +1,7 @@
-use crate::{github, Result};
-
 use super::GithubBot;
+use crate::{error, github, Result};
+use regex::Regex;
+use snafu::ResultExt;
 
 impl GithubBot {
 	/// Returns the latest release in a repository.
@@ -17,13 +18,59 @@ impl GithubBot {
 		);
 		self.client.get(url).await
 	}
+
+	pub async fn substrate_commit_from_polkadot_commit(
+		&self,
+		owner: &str,
+		ref_field: &str,
+	) -> Result<String> {
+		let re = Regex::new(
+			r"git\+https://github.com/paritytech/substrate#([0-9a-z]+)",
+		)
+		.unwrap();
+		self.contents(owner, "polkadot", "Cargo.lock", ref_field)
+			.await
+			.and_then(|c| {
+				//             dbg!(&c);
+				base64::decode(&c.content.replace("\n", ""))
+					.context(error::Base64)
+			})
+			.and_then(|b| String::from_utf8(b).context(error::Utf8))
+			.map(|s| {
+				re.captures(&s).expect("substrate in Cargo.lock")[1].to_string()
+			})
+	}
 }
 
-/*
 #[cfg(test)]
 mod tests {
 	use super::*;
 
+	#[test]
+	fn test_substrate_commit() {
+		dotenv::dotenv().ok();
+		let installation = dotenv::var("TEST_INSTALLATION_LOGIN")
+			.expect("TEST_INSTALLATION_LOGIN");
+		let private_key_path =
+			dotenv::var("PRIVATE_KEY_PATH").expect("PRIVATE_KEY_PATH");
+		let private_key = std::fs::read(&private_key_path)
+			.expect("Couldn't find private key.");
+		let mut rt = tokio::runtime::Runtime::new().expect("runtime");
+		rt.block_on(async {
+			let github_bot = GithubBot::new(private_key, &installation)
+				.await
+				.expect("github_bot");
+			let commit = github_bot
+				.substrate_commit_from_polkadot_commit(
+					"paritytech",
+					"nv-block-construction-metrics-2",
+				)
+				.await;
+			dbg!(commit);
+		});
+	}
+
+	/*
 	#[ignore]
 	#[test]
 	fn test_release() {
@@ -47,5 +94,5 @@ mod tests {
 				.expect("release"));
 		});
 	}
+	*/
 }
-*/

@@ -1,4 +1,6 @@
 use crate::{github, Result};
+use snafu::ResultExt;
+use futures_util::future::FutureExt;
 
 pub mod issue;
 pub mod project;
@@ -69,16 +71,18 @@ impl GithubBot {
 		owner: &str,
 		repo_name: &str,
 		path: &str,
+		ref_field: &str,
 	) -> Result<github::Contents> {
-		self.client
-			.get(format!(
-				"{base_url}/repos/{owner}/{repo_name}/contents/{path}",
-				base_url = Self::BASE_URL,
-				owner = owner,
-				repo_name = repo_name,
-				path = path
-			))
-			.await
+		let url = &format!(
+			"{base_url}/repos/{owner}/{repo_name}/contents/{path}?ref={ref_field}",
+			base_url = Self::BASE_URL,
+			owner = owner,
+			repo_name = repo_name,
+			path = path,
+            ref_field = ref_field
+		);
+		let params = serde_json::json!({}); // TODO fix params...
+        self.client.get_with_params(url, params).await
 	}
 
 	/// Returns a link to a diff.

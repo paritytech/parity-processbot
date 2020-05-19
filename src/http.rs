@@ -11,7 +11,7 @@ use snafu::{OptionExt, ResultExt};
 
 #[derive(Default)]
 pub struct Client {
-	client: reqwest::Client,
+	pub client: reqwest::Client,
 	private_key: Vec<u8>,
 	installation_login: String,
 }
@@ -183,6 +183,7 @@ impl Client {
 			.context(error::Http)?;
 
 		log::debug!("{:?}", &request);
+		dbg!(&request);
 
 		handle_response(
 			self.client.execute(request).await.context(error::Http)?,
@@ -297,7 +298,7 @@ impl Client {
 		url: I,
 		params: P,
 	) -> Result<Response> {
-		self.execute(self.client.get(&*url.into()).json(&params))
+		self.execute(dbg!(self.client.get(&*url.into()).json(&params)))
 			.await
 	}
 
