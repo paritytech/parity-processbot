@@ -100,6 +100,27 @@ async fn handle_webhook(
 	let environment = &state.get_ref().environment;
 	let test_repo = &state.get_ref().test_repo;
 
+	match db.read().get("sanity key".as_bytes()) {
+		Ok(Some(_)) => {}
+		Ok(None) => {
+			log::info!("no sanity key in db.  this should only happen once.");
+			match db
+				.write()
+				.put("sanity key".as_bytes(), "sanity check".as_bytes())
+			{
+				Ok(_) => {
+					log::info!("put sanity check in db.");
+				}
+				Err(e) => {
+					log::error!("error putting sanity check in db: {}", e);
+				}
+			}
+		}
+		Err(e) => {
+			log::error!("error reading sanity check from db: {}", e);
+		}
+	}
+
 	match payload {
 		Payload::IssueComment {
 			action: IssueCommentAction::Created,
@@ -408,7 +429,7 @@ async fn handle_webhook(
 			}
 		}
 		Payload::CommitStatus {
-			sha: commit_sha,
+			sha: _commit_sha,
 			state,
 			branches,
 			..
