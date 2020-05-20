@@ -47,8 +47,8 @@ mod tests {
 	#[test]
 	fn test_substrate_commit() {
 		dotenv::dotenv().ok();
-		let installation = dotenv::var("TEST_INSTALLATION_LOGIN")
-			.expect("TEST_INSTALLATION_LOGIN");
+		let installation =
+			dotenv::var("INSTALLATION_LOGIN").expect("INSTALLATION_LOGIN");
 		let private_key_path =
 			dotenv::var("PRIVATE_KEY_PATH").expect("PRIVATE_KEY_PATH");
 		let private_key = std::fs::read(&private_key_path)
