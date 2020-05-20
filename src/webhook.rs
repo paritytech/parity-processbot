@@ -136,12 +136,17 @@ async fn handle_webhook(
 							.await
 						{
 							Ok(pr) => {
+								log::info!("Got pr");
 								match github_bot
 									.status(owner, &repo_name, &pr.head.sha)
 									.await
 									.map(|s| s.state)
 								{
 									Ok(StatusState::Success) => {
+										log::info!(
+											"{} is green; attempting merge.",
+											html_url
+										);
 										try_merge(
 											&github_bot,
 											owner,
@@ -156,6 +161,10 @@ async fn handle_webhook(
 										.await
 									}
 									Ok(StatusState::Pending) => {
+										log::info!(
+											"Auto-merge pending for PR {}",
+											pr.html_url
+										);
 										let m = MergeRequest {
 											sha: pr.head.sha.clone(),
 											owner: owner.to_string(),
@@ -249,6 +258,10 @@ async fn handle_webhook(
 									}
 									Ok(StatusState::Failure)
 									| Ok(StatusState::Error) => {
+										log::info!(
+											"{} failed status checks.",
+											html_url
+										);
 										status_failure(
 											&github_bot,
 											owner,
@@ -632,6 +645,7 @@ async fn try_merge(
 	environment: &str,
 	test_repo: &str,
 ) {
+	log::info!("Trying merge");
 	let core_devs = github_bot
 		.team(owner, "core-devs")
 		.and_then(|team| github_bot.team_members(team.id))
