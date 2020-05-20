@@ -44,7 +44,7 @@ impl GithubBot {
 mod tests {
 	use super::*;
 
-    #[ignore]
+	#[ignore]
 	#[test]
 	fn test_substrate_commit() {
 		dotenv::dotenv().ok();
