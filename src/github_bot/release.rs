@@ -60,11 +60,11 @@ mod tests {
 				.expect("github_bot");
 			let commit = github_bot
 				.substrate_commit_from_polkadot_commit(
-					"paritytech",
-					"nv-block-construction-metrics-2",
+					"76d6a6aa0c573c3a107e94cf954740eb84f1a092",
 				)
-				.await;
-			dbg!(commit);
+				.await
+				.unwrap();
+			assert_eq!(&commit, "e7457b1eb9980596301fe1afd36478a6725157ef");
 		});
 	}
 
