@@ -319,8 +319,9 @@ async fn handle_webhook(
 								log::error!("Error getting PR: {}", e);
 							}
 						}
-					} else if body.to_lowercase().trim()
-						== COMPARE_RELEASE_REQUEST.to_lowercase().trim()
+					} else if repo_name == "polkadot"
+						&& body.to_lowercase().trim()
+							== COMPARE_RELEASE_REQUEST.to_lowercase().trim()
 					{
 						log::info!(
 							"Received diff request for PR {} from user {}",
@@ -346,27 +347,72 @@ async fn handle_webhook(
 											)
 											.await
 										{
-											Ok(rel_tag) => {
-												let link = github_bot.diff_url(
-													owner,
-													&repo_name,
-													&rel_tag.object.sha,
-													&pr.head.sha,
-												);
-												let _ = github_bot
-												.create_issue_comment(
-                                                    owner,
-													&repo_name,
-                                                    number,
-                                                    &link,
-												)
-												.await
-												.map_err(|e| {
-													log::error!(
-                                                        "Error posting comment: {}",
-                                                        e
+											Ok(release_tag) => {
+												let release_substrate_commit =
+													github_bot
+														.substrate_commit_from_polkadot_commit(
+															&release_tag
+																.object
+																.sha,
+														)
+														.await;
+												let branch_substrate_commit =
+													github_bot
+														.substrate_commit_from_polkadot_commit(
+															&pr.head.sha,
+														)
+														.await;
+												if release_substrate_commit
+													.is_ok()
+													&& branch_substrate_commit
+														.is_ok()
+												{
+													let link = github_bot.diff_url(
+                                                        owner,
+                                                        "substrate",
+                                                        &release_substrate_commit.unwrap(),
+                                                        &branch_substrate_commit.unwrap(),
                                                     );
-												});
+													let _ = github_bot
+                                                        .create_issue_comment(
+                                                            owner,
+                                                            &repo_name,
+                                                            number,
+                                                            &link,
+                                                        )
+                                                        .await
+                                                        .map_err(|e| {
+                                                            log::error!(
+                                                                "Error posting comment: {}",
+                                                                e
+                                                            );
+                                                        });
+												} else {
+													if let Err(e) =
+														release_substrate_commit
+													{
+														log::error!("Error getting substrate commit: {}", e);
+													}
+													if let Err(e) =
+														branch_substrate_commit
+													{
+														log::error!("Error getting substrate commit: {}", e);
+													}
+													let _ = github_bot
+                                                        .create_issue_comment(
+                                                            owner,
+                                                            &repo_name,
+                                                            number,
+                                                            "Error getting substrate commit; see logs for details",
+                                                        )
+                                                        .await
+                                                        .map_err(|e| {
+                                                            log::error!(
+                                                                "Error posting comment: {}",
+                                                                e
+                                                            );
+                                                        });
+												}
 											}
 											Err(e) => {
 												log::error!(

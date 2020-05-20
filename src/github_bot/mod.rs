@@ -1,6 +1,4 @@
 use crate::{github, Result};
-use snafu::ResultExt;
-use futures_util::future::FutureExt;
 
 pub mod issue;
 pub mod project;
@@ -81,8 +79,8 @@ impl GithubBot {
 			path = path,
             ref_field = ref_field
 		);
-		let params = serde_json::json!({}); // TODO fix params...
-        self.client.get_with_params(url, params).await
+		let params = serde_json::json!({}); // TODO fix get_with_params...
+		self.client.get_with_params(url, params).await
 	}
 
 	/// Returns a link to a diff.

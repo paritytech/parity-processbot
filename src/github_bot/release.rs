@@ -21,17 +21,15 @@ impl GithubBot {
 
 	pub async fn substrate_commit_from_polkadot_commit(
 		&self,
-		owner: &str,
 		ref_field: &str,
 	) -> Result<String> {
 		let re = Regex::new(
 			r"git\+https://github.com/paritytech/substrate#([0-9a-z]+)",
 		)
-		.unwrap();
-		self.contents(owner, "polkadot", "Cargo.lock", ref_field)
+		.expect("substrate commit regex");
+		self.contents("paritytech", "polkadot", "Cargo.lock", ref_field)
 			.await
 			.and_then(|c| {
-				//             dbg!(&c);
 				base64::decode(&c.content.replace("\n", ""))
 					.context(error::Base64)
 			})
