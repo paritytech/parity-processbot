@@ -640,10 +640,12 @@ async fn try_merge(
 			log::error!("Error getting core devs: {}", e);
 			vec![]
 		});
+	log::info!("Got core devs");
 	let reviews = github_bot.reviews(&pr.url).await.unwrap_or_else(|e| {
 		log::error!("Error getting reviews: {}", e);
 		vec![]
 	});
+	log::info!("Got reviews");
 	match process::get_process(github_bot, owner, repo_name, pr.number).await {
 		Err(e) => {
 			log::error!("Error getting process info: {}", e);
@@ -664,6 +666,7 @@ async fn try_merge(
 			}
 		}
 		Ok(process) => {
+			log::info!("Got process");
 			let mergeable = pr.mergeable.unwrap_or(false);
 			if mergeable {
 				log::info!("{} is mergeable.", pr.html_url);
