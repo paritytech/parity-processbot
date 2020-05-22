@@ -272,7 +272,7 @@ impl Client {
 			.context(error::Http)
 	}
 
-	/// Get a single entry from a resource in GitHub.
+	/// Get a single entry from a resource in GitHub. TODO fix
 	pub async fn get_with_params<'b, I, T, P>(
 		&self,
 		url: I,
