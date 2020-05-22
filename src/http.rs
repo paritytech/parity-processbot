@@ -179,6 +179,7 @@ impl Client {
 				"application/vnd.github.machine-man-preview+json",
 			)
 			.header(header::USER_AGENT, "parity-processbot/0.0.1")
+			.timeout(5)
 			.build()
 			.context(error::Http)?;
 
