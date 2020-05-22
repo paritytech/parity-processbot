@@ -54,7 +54,7 @@ pub async fn webhook(
 ) -> actix_web::Result<impl Responder> {
 	match handle_webhook(req, body, state).await {
 		Err(e) => {
-			log::debug!("{:?}", e);
+			log::error!("{:?}", e);
 			Err(e)
 		}
 		x => x,
@@ -66,13 +66,10 @@ async fn handle_webhook(
 	mut body: web::Payload,
 	state: web::Data<Arc<AppState>>,
 ) -> actix_web::Result<impl Responder> {
-	log::debug!("{:?}", req);
-
 	let mut msg_bytes = web::BytesMut::new();
 	while let Some(item) = body.next().await {
 		msg_bytes.extend_from_slice(&item?);
 	}
-	log::debug!("{:?}", String::from_utf8(msg_bytes.to_vec()));
 
 	let sig = req
 		.headers()
@@ -92,13 +89,10 @@ async fn handle_webhook(
 
 	let payload = serde_json::from_slice::<Payload>(&msg_bytes)
 		.map_err(ErrorBadRequest)?;
-	log::debug!("Valid payload {:?}", payload);
 
 	let db = &state.get_ref().db.write();
 	let github_bot = &state.get_ref().github_bot;
 	let bot_config = &state.get_ref().bot_config;
-	let environment = &state.get_ref().environment;
-	let test_repo = &state.get_ref().test_repo;
 
 	match payload {
 		Payload::IssueComment {
@@ -136,7 +130,6 @@ async fn handle_webhook(
 							.await
 						{
 							Ok(pr) => {
-								log::info!("Got pr");
 								match github_bot
 									.status(owner, &repo_name, &pr.head.sha)
 									.await
@@ -155,8 +148,6 @@ async fn handle_webhook(
 											db,
 											&bot_config,
 											&login,
-											&environment,
-											&test_repo,
 										)
 										.await
 									}
@@ -254,8 +245,6 @@ async fn handle_webhook(
 											&pr.html_url,
 											&pr.head.ref_field,
 											db,
-											&environment,
-											&test_repo,
 										)
 										.await
 									}
@@ -492,8 +481,6 @@ async fn handle_webhook(
 													db,
 													&bot_config,
 													&requested_by,
-													environment,
-													test_repo,
 												)
 												.await
 											}
@@ -570,8 +557,6 @@ async fn handle_webhook(
 										&html_url,
 										&head_ref,
 										db,
-										environment,
-										test_repo,
 									)
 									.await
 								}
@@ -600,9 +585,7 @@ async fn handle_webhook(
 				}
 			}
 		}
-		event => {
-			log::debug!("Received unknown event {:?}", event);
-		}
+		_event => {}
 	}
 	Ok(HttpResponse::Ok())
 }
@@ -615,10 +598,7 @@ async fn try_merge(
 	db: &DB,
 	bot_config: &BotConfig,
 	requested_by: &str,
-	environment: &str,
-	test_repo: &str,
 ) {
-	log::info!("Trying merge");
 	let core_devs = github_bot
 		.team(owner, "core-devs")
 		.and_then(|team| github_bot.team_members(team.id))
@@ -627,12 +607,10 @@ async fn try_merge(
 			log::error!("Error getting core devs: {}", e);
 			vec![]
 		});
-	log::info!("Got core devs");
 	let reviews = github_bot.reviews(&pr.url).await.unwrap_or_else(|e| {
 		log::error!("Error getting reviews: {}", e);
 		vec![]
 	});
-	log::info!("Got reviews");
 	match process::get_process(github_bot, owner, repo_name, pr.number).await {
 		Err(e) => {
 			log::error!("Error getting process info: {}", e);
@@ -651,7 +629,6 @@ async fn try_merge(
 				});
 		}
 		Ok(process) => {
-			log::info!("Got process");
 			let mergeable = pr.mergeable.unwrap_or(false);
 			if mergeable {
 				log::info!("{} is mergeable.", pr.html_url);
@@ -722,7 +699,7 @@ async fn try_merge(
 						owner,
 						repo_name,
 						pr.number,
-						&format!("PR is currently unmergeable."),
+						"PR is currently unmergeable.",
 					)
 					.await
 					.map_err(|e| {
@@ -745,8 +722,6 @@ async fn status_failure(
 	html_url: &str,
 	head_ref: &str,
 	db: &DB,
-	environment: &str,
-	test_repo: &str,
 ) {
 	log::info!("Status failure for PR {}", html_url);
 	// Notify people of merge failure.
