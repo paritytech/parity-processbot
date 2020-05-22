@@ -93,8 +93,8 @@ async fn handle_webhook(
 	let db = &state.get_ref().db.write();
 	let github_bot = &state.get_ref().github_bot;
 	let bot_config = &state.get_ref().bot_config;
-	let environment = &state.get_ref().environment;
-	let test_repo = &state.get_ref().test_repo;
+	let _environment = &state.get_ref().environment;
+	let _test_repo = &state.get_ref().test_repo;
 
 	match payload {
 		Payload::IssueComment {
@@ -150,8 +150,6 @@ async fn handle_webhook(
 											db,
 											&bot_config,
 											&login,
-											&environment,
-											&test_repo,
 										)
 										.await
 									}
@@ -249,8 +247,6 @@ async fn handle_webhook(
 											&pr.html_url,
 											&pr.head.ref_field,
 											db,
-											&environment,
-											&test_repo,
 										)
 										.await
 									}
@@ -487,8 +483,6 @@ async fn handle_webhook(
 													db,
 													&bot_config,
 													&requested_by,
-													environment,
-													test_repo,
 												)
 												.await
 											}
@@ -565,8 +559,6 @@ async fn handle_webhook(
 										&html_url,
 										&head_ref,
 										db,
-										environment,
-										test_repo,
 									)
 									.await
 								}
@@ -608,8 +600,6 @@ async fn try_merge(
 	db: &DB,
 	bot_config: &BotConfig,
 	requested_by: &str,
-	environment: &str,
-	test_repo: &str,
 ) {
 	let core_devs = github_bot
 		.team(owner, "core-devs")
@@ -734,8 +724,6 @@ async fn status_failure(
 	html_url: &str,
 	head_ref: &str,
 	db: &DB,
-	environment: &str,
-	test_repo: &str,
 ) {
 	log::info!("Status failure for PR {}", html_url);
 	// Notify people of merge failure.
