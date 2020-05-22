@@ -1,4 +1,5 @@
 use actix_web::{App, HttpServer};
+use futures_util::future::TryFutureExt;
 use parking_lot::RwLock;
 use rocksdb::DB;
 use snafu::ResultExt;
