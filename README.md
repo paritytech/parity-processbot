@@ -34,50 +34,15 @@ In the repository's root directory. If it is absent Processbot will ignore the r
 
 ##### `Process.toml` *may* contain:
 
-- `[features]`
-  - e.g. `auto_merge = false`
-  - the only TOML key that shouldn't match a project name
-  - list of bot features to be enabled/disabled for the repository
-  - see *Features* below for details
-
 - `delegated_reviewer = "github_user_login"`
   - acts as the `owner`, intended as a stand-in when the `owner` will be unavailable for long periods
 
-- `backlog = "column_name"`
-  - project column to which new issues should be attached
-  - will override the organization-wide value specified in `.env` (see below)
-
-### Features
-- `auto_merge`
-  - comment `bot merge` on a PR to automatically merge it once checks pass (if
-    sufficient approvals have been given)
-  - `bot cancel` will cancel a pending `bot merge`
-  - defaults to enabled
-- `issue_project`
-  - ensure all issues have projects attached
-  - send notifications when they do not
-  - eventually close issues without projects
-  - defaults to disabled
-- `issue_addressed`
-  - ensure all PRs explicitly address an issue
-  - send notifications when they do not
-  - eventually close PRs that do not address an issue
-  - PRs authored by whitelisted developers are exempt
-  - defaults to disabled
-- `issue_assigned`
-  - ensure the author of a PR addressing an issue is also assigned to that issue
-  - send notifications when they do not
-  - eventually close PRs that do not address an issue
-  - automatically re-assign relevant issues to whitelisted PR authors
-  - defaults to disabled
-- `review_requests`
-  - automatically request PR reviews from the project owner/delegated-reviewer 
-  - remind requested reviewers to complete their review
-  - post public review requests to the project channel when necessary
-  - defaults to disabled
-- `status_notifications`
-  - automatically notify PR authors when CI fails
-  - defaults to disabled
+### Commands (post as a comment) 
+- `bot merge` to automatically merge it once checks pass (if approvals have been
+  given)
+- `bot cancel` to cancel a pending `bot merge`
+- `bot compare substrate` in a polkadot PR to see a diff between current
+  branch's substrate and the latest polkadot release substrate.
 
 ## Processbot Configuration
 
