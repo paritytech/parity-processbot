@@ -8,4 +8,4 @@ RUN set -ev; \
     apt-get install -y --no-install-recommends \
         pkg-config curl ca-certificates libssl-dev
 
-CMD ["RUST_LOG=trace parity-processbot"]
+CMD ["parity-processbot"]
