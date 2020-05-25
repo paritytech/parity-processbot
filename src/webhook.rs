@@ -438,7 +438,6 @@ async fn handle_webhook(
 		}
 		Payload::CommitStatus {
 			sha: _commit_sha,
-			state,
 			branches,
 			..
 		} => {
@@ -460,8 +459,14 @@ async fn handle_webhook(
 								html_url,
 								requested_by,
 							} = m;
-							match state {
-								StatusState::Success => {
+							match github_bot
+								.status(&owner, &repo_name, &sha)
+								.await
+							{
+								Ok(CombinedStatus {
+									state: StatusState::Success,
+									..
+								}) => {
 									// Head sha of branch should not have changed since request was
 									// made.
 									if &sha == head_sha {
@@ -544,7 +549,14 @@ async fn handle_webhook(
                                             });
 									}
 								}
-								StatusState::Failure | StatusState::Error => {
+								Ok(CombinedStatus {
+									state: StatusState::Failure,
+									..
+								})
+								| Ok(CombinedStatus {
+									state: StatusState::Error,
+									..
+								}) => {
 									log::info!(
 										"{} failed status checks.",
 										html_url
@@ -560,8 +572,40 @@ async fn handle_webhook(
 									)
 									.await
 								}
-								StatusState::Pending => {
+								Ok(CombinedStatus {
+									state: StatusState::Pending,
+									..
+								}) => {
 									log::info!("{} is pending.", html_url);
+								}
+								Err(e) => {
+									log::error!(
+										"Error getting combined status: {}",
+										e
+									);
+									// Notify people of merge failure.
+									let _ = github_bot.create_issue_comment(
+                                        &owner,
+                                        &repo_name,
+                                        number,
+                                        "Auto-merge failed due to network error; see logs for details.",
+                                    )
+                                    .await
+                                    .map_err(|e| {
+                                        log::error!(
+                                            "Error posting comment: {}",
+                                            e
+                                        );
+                                    });
+									// Clean db.
+									let _ = db.delete(
+                                        head_ref.as_bytes(),
+                                    ).map_err(|e| {
+                                        log::error!(
+                                            "Error deleting merge request from db: {}",
+                                            e
+                                        );
+                                    });
 								}
 							}
 						}
