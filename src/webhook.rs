@@ -462,7 +462,7 @@ async fn handle_webhook(
 							let status = github_bot
 								.status(&owner, &repo_name, &sha)
 								.await;
-							log::info!("{}", status);
+							log::info!("{:?}", status);
 							match status {
 								Ok(CombinedStatus {
 									state: StatusState::Success,
