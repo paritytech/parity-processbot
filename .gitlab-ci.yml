@@ -124,5 +124,7 @@ check-merge:
   stage:                            .post
   image:                            parity/tools:latest
   script:
-    - echo "block merge"
-    - exit 1
+    - echo "test merge"
+    - sleep 30
+    - exit 0
+  allow_failure:                    false
