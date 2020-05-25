@@ -67,7 +67,6 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
 	// update github_to_matrix on another thread
 	std::thread::spawn(move || loop {
-		//		log::info!("Updating Bamboo data");
 		log::info!("Heartbeat");
 		/*
 		{
