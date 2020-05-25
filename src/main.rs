@@ -65,7 +65,6 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 	let config_clone = config.clone();
 	//	let db_clone = db.clone();
 
-	// update github_to_matrix on another thread
 	std::thread::spawn(move || loop {
 		log::info!("Heartbeat");
 		/*
