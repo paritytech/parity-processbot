@@ -657,6 +657,7 @@ async fn try_merge(
 		log::error!("Error getting reviews: {}", e);
 		vec![]
 	});
+	let mut tidy = true;
 	match process::get_process(github_bot, owner, repo_name, pr.number).await {
 		Err(e) => {
 			log::error!("Error getting process info: {}", e);
@@ -708,6 +709,7 @@ async fn try_merge(
 						.await
 						.map_err(|e| {
 							log::error!("Error merging: {}", e);
+							tidy = false;
 						});
 				} else {
 					if process.is_empty() {
@@ -754,10 +756,12 @@ async fn try_merge(
 			}
 		}
 	}
-	// Clean db.
-	let _ = db.delete(pr.head.ref_field.as_bytes()).map_err(|e| {
-		log::error!("Error deleting from db: {}", e);
-	});
+	if tidy {
+		// Clean db.
+		let _ = db.delete(pr.head.ref_field.as_bytes()).map_err(|e| {
+			log::error!("Error deleting from db: {}", e);
+		});
+	}
 }
 
 async fn status_failure(
