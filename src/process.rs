@@ -15,7 +15,7 @@ pub async fn get_process(
 	issue_number: i64,
 ) -> Result<CombinedProcessInfo> {
 	let process = github_bot
-		.contents(owner, repo_name, PROCESS_FILE_NAME)
+		.contents(owner, repo_name, PROCESS_FILE_NAME, "master")
 		.await
 		.and_then(process::process_from_contents)?;
 

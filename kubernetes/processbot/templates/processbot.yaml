@@ -72,6 +72,8 @@ spec:
                       key: WEBHOOK_SECRET
             - name: RUST_BACKTRACE
               value: full
+            - name: RUST_LOG
+              value: trace
             - name: INSTALLATION_LOGIN
               value: {{ .Values.orgName }}
             - name: PRIVATE_KEY_PATH

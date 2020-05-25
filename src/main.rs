@@ -46,36 +46,43 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
 	// the bamboo queries can take a long time so only wait for it
 	// on launch. subsequently update in the background.
-	if db.read().get(BAMBOO_DATA_KEY).ok().flatten().is_none() {
-		log::info!("Waiting for Bamboo data (may take a few minutes)");
-		match bamboo::github_to_matrix(&config.bamboo_token) {
-			Ok(h) => db
-				.write()
-				.put(
-					BAMBOO_DATA_KEY,
-					bincode::serialize(&h).expect("serialize bamboo"),
-				)
-				.expect("put bamboo"),
-			Err(e) => log::error!("Bamboo error: {}", e),
+	{
+		let db_write = db.write();
+		if db_write.get(BAMBOO_DATA_KEY).ok().flatten().is_none() {
+			log::info!("Waiting for Bamboo data (may take a few minutes)");
+			match bamboo::github_to_matrix(&config.bamboo_token) {
+				Ok(h) => db_write
+					.put(
+						BAMBOO_DATA_KEY,
+						bincode::serialize(&h).expect("serialize bamboo"),
+					)
+					.expect("put bamboo"),
+				Err(e) => log::error!("Bamboo error: {}", e),
+			}
 		}
 	}
 
 	let config_clone = config.clone();
-	let db_clone = db.clone();
+	//	let db_clone = db.clone();
 
-	// update github_to_matrix on another thread
 	std::thread::spawn(move || loop {
-		log::info!("Updating Bamboo data");
-		match bamboo::github_to_matrix(&config_clone.bamboo_token) {
-			Ok(h) => db_clone
-				.write()
-				.put(
-					BAMBOO_DATA_KEY,
-					bincode::serialize(&h).expect("serialize bamboo"),
-				)
-				.expect("put bamboo"),
-			Err(e) => log::error!("Bamboo error: {}", e),
+		log::info!("Heartbeat");
+		/*
+		{
+			let db_write = db_clone.write();
+			match bamboo::github_to_matrix(&config_clone.bamboo_token) {
+				Ok(h) => {
+					db_write
+						.put(
+							BAMBOO_DATA_KEY,
+							bincode::serialize(&h).expect("serialize bamboo"),
+						)
+						.expect("put bamboo");
+				},
+				Err(e) => log::error!("Bamboo error: {}", e),
+			}
 		}
+		*/
 		std::thread::sleep(Duration::from_secs(config_clone.bamboo_tick_secs));
 	});
 

@@ -11,7 +11,7 @@ use snafu::{OptionExt, ResultExt};
 
 #[derive(Default)]
 pub struct Client {
-	client: reqwest::Client,
+	pub client: reqwest::Client,
 	private_key: Vec<u8>,
 	installation_login: String,
 }
@@ -179,6 +179,7 @@ impl Client {
 				"application/vnd.github.machine-man-preview+json",
 			)
 			.header(header::USER_AGENT, "parity-processbot/0.0.1")
+			.timeout(std::time::Duration::from_secs(5))
 			.build()
 			.context(error::Http)?;
 
@@ -272,7 +273,7 @@ impl Client {
 			.context(error::Http)
 	}
 
-	/// Get a single entry from a resource in GitHub.
+	/// Get a single entry from a resource in GitHub. TODO fix
 	pub async fn get_with_params<'b, I, T, P>(
 		&self,
 		url: I,
