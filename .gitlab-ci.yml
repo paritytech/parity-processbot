@@ -119,3 +119,10 @@ deploy-production:
     - kubernetes-parity-build
   only:
     - /^v[0-9]+\.[0-9]+.*$/
+
+check-merge:
+  stage:                            .post
+  image:                            parity/tools:latest
+  script:
+    - echo "block merge"
+    - exit 1
