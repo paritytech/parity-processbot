@@ -459,14 +459,16 @@ async fn handle_webhook(
 								html_url,
 								requested_by,
 							} = m;
-							match github_bot
+							let status = github_bot
 								.status(&owner, &repo_name, &sha)
-								.await
-							{
+								.await;
+							log::info!("{}", status);
+							match status {
 								Ok(CombinedStatus {
 									state: StatusState::Success,
 									..
 								}) => {
+									log::info!("Combined status is success");
 									// Head sha of branch should not have changed since request was
 									// made.
 									if &sha == head_sha {
