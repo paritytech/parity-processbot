@@ -772,6 +772,7 @@ pub enum CheckRunConclusion {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub struct CheckRun {
 	status: CheckRunStatus,
 	conclusion: Option<String>,
@@ -792,7 +793,7 @@ pub struct Branch {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(untagged)]
+#[serde(untagged, rename_all = "snake_case")]
 pub enum Payload {
 	IssueComment {
 		action: IssueCommentAction,
