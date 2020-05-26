@@ -677,11 +677,37 @@ async fn handle_webhook(
 				}
 			}
 		}
-		//		Payload::CheckRun { action, check_run, repository, .. } => {
-		//			log::info!("{:?}", action);
-		//			log::info!("{:?}", action);
-		//			log::info!("{:?}", action);
-		//		}
+		Payload::CheckRun {
+			action,
+			check_run:
+				CheckRun {
+					status,
+					conclusion,
+					head_sha,
+					..
+				},
+			repository: Repository {
+				html_url: repo_url, ..
+			},
+			..
+		} => {
+			log::info!("CHECK RUN");
+			if let Some(owner) = GithubBot::owner_from_html_url(&repo_url) {
+				if let Some(repo_name) =
+					repo_url.rsplit('/').next().map(|s| s.to_string())
+				{
+					dbg!(&action);
+					dbg!(&repo_name);
+					dbg!(&status);
+					dbg!(&conclusion);
+					dbg!(&head_sha);
+					let checks = github_bot
+						.check_runs(&owner, &repo_name, &head_sha)
+						.await;
+					log::info!("{:?}", checks);
+				}
+			}
+		}
 		event => {
 			log::info!("{:?}", event);
 		}

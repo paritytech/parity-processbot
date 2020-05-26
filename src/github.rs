@@ -773,10 +773,17 @@ pub enum CheckRunConclusion {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+pub struct CheckRuns {
+	total_count: i64,
+	check_runs: Vec<CheckRun>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub struct CheckRun {
-	status: String,
-	conclusion: Option<String>,
-	head_sha: String,
+	pub status: String,
+	pub conclusion: Option<String>,
+	pub head_sha: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -811,5 +818,6 @@ pub enum Payload {
 	CheckRun {
 		action: CheckRunAction,
 		check_run: CheckRun,
+		repository: Repository,
 	},
 }
