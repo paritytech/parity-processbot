@@ -774,8 +774,17 @@ pub enum CheckRunConclusion {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct CheckRuns {
-	total_count: i64,
-	check_runs: Vec<CheckRun>,
+	pub total_count: i64,
+	pub check_runs: Vec<CheckRun>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct CheckRunPR {
+	pub id: i64,
+	pub number: i64,
+	pub head: Head,
+	pub base: Base,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -784,6 +793,7 @@ pub struct CheckRun {
 	pub status: String,
 	pub conclusion: Option<String>,
 	pub head_sha: String,
+	pub pull_requests: Vec<CheckRunPR>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
