@@ -828,6 +828,5 @@ pub enum Payload {
 	CheckRun {
 		action: CheckRunAction,
 		check_run: CheckRun,
-		repository: Repository,
 	},
 }
