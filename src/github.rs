@@ -774,7 +774,7 @@ pub enum CheckRunConclusion {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct CheckRun {
-	status: CheckRunStatus,
+	status: String,
 	conclusion: Option<String>,
 	head_sha: String,
 }
