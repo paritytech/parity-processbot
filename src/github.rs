@@ -359,22 +359,18 @@ pub struct IssuePullRequest {
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Head {
-	pub label: String,
 	#[serde(rename = "ref")]
 	pub ref_field: String,
 	pub sha: String,
-	pub user: User,
-	pub repo: Option<Repository>,
+	pub repo: HeadRepo,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Base {
-	pub label: String,
 	#[serde(rename = "ref")]
 	pub ref_field: String,
 	pub sha: String,
-	pub user: User,
-	pub repo: Option<Repository>,
+	pub repo: HeadRepo,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -772,21 +768,44 @@ pub enum CheckRunConclusion {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CheckRun {
-	status: CheckRunStatus,
-	conclusion: CheckRunConclusion,
+#[serde(rename_all = "snake_case")]
+pub struct CheckRuns {
+	pub total_count: i64,
+	pub check_runs: Vec<CheckRun>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "snake_case")]
+pub struct CheckRunPR {
+	pub id: i64,
+	pub number: i64,
+	pub head: Head,
+	pub base: Base,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HeadRepo {
+	id: i64,
+	url: String,
+	name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct CheckRun {
+	pub status: String,
+	pub conclusion: Option<String>,
+	pub head_sha: String,
+	pub pull_requests: Vec<CheckRunPR>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BranchCommit {
 	pub sha: String,
 	pub url: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct Branch {
 	pub name: String,
 	pub commit: BranchCommit,
@@ -794,7 +813,7 @@ pub struct Branch {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(untagged, rename_all = "camelCase")]
+#[serde(untagged, rename_all = "snake_case")]
 pub enum Payload {
 	IssueComment {
 		action: IssueCommentAction,
