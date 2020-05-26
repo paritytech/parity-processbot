@@ -87,9 +87,6 @@ async fn handle_webhook(
 	)
 	.map_err(ErrorBadRequest)?;
 
-	let payload_str = String::from_utf8_lossy(&msg_bytes);
-	dbg!(&payload_str);
-
 	let payload = serde_json::from_slice::<Payload>(&msg_bytes)
 		.map_err(ErrorBadRequest)?;
 

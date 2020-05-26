@@ -769,14 +769,13 @@ pub enum CheckRunConclusion {
 	TimedOut,
 	ActionRequired,
 	Stale,
-	Null,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CheckRun {
-	status: CheckRunStatus,
-	conclusion: CheckRunConclusion,
 	name: String,
+	status: CheckRunStatus,
+	conclusion: Option<CheckRunConclusion>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
