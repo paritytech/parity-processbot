@@ -773,8 +773,9 @@ pub enum CheckRunConclusion {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CheckRun {
-	status: String,
-	conclusion: Option<String>,
+	status: CheckRunStatus,
+	conclusion: Option<CheckRunConclusion>,
+	head_sha: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
