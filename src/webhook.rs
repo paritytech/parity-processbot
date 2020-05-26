@@ -266,27 +266,27 @@ async fn handle_webhook(
 														Err(e) => {
 															log::error!("Error serializing merge request: {}", e);
 															let _ = github_bot.create_issue_comment(
-                                                        owner,
-                                                        &repo_name,
-                                                        pr.number,
-                                                        "Auto-merge failed due to serialization error; see logs for details.",
-                                                    )
-                                                    .await
-                                                    .map_err(|e| {
-                                                        log::error!(
-                                                            "Error posting comment: {}",
-                                                            e
-                                                        );
-                                                    });
+                                                                owner,
+                                                                &repo_name,
+                                                                pr.number,
+                                                                "Auto-merge failed due to serialization error; see logs for details.",
+                                                            )
+                                                            .await
+                                                            .map_err(|e| {
+                                                                log::error!(
+                                                                    "Error posting comment: {}",
+                                                                    e
+                                                                );
+                                                            });
 														}
 													}
 												}
 											}
 											Err(e) => {
 												log::error!(
-											"Error getting check runs: {}",
-											e
-										);
+                                                    "Error getting check runs: {}",
+                                                    e
+                                                );
 											}
 										}
 									}
@@ -355,18 +355,18 @@ async fn handle_webhook(
 											Err(e) => {
 												log::error!("Error serializing merge request: {}", e);
 												let _ = github_bot.create_issue_comment(
-                                                        owner,
-                                                        &repo_name,
-                                                        pr.number,
-                                                        "Auto-merge failed due to serialization error; see logs for details.",
-                                                    )
-                                                    .await
-                                                    .map_err(|e| {
-                                                        log::error!(
-                                                            "Error posting comment: {}",
-                                                            e
-                                                        );
-                                                    });
+                                                    owner,
+                                                    &repo_name,
+                                                    pr.number,
+                                                    "Auto-merge failed due to serialization error; see logs for details.",
+                                                )
+                                                .await
+                                                .map_err(|e| {
+                                                    log::error!(
+                                                        "Error posting comment: {}",
+                                                        e
+                                                    );
+                                                });
 											}
 										}
 									}
@@ -394,27 +394,27 @@ async fn handle_webhook(
 										);
 										// Notify people of merge failure.
 										let _ = github_bot.create_issue_comment(
-                                                        owner,
-                                                        &repo_name,
-                                                        pr.number,
-                                                        "Auto-merge failed due to network error; see logs for details.",
-                                                    )
-                                                    .await
-                                                    .map_err(|e| {
-                                                        log::error!(
-                                                            "Error posting comment: {}",
-                                                            e
-                                                        );
-                                                    });
+                                            owner,
+                                            &repo_name,
+                                            pr.number,
+                                            "Auto-merge failed due to network error; see logs for details.",
+                                        )
+                                        .await
+                                        .map_err(|e| {
+                                            log::error!(
+                                                "Error posting comment: {}",
+                                                e
+                                            );
+                                        });
 										// Clean db.
 										let _ = db.delete(
-                                                        pr.head.sha.as_bytes(),
-                                                    ).map_err(|e| {
-                                                        log::error!(
-                                                            "Error deleting merge request from db: {}",
-                                                            e
-                                                        );
-                                                    });
+                                            pr.head.sha.as_bytes(),
+                                        ).map_err(|e| {
+                                            log::error!(
+                                                "Error deleting merge request from db: {}",
+                                                e
+                                            );
+                                        });
 									}
 								}
 							}
