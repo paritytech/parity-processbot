@@ -631,10 +631,10 @@ async fn handle_webhook(
 				}
 			}
 		}
-		obj => {
-			log::info!("OTHER PAYLOAD");
-			dbg!(&obj);
+		Payload::CheckRun { action } => {
+			log::info!("{:?}", action);
 		}
+		_event => {}
 	}
 	Ok(HttpResponse::Ok())
 }

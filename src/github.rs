@@ -812,8 +812,8 @@ pub enum Payload {
 		branches: Vec<Branch>,
 	},
 	CheckRun {
-		action: CheckRunAction,
-		check_run: CheckRun,
-		repository: Repository,
+		action: String,
+		//		check_run: CheckRun,
+		//		repository: Repository,
 	},
 }
