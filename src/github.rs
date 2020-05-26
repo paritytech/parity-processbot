@@ -773,9 +773,8 @@ pub enum CheckRunConclusion {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CheckRun {
-	name: String,
-	status: CheckRunStatus,
-	conclusion: Option<CheckRunConclusion>,
+	status: String,
+	conclusion: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -810,6 +809,5 @@ pub enum Payload {
 	CheckRun {
 		action: CheckRunAction,
 		check_run: CheckRun,
-		repository: Repository,
 	},
 }

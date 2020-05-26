@@ -301,6 +301,20 @@ async fn handle_webhook(
 									"Deleting merge request for branch {}",
 									&pr.head.ref_field
 								);
+								let _ = github_bot
+									.create_issue_comment(
+										owner,
+										&repo_name,
+										pr.number,
+										"Merge cancelled.",
+									)
+									.await
+									.map_err(|e| {
+										log::error!(
+											"Error posting comment: {}",
+											e
+										);
+									});
 								// Clean db.
 								let _ = db.delete(
                                     pr.head.ref_field.as_bytes(),
