@@ -94,6 +94,7 @@ async fn handle_webhook(
 	let github_bot = &state.get_ref().github_bot;
 	let bot_config = &state.get_ref().bot_config;
 
+	// log payload
 	dbg!(&payload);
 
 	match payload {
