@@ -87,6 +87,9 @@ async fn handle_webhook(
 	)
 	.map_err(ErrorBadRequest)?;
 
+	let payload_str = String::from_utf8_lossy(&msg_bytes);
+	dbg!(&payload_str);
+
 	let payload = serde_json::from_slice::<Payload>(&msg_bytes)
 		.map_err(ErrorBadRequest)?;
 
@@ -278,6 +281,38 @@ async fn handle_webhook(
                                         });
 									}
 								}
+							}
+							Err(e) => {
+								log::error!("Error getting PR: {}", e);
+							}
+						}
+					} else if body.to_lowercase().trim()
+						== AUTO_MERGE_CANCEL.to_lowercase().trim()
+					{
+						log::info!(
+							"Received merge cancel for PR {} from user {}",
+							html_url,
+							login
+						);
+						// Fetch the pr to get all fields (eg. mergeable).
+						match github_bot
+							.pull_request(owner, &repo_name, number)
+							.await
+						{
+							Ok(pr) => {
+								log::info!(
+									"Deleting merge request for branch {}",
+									&pr.head.ref_field
+								);
+								// Clean db.
+								let _ = db.delete(
+                                    pr.head.ref_field.as_bytes(),
+                                ).map_err(|e| {
+                                    log::error!(
+                                        "Error deleting merge request from db: {}",
+                                        e
+                                    );
+                                });
 							}
 							Err(e) => {
 								log::error!("Error getting PR: {}", e);
@@ -631,10 +666,14 @@ async fn handle_webhook(
 				}
 			}
 		}
-		Payload::CheckRun { action } => {
-			log::info!("{:?}", action);
+		//		Payload::CheckRun { action, check_run, repository, .. } => {
+		//			log::info!("{:?}", action);
+		//			log::info!("{:?}", action);
+		//			log::info!("{:?}", action);
+		//		}
+		event => {
+			log::info!("{:?}", event);
 		}
-		_event => {}
 	}
 	Ok(HttpResponse::Ok())
 }

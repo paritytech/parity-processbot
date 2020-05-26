@@ -773,7 +773,6 @@ pub enum CheckRunConclusion {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct CheckRun {
 	status: CheckRunStatus,
 	conclusion: CheckRunConclusion,
@@ -781,14 +780,12 @@ pub struct CheckRun {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct BranchCommit {
 	pub sha: String,
 	pub url: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct Branch {
 	pub name: String,
 	pub commit: BranchCommit,
@@ -796,7 +793,7 @@ pub struct Branch {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(untagged, rename_all = "camelCase")]
+#[serde(untagged)]
 pub enum Payload {
 	IssueComment {
 		action: IssueCommentAction,
@@ -812,8 +809,8 @@ pub enum Payload {
 		branches: Vec<Branch>,
 	},
 	CheckRun {
-		action: String,
-		//		check_run: CheckRun,
-		//		repository: Repository,
+		action: CheckRunAction,
+		check_run: CheckRun,
+		repository: Repository,
 	},
 }
