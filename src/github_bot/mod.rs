@@ -46,7 +46,7 @@ impl GithubBot {
 			.await
 	}
 
-	/// Returns statuses associated with a pull request.
+	/// Returns statuses for a reference.
 	pub async fn status(
 		&self,
 		owner: &str,
@@ -55,6 +55,23 @@ impl GithubBot {
 	) -> Result<github::CombinedStatus> {
 		let url = format!(
 			"{base_url}/repos/{owner}/{repo}/commits/{sha}/status",
+			base_url = Self::BASE_URL,
+			owner = owner,
+			repo = repo_name,
+			sha = sha
+		);
+		self.client.get(url).await
+	}
+
+	/// Returns check runs associated for a reference.
+	pub async fn check_runs(
+		&self,
+		owner: &str,
+		repo_name: &str,
+		sha: &str,
+	) -> Result<github::CheckRuns> {
+		let url = format!(
+			"{base_url}/repos/{owner}/{repo}/commits/{sha}/check-runs",
 			base_url = Self::BASE_URL,
 			owner = owner,
 			repo = repo_name,

@@ -29,12 +29,12 @@ pub struct AppState {
 #[derive(Debug, Serialize, Deserialize)]
 #[repr(C)]
 pub struct MergeRequest {
-	sha: String,
 	owner: String,
 	repo_name: String,
 	number: i64,
 	html_url: String,
 	requested_by: String,
+	branch: String,
 }
 
 fn verify(
@@ -136,20 +136,159 @@ async fn handle_webhook(
 									.map(|s| s.state)
 								{
 									Ok(StatusState::Success) => {
-										log::info!(
-											"{} is green; attempting merge.",
-											html_url
+										log::info!("{} is green.", html_url);
+										let checks = github_bot
+											.check_runs(
+												&owner,
+												&repo_name,
+												&pr.head.sha,
+											)
+											.await;
+										log::info!("{:?}", checks);
+										match checks {
+											Ok(checks) => {
+												if checks.check_runs.iter().all(
+													|r| {
+														r.conclusion
+															== Some(
+																"success"
+																	.to_string(
+																	),
+															)
+													},
+												) {
+													try_merge(
+														&github_bot,
+														owner,
+														&repo_name,
+														&pr,
+														db,
+														&bot_config,
+														&login,
+													)
+													.await
+												} else if checks
+													.check_runs
+													.iter()
+													.all(|r| {
+														r.status
+															== "completed"
+																.to_string()
+													}) {
+													log::info!(
+												"{} checks were unsuccessful.",
+												html_url
+											);
+													// Notify people of merge failure.
+													let _ = github_bot.create_issue_comment(
+                                                owner,
+                                                &repo_name,
+                                                pr.number,
+                                                "Checks were unsuccessful; cancelling merge.",
+                                            )
+                                            .await
+                                            .map_err(|e| {
+                                                log::error!(
+                                                    "Error posting comment: {}",
+                                                    e
+                                                );
+                                            });
+												} else {
+													log::info!(
+														"{} checks incomplete.",
+														html_url
+													);
+													let m = MergeRequest {
+														owner: owner
+															.to_string(),
+														repo_name: repo_name
+															.clone(),
+														number: pr.number,
+														html_url: pr
+															.html_url
+															.clone(),
+														requested_by: login,
+														branch: pr
+															.head
+															.ref_field
+															.clone(),
+													};
+													log::info!(
+											"Serializing merge request: {:?}",
+											m
 										);
-										try_merge(
-											&github_bot,
-											owner,
-											&repo_name,
-											&pr,
-											db,
-											&bot_config,
-											&login,
-										)
-										.await
+													match bincode::serialize(&m)
+													{
+														Ok(bytes) => {
+															log::info!("Writing merge request to db (head ref: {})", pr.head.ref_field);
+															match db.put(
+																pr.head
+																	.sha
+																	.trim()
+																	.as_bytes(),
+																bytes,
+															) {
+																Ok(_) => {
+																	log::info!("Waiting for commit status...");
+																	let _ = github_bot
+                                                            .create_issue_comment(
+                                                                owner,
+                                                                &repo_name,
+                                                                pr.number,
+                                                                "Waiting for commit status...",
+                                                            )
+                                                            .await
+                                                            .map_err(|e| {
+                                                                log::error!(
+                                                                    "Error posting comment: {}",
+                                                                    e
+                                                                );
+                                                            });
+																}
+																Err(e) => {
+																	log::error!("Error adding merge request to db: {}", e);
+																	let _ = github_bot.create_issue_comment(
+                                                            owner,
+                                                            &repo_name,
+                                                            pr.number,
+                                                            "Auto-merge failed due to db error; see logs for details.",
+                                                        )
+                                                        .await
+                                                        .map_err(|e| {
+                                                            log::error!(
+                                                                "Error posting comment: {}",
+                                                                e
+                                                            );
+                                                        });
+																}
+															}
+														}
+														Err(e) => {
+															log::error!("Error serializing merge request: {}", e);
+															let _ = github_bot.create_issue_comment(
+                                                        owner,
+                                                        &repo_name,
+                                                        pr.number,
+                                                        "Auto-merge failed due to serialization error; see logs for details.",
+                                                    )
+                                                    .await
+                                                    .map_err(|e| {
+                                                        log::error!(
+                                                            "Error posting comment: {}",
+                                                            e
+                                                        );
+                                                    });
+														}
+													}
+												}
+											}
+											Err(e) => {
+												log::error!(
+											"Error getting check runs: {}",
+											e
+										);
+											}
+										}
 									}
 									Ok(StatusState::Pending) => {
 										log::info!(
@@ -157,12 +296,12 @@ async fn handle_webhook(
 											pr.html_url
 										);
 										let m = MergeRequest {
-											sha: pr.head.sha.clone(),
 											owner: owner.to_string(),
 											repo_name: repo_name.clone(),
 											number: pr.number,
 											html_url: pr.html_url.clone(),
 											requested_by: login,
+											branch: pr.head.ref_field.clone(),
 										};
 										log::info!(
 											"Serializing merge request: {:?}",
@@ -173,7 +312,7 @@ async fn handle_webhook(
 												log::info!("Writing merge request to db (head ref: {})", pr.head.ref_field);
 												match db.put(
 													pr.head
-														.ref_field
+														.sha
 														.trim()
 														.as_bytes(),
 													bytes,
@@ -243,7 +382,7 @@ async fn handle_webhook(
 											&repo_name,
 											pr.number,
 											&pr.html_url,
-											&pr.head.ref_field,
+											&pr.head.sha,
 											db,
 										)
 										.await
@@ -255,29 +394,75 @@ async fn handle_webhook(
 										);
 										// Notify people of merge failure.
 										let _ = github_bot.create_issue_comment(
-                                                owner,
-                                                &repo_name,
-                                                pr.number,
-                                                "Auto-merge failed due to network error; see logs for details.",
-                                            )
-                                            .await
-                                            .map_err(|e| {
-                                                log::error!(
-                                                    "Error posting comment: {}",
-                                                    e
-                                                );
-                                            });
+                                                        owner,
+                                                        &repo_name,
+                                                        pr.number,
+                                                        "Auto-merge failed due to network error; see logs for details.",
+                                                    )
+                                                    .await
+                                                    .map_err(|e| {
+                                                        log::error!(
+                                                            "Error posting comment: {}",
+                                                            e
+                                                        );
+                                                    });
 										// Clean db.
 										let _ = db.delete(
-                                            pr.head.ref_field.as_bytes(),
-                                        ).map_err(|e| {
-                                            log::error!(
-                                                "Error deleting merge request from db: {}",
-                                                e
-                                            );
-                                        });
+                                                        pr.head.sha.as_bytes(),
+                                                    ).map_err(|e| {
+                                                        log::error!(
+                                                            "Error deleting merge request from db: {}",
+                                                            e
+                                                        );
+                                                    });
 									}
 								}
+							}
+							Err(e) => {
+								log::error!("Error getting PR: {}", e);
+							}
+						}
+					} else if body.to_lowercase().trim()
+						== AUTO_MERGE_CANCEL.to_lowercase().trim()
+					{
+						log::info!(
+							"Received merge cancel for PR {} from user {}",
+							html_url,
+							login
+						);
+						// Fetch the pr to get all fields (eg. mergeable).
+						match github_bot
+							.pull_request(owner, &repo_name, number)
+							.await
+						{
+							Ok(pr) => {
+								log::info!(
+									"Deleting merge request for branch {}",
+									&pr.head.ref_field
+								);
+								let _ = github_bot
+									.create_issue_comment(
+										owner,
+										&repo_name,
+										pr.number,
+										"Merge cancelled.",
+									)
+									.await
+									.map_err(|e| {
+										log::error!(
+											"Error posting comment: {}",
+											e
+										);
+									});
+								// Clean db.
+								let _ = db.delete(
+                                    pr.head.sha.as_bytes(),
+                                ).map_err(|e| {
+                                    log::error!(
+                                        "Error deleting merge request from db: {}",
+                                        e
+                                    );
+                                });
 							}
 							Err(e) => {
 								log::error!("Error getting PR: {}", e);
@@ -437,7 +622,7 @@ async fn handle_webhook(
 			}
 		}
 		Payload::CommitStatus {
-			sha: _commit_sha,
+			sha: commit_sha,
 			branches,
 			..
 		} => {
@@ -447,144 +632,180 @@ async fn handle_webhook(
 				..
 			} in &branches
 			{
-				match db.get(head_ref.trim().as_bytes()) {
+				match db.get(commit_sha.trim().as_bytes()) {
 					Ok(Some(b)) => match bincode::deserialize(&b) {
 						Ok(m) => {
 							log::info!("Deserialized merge request: {:?}", m);
 							let MergeRequest {
-								sha,
 								owner,
 								repo_name,
 								number,
 								html_url,
 								requested_by,
+								branch,
 							} = m;
-							let status = github_bot
-								.status(&owner, &repo_name, &sha)
+							if head_ref == &branch {
+								checks_and_status(
+									github_bot,
+									&owner,
+									&repo_name,
+									&commit_sha,
+									&head_sha,
+									number,
+									&html_url,
+									db,
+									bot_config,
+									&requested_by,
+								)
 								.await;
-							log::info!("{:?}", status);
-							match status {
-								Ok(CombinedStatus {
-									state: StatusState::Success,
-									..
-								}) => {
-									log::info!("Combined status is success");
-									// Head sha of branch should not have changed since request was
-									// made.
-									if &sha == head_sha {
-										match github_bot
-											.pull_request(
-												&owner, &repo_name, number,
-											)
-											.await
-										{
-											Ok(pr) => {
-												log::info!("{} is green; attempting merge.", html_url);
-												try_merge(
-													&github_bot,
-													&owner,
-													&repo_name,
-													&pr,
-													db,
-													&bot_config,
-													&requested_by,
-												)
-												.await
-											}
-											Err(e) => {
-												log::error!(
-													"Error getting PR: {}",
-													e
-												);
-												// Notify people of merge failure.
-												let _ = github_bot.create_issue_comment(
-                                                    &owner,
-                                                    &repo_name,
-                                                    number,
-                                                    "Auto-merge failed due to network error; see logs for details.",
-                                                )
-                                                .await
-                                                .map_err(|e| {
-                                                    log::error!(
-                                                        "Error posting comment: {}",
-                                                        e
-                                                    );
-                                                });
-												// Clean db.
-												let _ = db.delete(
-                                                    head_ref.as_bytes(),
-                                                ).map_err(|e| {
-                                                    log::error!(
-                                                        "Error deleting merge request from db: {}",
-                                                        e
-                                                    );
-                                                });
-											}
-										}
-									} else {
-										// branch matches but head sha has changed since merge request
-										log::info!(
-                                            "Head sha has changed since merge was requested on {}", html_url
-                                        );
-										// Notify people of merge failure.
-										let _ = github_bot.create_issue_comment(
-                                                &owner,
-                                                &repo_name,
-                                                number,
-                                                "Head SHA has changed since merge was requested; cancelling.",
-                                            )
-                                            .await
-                                            .map_err(|e| {
-                                                log::error!(
-                                                    "Error posting comment: {}",
-                                                    e
-                                                );
-                                            });
-										// Clean db.
-										let _ = db.delete(
-                                                head_ref.as_bytes(),
-                                            ).map_err(|e| {
-                                                log::error!(
-                                                    "Error deleting merge request from db: {}",
-                                                    e
-                                                );
-                                            });
-									}
-								}
-								Ok(CombinedStatus {
-									state: StatusState::Failure,
-									..
-								})
-								| Ok(CombinedStatus {
-									state: StatusState::Error,
-									..
-								}) => {
+							}
+						}
+						Err(e) => {
+							log::error!(
+								"Error deserializing merge request: {}",
+								e
+							);
+						}
+					},
+					Ok(None) => {
+						// branch not stored for merge
+					}
+					Err(e) => {
+						log::error!(
+							"Error reading from db (key: {}): {}",
+							commit_sha,
+							e
+						);
+					}
+				}
+			}
+		}
+		Payload::CheckRun {
+			check_run:
+				CheckRun {
+					status,
+					head_sha: commit_sha,
+					pull_requests,
+					..
+				},
+			..
+		} => {
+			if status == "completed".to_string() {
+				log::info!("CHECK RUN");
+				match db.get(commit_sha.trim().as_bytes()) {
+					Ok(Some(b)) => match bincode::deserialize(&b) {
+						Ok(m) => {
+							log::info!("Deserialized merge request: {:?}", m);
+							let MergeRequest {
+								owner,
+								repo_name,
+								number,
+								html_url,
+								requested_by,
+								branch: _branch,
+							} = m;
+							if let Some(pr) = pull_requests
+								.iter()
+								.find(|pr| pr.number == number)
+							{
+								checks_and_status(
+									github_bot,
+									&owner,
+									&repo_name,
+									&commit_sha,
+									&pr.head.sha,
+									number,
+									&html_url,
+									db,
+									bot_config,
+									&requested_by,
+								)
+								.await;
+							}
+						}
+						Err(e) => {
+							log::error!(
+								"Error deserializing merge request: {}",
+								e
+							);
+						}
+					},
+					Ok(None) => {
+						// sha not stored for merge
+					}
+					Err(e) => {
+						log::error!(
+							"Error reading from db (key: {}): {}",
+							commit_sha,
+							e
+						);
+					}
+				}
+			}
+		}
+		event => {
+			log::info!("{:?}", event);
+		}
+	}
+	Ok(HttpResponse::Ok())
+}
+
+async fn checks_and_status(
+	github_bot: &GithubBot,
+	owner: &str,
+	repo_name: &str,
+	commit_sha: &str,
+	head_sha: &str,
+	number: i64,
+	html_url: &str,
+	db: &DB,
+	bot_config: &BotConfig,
+	requested_by: &str,
+) {
+	let checks = github_bot.check_runs(&owner, &repo_name, &commit_sha).await;
+	log::info!("{:?}", checks);
+	match checks {
+		Ok(checks) => {
+			if checks
+				.check_runs
+				.iter()
+				.all(|r| r.conclusion == Some("success".to_string()))
+			{
+				log::info!("All check runs success");
+				let status =
+					github_bot.status(&owner, &repo_name, &commit_sha).await;
+				log::info!("{:?}", status);
+				match status {
+					Ok(CombinedStatus {
+						state: StatusState::Success,
+						..
+					}) => {
+						log::info!("Combined status success");
+						// Head sha of branch should not have changed since request was
+						// made.
+						if commit_sha == head_sha {
+							match github_bot
+								.pull_request(&owner, &repo_name, number)
+								.await
+							{
+								Ok(pr) => {
 									log::info!(
-										"{} failed status checks.",
+										"{} is green; attempting merge.",
 										html_url
 									);
-									status_failure(
+									try_merge(
 										&github_bot,
 										&owner,
 										&repo_name,
-										number,
-										&html_url,
-										&head_ref,
+										&pr,
 										db,
+										&bot_config,
+										&requested_by,
 									)
 									.await
 								}
-								Ok(CombinedStatus {
-									state: StatusState::Pending,
-									..
-								}) => {
-									log::info!("{} is pending.", html_url);
-								}
 								Err(e) => {
-									log::error!(
-										"Error getting combined status: {}",
-										e
-									);
+									log::error!("Error getting PR: {}", e);
 									// Notify people of merge failure.
 									let _ = github_bot.create_issue_comment(
                                         &owner,
@@ -601,7 +822,7 @@ async fn handle_webhook(
                                     });
 									// Clean db.
 									let _ = db.delete(
-                                        head_ref.as_bytes(),
+                                        commit_sha.as_bytes(),
                                     ).map_err(|e| {
                                         log::error!(
                                             "Error deleting merge request from db: {}",
@@ -610,30 +831,116 @@ async fn handle_webhook(
                                     });
 								}
 							}
+						} else {
+							// branch matches but head sha has changed since merge request
+							log::info!(
+                                "Head sha has changed since merge was requested on {}", html_url
+                            );
+							// Notify people of merge failure.
+							let _ = github_bot.create_issue_comment(
+                                &owner,
+                                &repo_name,
+                                number,
+                                "Head SHA has changed since merge was requested; cancelling merge.",
+                            )
+                            .await
+                            .map_err(|e| {
+                                log::error!(
+                                    "Error posting comment: {}",
+                                    e
+                                );
+                            });
+							// Clean db.
+							let _ =
+								db.delete(commit_sha.as_bytes()).map_err(|e| {
+									log::error!(
+                                    "Error deleting merge request from db: {}",
+                                    e
+                                );
+								});
 						}
-						Err(e) => {
-							log::error!(
-								"Error deserializing merge request: {}",
-								e
-							);
-						}
-					},
-					Ok(None) => {
-						// branch not stored for merge
+					}
+					Ok(CombinedStatus {
+						state: StatusState::Failure,
+						..
+					})
+					| Ok(CombinedStatus {
+						state: StatusState::Error,
+						..
+					}) => {
+						log::info!("{} failed status checks.", html_url);
+						status_failure(
+							&github_bot,
+							&owner,
+							&repo_name,
+							number,
+							&html_url,
+							&commit_sha,
+							db,
+						)
+						.await
+					}
+					Ok(CombinedStatus {
+						state: StatusState::Pending,
+						..
+					}) => {
+						log::info!("{} is pending.", html_url);
 					}
 					Err(e) => {
-						log::error!(
-							"Error reading from db (head ref: {}): {}",
-							head_ref,
-							e
-						);
+						log::error!("Error getting combined status: {}", e);
+						// Notify people of merge failure.
+						let _ = github_bot.create_issue_comment(
+                                            &owner,
+                                            &repo_name,
+                                            number,
+                                            "Auto-merge failed due to network error; see logs for details.",
+                                        )
+                                        .await
+                                        .map_err(|e| {
+                                            log::error!(
+                                                "Error posting comment: {}",
+                                                e
+                                            );
+                                        });
+						// Clean db.
+						let _ = db.delete(commit_sha.as_bytes()).map_err(|e| {
+							log::error!(
+								"Error deleting merge request from db: {}",
+								e
+							);
+						});
 					}
 				}
+			} else if checks
+				.check_runs
+				.iter()
+				.all(|r| r.status == "completed".to_string())
+			{
+				log::info!("{} checks were unsuccessful", html_url);
+				// Notify people of merge failure.
+				let _ = github_bot
+					.create_issue_comment(
+						owner,
+						&repo_name,
+						number,
+						"Checks were unsuccessful; cancelling merge.",
+					)
+					.await
+					.map_err(|e| {
+						log::error!("Error posting comment: {}", e);
+					});
+				// Clean db.
+				let _ = db.delete(commit_sha.as_bytes()).map_err(|e| {
+					log::error!("Error deleting merge request from db: {}", e);
+				});
+			} else {
+				log::info!("{} checks incomplete", html_url);
 			}
 		}
-		_event => {}
+		Err(e) => {
+			log::error!("Error getting check runs: {}", e);
+		}
 	}
-	Ok(HttpResponse::Ok())
 }
 
 async fn try_merge(
@@ -758,7 +1065,7 @@ async fn try_merge(
 	}
 	if tidy {
 		// Clean db.
-		let _ = db.delete(pr.head.ref_field.as_bytes()).map_err(|e| {
+		let _ = db.delete(pr.head.sha.as_bytes()).map_err(|e| {
 			log::error!("Error deleting from db: {}", e);
 		});
 	}
@@ -770,7 +1077,7 @@ async fn status_failure(
 	repo_name: &str,
 	number: i64,
 	html_url: &str,
-	head_ref: &str,
+	sha: &str,
 	db: &DB,
 ) {
 	log::info!("Status failure for PR {}", html_url);
@@ -787,7 +1094,7 @@ async fn status_failure(
 			log::error!("Error posting comment: {}", e);
 		});
 	// Clean db.
-	let _ = db.delete(head_ref.as_bytes()).map_err(|e| {
+	let _ = db.delete(sha.as_bytes()).map_err(|e| {
 		log::error!("Error deleting from db: {}", e);
 	});
 }
