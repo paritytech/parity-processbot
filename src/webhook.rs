@@ -94,9 +94,6 @@ async fn handle_webhook(
 	let github_bot = &state.get_ref().github_bot;
 	let bot_config = &state.get_ref().bot_config;
 
-	// log payload
-	dbg!(&payload);
-
 	match payload {
 		Payload::IssueComment {
 			action: IssueCommentAction::Created,
@@ -438,6 +435,11 @@ async fn handle_webhook(
 			} else {
 				log::error!("Failed parsing owner in url: {}", html_url);
 			}
+		}
+		Payload::CheckRun { action, check_run } => {
+			log::info!("CHECK RUN");
+			dbg!(&action);
+			dbg!(&check_run);
 		}
 		Payload::CommitStatus {
 			sha: _commit_sha,
