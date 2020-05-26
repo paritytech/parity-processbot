@@ -769,6 +769,7 @@ pub enum CheckRunConclusion {
 	TimedOut,
 	ActionRequired,
 	Stale,
+	Null,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -776,6 +777,7 @@ pub enum CheckRunConclusion {
 pub struct CheckRun {
 	status: CheckRunStatus,
 	conclusion: CheckRunConclusion,
+	name: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -812,5 +814,6 @@ pub enum Payload {
 	CheckRun {
 		action: CheckRunAction,
 		check_run: CheckRun,
+		repository: Repository,
 	},
 }

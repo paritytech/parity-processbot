@@ -436,11 +436,6 @@ async fn handle_webhook(
 				log::error!("Failed parsing owner in url: {}", html_url);
 			}
 		}
-		Payload::CheckRun { action, check_run } => {
-			log::info!("CHECK RUN");
-			dbg!(&action);
-			dbg!(&check_run);
-		}
 		Payload::CommitStatus {
 			sha: _commit_sha,
 			branches,
@@ -636,7 +631,10 @@ async fn handle_webhook(
 				}
 			}
 		}
-		_event => {}
+		obj => {
+			log::info!("OTHER PAYLOAD");
+			dbg!(&obj);
+		}
 	}
 	Ok(HttpResponse::Ok())
 }
