@@ -359,22 +359,18 @@ pub struct IssuePullRequest {
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Head {
-	pub label: String,
 	#[serde(rename = "ref")]
 	pub ref_field: String,
 	pub sha: String,
-	pub user: User,
-	pub repo: Option<Repository>,
+	pub repo: HeadRepo,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Base {
-	pub label: String,
 	#[serde(rename = "ref")]
 	pub ref_field: String,
 	pub sha: String,
-	pub user: User,
-	pub repo: Option<Repository>,
+	pub repo: HeadRepo,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -785,6 +781,13 @@ pub struct CheckRunPR {
 	pub number: i64,
 	pub head: Head,
 	pub base: Base,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HeadRepo {
+	id: i64,
+	url: String,
+	name: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
