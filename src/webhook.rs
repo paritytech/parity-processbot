@@ -332,18 +332,18 @@ async fn handle_comment(
 									);
 									// Notify people of merge failure.
 									let _ = github_bot.create_issue_comment(
-                                                        owner,
-                                                        &repo_name,
-                                                        pr.number,
-                                                        "Checks were unsuccessful; cancelling merge.",
-                                                    )
-                                                    .await
-                                                    .map_err(|e| {
-                                                        log::error!(
-                                                            "Error posting comment: {}",
-                                                            e
-                                                        );
-                                                    });
+                                        owner,
+                                        &repo_name,
+                                        pr.number,
+                                        "Checks were unsuccessful; cancelling merge.",
+                                    )
+                                    .await
+                                    .map_err(|e| {
+                                        log::error!(
+                                            "Error posting comment: {}",
+                                            e
+                                        );
+                                    });
 								} else {
 									log::info!(
 										"{} checks incomplete.",
@@ -371,53 +371,53 @@ async fn handle_comment(
 												Ok(_) => {
 													log::info!("Waiting for commit status...");
 													let _ = github_bot
-                                                                        .create_issue_comment(
-                                                                            owner,
-                                                                            &repo_name,
-                                                                            pr.number,
-                                                                            "Waiting for commit status...",
-                                                                        )
-                                                                        .await
-                                                                        .map_err(|e| {
-                                                                            log::error!(
-                                                                                "Error posting comment: {}",
-                                                                                e
-                                                                            );
-                                                                        });
+                                                        .create_issue_comment(
+                                                            owner,
+                                                            &repo_name,
+                                                            pr.number,
+                                                            "Waiting for commit status...",
+                                                        )
+                                                        .await
+                                                        .map_err(|e| {
+                                                            log::error!(
+                                                                "Error posting comment: {}",
+                                                                e
+                                                            );
+                                                        });
 												}
 												Err(e) => {
 													log::error!("Error adding merge request to db: {}", e);
 													let _ = github_bot.create_issue_comment(
-                                                                        owner,
-                                                                        &repo_name,
-                                                                        pr.number,
-                                                                        "Auto-merge failed due to db error; see logs for details.",
-                                                                    )
-                                                                    .await
-                                                                    .map_err(|e| {
-                                                                        log::error!(
-                                                                            "Error posting comment: {}",
-                                                                            e
-                                                                        );
-                                                                    });
+                                                        owner,
+                                                        &repo_name,
+                                                        pr.number,
+                                                        "Auto-merge failed due to db error; see logs for details.",
+                                                    )
+                                                    .await
+                                                    .map_err(|e| {
+                                                        log::error!(
+                                                            "Error posting comment: {}",
+                                                            e
+                                                        );
+                                                    });
 												}
 											}
 										}
 										Err(e) => {
 											log::error!("Error serializing merge request: {}", e);
 											let _ = github_bot.create_issue_comment(
-                                                                owner,
-                                                                &repo_name,
-                                                                pr.number,
-                                                                "Auto-merge failed due to serialization error; see logs for details.",
-                                                            )
-                                                            .await
-                                                            .map_err(|e| {
-                                                                log::error!(
-                                                                    "Error posting comment: {}",
-                                                                    e
-                                                                );
-                                                            });
+                                                owner,
+                                                &repo_name,
+                                                pr.number,
+                                                "Auto-merge failed due to serialization error; see logs for details.",
+                                            )
+                                            .await
+                                            .map_err(|e| {
+                                                log::error!(
+                                                    "Error posting comment: {}",
+                                                    e
+                                                );
+                                            });
 										}
 									}
 								}
@@ -466,18 +466,18 @@ async fn handle_comment(
 									Err(e) => {
 										log::error!("Error adding merge request to db: {}", e);
 										let _ = github_bot.create_issue_comment(
-                                                            owner,
-                                                            &repo_name,
-                                                            pr.number,
-                                                            "Auto-merge failed due to db error; see logs for details.",
-                                                        )
-                                                        .await
-                                                        .map_err(|e| {
-                                                            log::error!(
-                                                                "Error posting comment: {}",
-                                                                e
-                                                            );
-                                                        });
+                                            owner,
+                                            &repo_name,
+                                            pr.number,
+                                            "Auto-merge failed due to db error; see logs for details.",
+                                        )
+                                        .await
+                                        .map_err(|e| {
+                                            log::error!(
+                                                "Error posting comment: {}",
+                                                e
+                                            );
+                                        });
 									}
 								}
 							}
@@ -487,18 +487,18 @@ async fn handle_comment(
 									e
 								);
 								let _ = github_bot.create_issue_comment(
-                                                    owner,
-                                                    &repo_name,
-                                                    pr.number,
-                                                    "Auto-merge failed due to serialization error; see logs for details.",
-                                                )
-                                                .await
-                                                .map_err(|e| {
-                                                    log::error!(
-                                                        "Error posting comment: {}",
-                                                        e
-                                                    );
-                                                });
+                                    owner,
+                                    &repo_name,
+                                    pr.number,
+                                    "Auto-merge failed due to serialization error; see logs for details.",
+                                )
+                                .await
+                                .map_err(|e| {
+                                    log::error!(
+                                        "Error posting comment: {}",
+                                        e
+                                    );
+                                });
 							}
 						}
 					}
@@ -519,18 +519,18 @@ async fn handle_comment(
 						log::error!("Error getting PR status: {}", e);
 						// Notify people of merge failure.
 						let _ = github_bot.create_issue_comment(
-                                            owner,
-                                            &repo_name,
-                                            pr.number,
-                                            "Auto-merge failed due to network error; see logs for details.",
-                                        )
-                                        .await
-                                        .map_err(|e| {
-                                            log::error!(
-                                                "Error posting comment: {}",
-                                                e
-                                            );
-                                        });
+                            owner,
+                            &repo_name,
+                            pr.number,
+                            "Auto-merge failed due to network error; see logs for details.",
+                        )
+                        .await
+                        .map_err(|e| {
+                            log::error!(
+                                "Error posting comment: {}",
+                                e
+                            );
+                        });
 						// Clean db.
 						let _ =
 							db.delete(pr.head.sha.as_bytes()).map_err(|e| {
@@ -642,46 +642,11 @@ async fn handle_comment(
 										log::error!("Error getting substrate commit: {}", e);
 									}
 									let _ = github_bot
-                                                        .create_issue_comment(
-                                                            owner,
-                                                            &repo_name,
-                                                            number,
-                                                            "Error getting substrate commit; see logs for details",
-                                                        )
-                                                        .await
-                                                        .map_err(|e| {
-                                                            log::error!(
-                                                                "Error posting comment: {}",
-                                                                e
-                                                            );
-                                                        });
-								}
-							}
-							Err(e) => {
-								log::error!("Error getting release tag: {}", e);
-								let _ = github_bot.create_issue_comment(
-                                                    owner,
-                                                    &repo_name,
-                                                    number,
-                                                    "Failed getting latest release tag; see logs for details.",
-                                                )
-                                                .await
-                                                .map_err(|e| {
-                                                    log::error!(
-                                                        "Error posting comment: {}",
-                                                        e
-                                                    );
-                                                });
-							}
-						}
-					}
-					Err(e) => {
-						log::error!("Error getting latest release: {}", e);
-						let _ = github_bot.create_issue_comment(
+                                        .create_issue_comment(
                                             owner,
                                             &repo_name,
                                             number,
-                                            "Failed getting latest release; see logs for details.",
+                                            "Error getting substrate commit; see logs for details",
                                         )
                                         .await
                                         .map_err(|e| {
@@ -690,6 +655,41 @@ async fn handle_comment(
                                                 e
                                             );
                                         });
+								}
+							}
+							Err(e) => {
+								log::error!("Error getting release tag: {}", e);
+								let _ = github_bot.create_issue_comment(
+                                    owner,
+                                    &repo_name,
+                                    number,
+                                    "Failed getting latest release tag; see logs for details.",
+                                )
+                                .await
+                                .map_err(|e| {
+                                    log::error!(
+                                        "Error posting comment: {}",
+                                        e
+                                    );
+                                });
+							}
+						}
+					}
+					Err(e) => {
+						log::error!("Error getting latest release: {}", e);
+						let _ = github_bot.create_issue_comment(
+                            owner,
+                            &repo_name,
+                            number,
+                            "Failed getting latest release; see logs for details.",
+                        )
+                        .await
+                        .map_err(|e| {
+                            log::error!(
+                                "Error posting comment: {}",
+                                e
+                            );
+                        });
 					}
 				}
 			}
@@ -842,18 +842,18 @@ async fn checks_and_status(
 						log::error!("Error getting combined status: {}", e);
 						// Notify people of merge failure.
 						let _ = github_bot.create_issue_comment(
-                                            &owner,
-                                            &repo_name,
-                                            number,
-                                            "Auto-merge failed due to network error; see logs for details.",
-                                        )
-                                        .await
-                                        .map_err(|e| {
-                                            log::error!(
-                                                "Error posting comment: {}",
-                                                e
-                                            );
-                                        });
+                            &owner,
+                            &repo_name,
+                            number,
+                            "Auto-merge failed due to network error; see logs for details.",
+                        )
+                        .await
+                        .map_err(|e| {
+                            log::error!(
+                                "Error posting comment: {}",
+                                e
+                            );
+                        });
 						// Clean db.
 						let _ = db.delete(commit_sha.as_bytes()).map_err(|e| {
 							log::error!(
@@ -912,68 +912,108 @@ async fn try_merge(
 			log::error!("Error getting core devs: {}", e);
 			vec![]
 		});
+	let team_leads = github_bot
+		.team(owner, "substrateteamleads")
+		.and_then(|team| github_bot.team_members(team.id))
+		.await
+		.unwrap_or_else(|e| {
+			log::error!("Error getting core devs: {}", e);
+			vec![]
+		});
 	let reviews = github_bot.reviews(&pr.url).await.unwrap_or_else(|e| {
 		log::error!("Error getting reviews: {}", e);
 		vec![]
 	});
+
 	let mut tidy = true;
-	match process::get_process(github_bot, owner, repo_name, pr.number).await {
-		Err(e) => {
-			log::error!("Error getting process info: {}", e);
-			// Without process info the merge cannot complete so
-			// let people know.
-			let _ = github_bot
-				.create_issue_comment(
-					owner,
-					repo_name,
-					pr.number,
-					&format!("Error getting process info: {}", e),
-				)
-				.await
-				.map_err(|e| {
-					log::error!("Error posting comment: {}", e);
-				});
-		}
-		Ok(process) => {
-			let mergeable = pr.mergeable.unwrap_or(false);
-			if mergeable {
-				log::info!("{} is mergeable.", pr.html_url);
 
-				let core_approved = reviews
-					.iter()
-					.filter(|r| {
-						core_devs.iter().any(|u| u.login == r.user.login)
-							&& r.state == Some(ReviewState::Approved)
-					})
-					.count() >= bot_config.min_reviewers;
+	if team_leads.iter().any(|lead| lead.login == requested_by) {
+		log::info!("{} merge requested by a team lead; merging.", pr.html_url);
+		let _ = github_bot
+			.merge_pull_request(owner, repo_name, pr.number, &pr.head.sha)
+			.await
+			.map_err(|e| {
+				log::error!("Error merging: {}", e);
+				tidy = false;
+			});
+	} else {
+		match process::get_process(github_bot, owner, repo_name, pr.number)
+			.await
+		{
+			Err(e) => {
+				log::error!("Error getting process info: {}", e);
+				// Without process info the merge cannot complete so
+				// let people know.
+				let _ = github_bot
+					.create_issue_comment(
+						owner,
+						repo_name,
+						pr.number,
+						&format!("Error getting process info: {}", e),
+					)
+					.await
+					.map_err(|e| {
+						log::error!("Error posting comment: {}", e);
+					});
+			}
+			Ok(process) => {
+				let mergeable = pr.mergeable.unwrap_or(false);
+				if mergeable {
+					log::info!("{} is mergeable.", pr.html_url);
 
-				let owner_approved = reviews
-					.iter()
-					.sorted_by_key(|r| r.submitted_at)
-					.rev()
-					.find(|r| process.is_owner(&r.user.login))
-					.map_or(false, |r| r.state == Some(ReviewState::Approved));
+					let core_approved = reviews
+						.iter()
+						.filter(|r| {
+							core_devs.iter().any(|u| u.login == r.user.login)
+								&& r.state == Some(ReviewState::Approved)
+						})
+						.count() >= bot_config.min_reviewers;
 
-				let owner_requested = process.is_owner(&requested_by);
-
-				if core_approved || owner_approved || owner_requested {
-					log::info!("{} has approval; merging.", pr.html_url);
-					let _ = github_bot
-						.merge_pull_request(
-							owner,
-							repo_name,
-							pr.number,
-							&pr.head.sha,
-						)
-						.await
-						.map_err(|e| {
-							log::error!("Error merging: {}", e);
-							tidy = false;
+					let owner_approved = reviews
+						.iter()
+						.sorted_by_key(|r| r.submitted_at)
+						.rev()
+						.find(|r| process.is_owner(&r.user.login))
+						.map_or(false, |r| {
+							r.state == Some(ReviewState::Approved)
 						});
-				} else {
-					if process.is_empty() {
-						log::info!("{} lacks process info - it might not belong to a valid project column.", pr.html_url);
+
+					let owner_requested = process.is_owner(&requested_by);
+
+					let lead_approved = reviews
+						.iter()
+						.sorted_by_key(|r| r.submitted_at)
+						.rev()
+						.find(|r| {
+							team_leads
+								.iter()
+								.any(|lead| lead.login == r.user.login)
+						})
+						.map_or(false, |r| {
+							r.state == Some(ReviewState::Approved)
+						});
+
+					if core_approved
+						|| owner_approved || owner_requested
+						|| lead_approved
+					{
+						log::info!("{} has approval; merging.", pr.html_url);
 						let _ = github_bot
+							.merge_pull_request(
+								owner,
+								repo_name,
+								pr.number,
+								&pr.head.sha,
+							)
+							.await
+							.map_err(|e| {
+								log::error!("Error merging: {}", e);
+								tidy = false;
+							});
+					} else {
+						if process.is_empty() {
+							log::info!("{} lacks process info - it might not belong to a valid project column.", pr.html_url);
+							let _ = github_bot
                                 .create_issue_comment(
                                     owner,
                                     repo_name,
@@ -984,9 +1024,9 @@ async fn try_merge(
                                 .map_err(|e| {
                                     log::error!("Error posting comment: {}", e);
                                 });
-					} else {
-						log::info!("{} lacks approval from the project owner or at least {} core developers.", pr.html_url, bot_config.min_reviewers);
-						let _ = github_bot
+						} else {
+							log::info!("{} lacks approval from the project owner or at least {} core developers.", pr.html_url, bot_config.min_reviewers);
+							let _ = github_bot
                                 .create_issue_comment(
                                     owner,
                                     repo_name,
@@ -997,21 +1037,22 @@ async fn try_merge(
                                 .map_err(|e| {
                                     log::error!("Error posting comment: {}", e);
                                 });
+						}
 					}
+				} else {
+					log::info!("{} is unmergeable.", pr.html_url);
+					let _ = github_bot
+						.create_issue_comment(
+							owner,
+							repo_name,
+							pr.number,
+							"PR is currently unmergeable.",
+						)
+						.await
+						.map_err(|e| {
+							log::error!("Error posting comment: {}", e);
+						});
 				}
-			} else {
-				log::info!("{} is unmergeable.", pr.html_url);
-				let _ = github_bot
-					.create_issue_comment(
-						owner,
-						repo_name,
-						pr.number,
-						"PR is currently unmergeable.",
-					)
-					.await
-					.map_err(|e| {
-						log::error!("Error posting comment: {}", e);
-					});
 			}
 		}
 	}
