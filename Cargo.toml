@@ -35,3 +35,4 @@ actix-rt = "1.0"
 bincode = "1.2"
 ring = "0.16"
 base16 = { version = "0.2", features = ["alloc"] }
+anyhow = "1.0"
