@@ -369,7 +369,9 @@ async fn handle_comment(
 												bytes,
 											) {
 												Ok(_) => {
-													log::info!("Waiting for commit status...");
+													log::info!(
+														"Waiting for checks..."
+													);
 													let _ = github_bot
                                                         .create_issue_comment(
                                                             owner,
