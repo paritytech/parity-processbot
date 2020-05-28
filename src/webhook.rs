@@ -980,18 +980,16 @@ async fn try_merge(
 
 					let owner_requested = process.is_owner(&requested_by);
 
-					let lead_approved = reviews
-						.iter()
-						.sorted_by_key(|r| r.submitted_at)
-						.rev()
-						.find(|r| {
-							team_leads
-								.iter()
-								.any(|lead| lead.login == r.user.login)
-						})
-						.map_or(false, |r| {
-							r.state == Some(ReviewState::Approved)
-						});
+					let lead_approved = team_leads.iter().any(|lead| {
+						reviews
+							.iter()
+							.sorted_by_key(|r| r.submitted_at)
+							.rev()
+							.find(|r| lead.login == r.user.login)
+							.map_or(false, |r| {
+								r.state == Some(ReviewState::Approved)
+							})
+					});
 
 					if core_approved
 						|| owner_approved || owner_requested
