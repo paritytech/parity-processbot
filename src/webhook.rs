@@ -375,7 +375,7 @@ async fn handle_comment(
                                                             owner,
                                                             &repo_name,
                                                             pr.number,
-                                                            "Waiting for commit status...",
+                                                            "Waiting for checks...",
                                                         )
                                                         .await
                                                         .map_err(|e| {
