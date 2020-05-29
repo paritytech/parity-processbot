@@ -137,7 +137,7 @@ async fn handle_payload(
 			..
 		} => handle_check(status, head_sha, pull_requests, &state).await,
 		event => {
-			log::info!("{:?}", event);
+			log::debug!("{:?}", event);
 			Ok(())
 		}
 	}
