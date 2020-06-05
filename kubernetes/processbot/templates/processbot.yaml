@@ -73,7 +73,7 @@ spec:
             - name: RUST_BACKTRACE
               value: full
             - name: RUST_LOG
-              value: trace 
+              value: info
             - name: INSTALLATION_LOGIN
               value: {{ .Values.orgName }}
             - name: PRIVATE_KEY_PATH

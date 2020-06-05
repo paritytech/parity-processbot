@@ -104,15 +104,14 @@ impl Client {
 
 	async fn auth_key(&self) -> Result<String> {
 		lazy_static::lazy_static! {
-			static ref TOKEN_CACHE: std::sync::RwLock<Option<(DateTime<Utc>, String)>> = {
-				std::sync::RwLock::new(None)
+			static ref TOKEN_CACHE: parking_lot::Mutex<Option<(DateTime<Utc>, String)>> = {
+				parking_lot::Mutex::new(None)
 			};
 		}
 
-		let token = TOKEN_CACHE
-			.read()
-			.as_ref()
-			.unwrap()
+		let mut token_cache = TOKEN_CACHE.lock();
+
+		let token = token_cache
 			.as_ref()
 			// Ensure token is not expired if set.
 			.filter(|(time, _)| time > &Utc::now())
@@ -145,11 +144,9 @@ impl Client {
 			)
 			.await?;
 
-		let mut write = TOKEN_CACHE.write().unwrap();
-
 		let token = install_token.token.clone();
 		let default_exp = Utc::now() + Duration::minutes(40);
-		*write = Some((
+		*token_cache = Some((
 			install_token
 				.expires_at
 				.map_or(default_exp, |t| t.parse().unwrap_or(default_exp)),
@@ -183,7 +180,7 @@ impl Client {
 			.build()
 			.context(error::Http)?;
 
-		log::debug!("{:?}", &request);
+		//		log::debug!("{:?}", &request);
 
 		handle_response(
 			self.client.execute(request).await.context(error::Http)?,

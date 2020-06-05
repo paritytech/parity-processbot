@@ -136,7 +136,7 @@ async fn handle_payload(
 				},
 			..
 		} => handle_check(status, head_sha, pull_requests, &state).await,
-		event => {
+		_event => {
 			//			log::debug!("{:?}", event);
 			Ok(())
 		}
@@ -375,7 +375,7 @@ async fn handle_comment(
                                                             owner,
                                                             &repo_name,
                                                             pr.number,
-                                                            "Waiting for checks...",
+                                                            "Waiting for commit status...",
                                                         )
                                                         .await
                                                         .map_err(|e| {
