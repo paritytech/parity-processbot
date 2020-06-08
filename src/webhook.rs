@@ -67,6 +67,8 @@ async fn handle_webhook(
 	mut body: web::Payload,
 	state: web::Data<Arc<AppState>>,
 ) -> actix_web::Result<impl Responder> {
+	log::debug!("RECEIVED {:?}", req);
+
 	let mut msg_bytes = web::BytesMut::new();
 	while let Some(item) = body.next().await {
 		msg_bytes.extend_from_slice(&item?);
