@@ -66,9 +66,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 	//	let db_clone = db.clone();
 
 	std::thread::spawn(move || loop {
-		log::info!("Heartbeat");
 		/*
-		log::info!("Updating Bamboo");
+		log::info!("Heartbeat");
 		{
 			let db_write = db_clone.write();
 			match bamboo::github_to_matrix(&config_clone.bamboo_token) {

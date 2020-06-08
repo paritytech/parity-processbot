@@ -57,7 +57,6 @@ macro_rules! impl_methods_with_body {
 /// not successful.
 async fn handle_response(response: Response) -> Result<Response> {
 	let status = response.status();
-
 	if status.is_success() {
 		Ok(response)
 	} else {
@@ -103,6 +102,7 @@ impl Client {
 	}
 
 	async fn auth_key(&self) -> Result<String> {
+		log::debug!("auth_key");
 		lazy_static::lazy_static! {
 			static ref TOKEN_CACHE: parking_lot::Mutex<Option<(DateTime<Utc>, String)>> = {
 				parking_lot::Mutex::new(None)
@@ -189,6 +189,7 @@ impl Client {
 	}
 
 	fn create_jwt(&self) -> Result<String> {
+		log::debug!("create_jwt");
 		const TEN_MINS_IN_SECONDS: u64 = 10 * 60;
 		lazy_static::lazy_static! {
 			static ref APP_ID: u64 = dotenv::var("GITHUB_APP_ID").unwrap().parse::<u64>().unwrap();
@@ -214,6 +215,7 @@ impl Client {
 	}
 
 	async fn jwt_execute(&self, builder: RequestBuilder) -> Result<Response> {
+		log::debug!("jwt_execute");
 		let response = builder
 			.bearer_auth(&self.create_jwt()?)
 			.header(
@@ -234,6 +236,7 @@ impl Client {
 	where
 		T: serde::de::DeserializeOwned,
 	{
+		log::debug!("jwt_get");
 		self.jwt_execute(self.client.get(url))
 			.await?
 			.json::<T>()
@@ -250,6 +253,7 @@ impl Client {
 	where
 		T: serde::de::DeserializeOwned,
 	{
+		log::debug!("jwt_post");
 		self.jwt_execute(self.client.post(url).json(body))
 			.await?
 			.json::<T>()
@@ -295,6 +299,7 @@ impl Client {
 		url: I,
 		params: P,
 	) -> Result<Response> {
+		log::debug!("get_response");
 		self.execute(self.client.get(&*url.into()).json(&params))
 			.await
 	}
@@ -307,6 +312,7 @@ impl Client {
 		I: Into<Cow<'b, str>>,
 		T: serde::de::DeserializeOwned,
 	{
+		log::debug!("get_all");
 		let mut entities = Vec::new();
 		let mut next = Some(url.into());
 
