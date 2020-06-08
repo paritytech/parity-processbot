@@ -65,9 +65,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 	let config_clone = config.clone();
 	//	let db_clone = db.clone();
 
+	/*
 	std::thread::spawn(move || loop {
-		/*
-		log::info!("Heartbeat");
 		{
 			let db_write = db_clone.write();
 			match bamboo::github_to_matrix(&config_clone.bamboo_token) {
@@ -82,9 +81,9 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 				Err(e) => log::error!("Bamboo error: {}", e),
 			}
 		}
-		*/
 		std::thread::sleep(Duration::from_secs(config_clone.bamboo_tick_secs));
 	});
+	*/
 
 	let app_state = Arc::new(AppState {
 		db: db,
