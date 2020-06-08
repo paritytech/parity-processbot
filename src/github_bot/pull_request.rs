@@ -111,14 +111,13 @@ impl GithubBot {
 	}
 }
 
-/*
 #[cfg(test)]
 mod tests {
 	use super::*;
 
 	#[ignore]
 	#[test]
-	fn test_pull_requests() {
+	fn test_get_pr() {
 		dotenv::dotenv().ok();
 
 		let installation = dotenv::var("TEST_INSTALLATION_LOGIN")
@@ -127,49 +126,17 @@ mod tests {
 			dotenv::var("PRIVATE_KEY_PATH").expect("PRIVATE_KEY_PATH");
 		let private_key = std::fs::read(&private_key_path)
 			.expect("Couldn't find private key.");
-		let test_repo_name =
-			dotenv::var("TEST_REPO_NAME").expect("TEST_REPO_NAME");
 
 		let mut rt = tokio::runtime::Runtime::new().expect("runtime");
 		rt.block_on(async {
 			let github_bot = GithubBot::new(private_key, &installation)
 				.await
 				.expect("github_bot");
-			let repo = github_bot
-				.repository(&test_repo_name)
-				.await
-				.expect("repository");
-			let created = github_bot
-				.create_pull_request(
-					&test_repo_name,
-					&"testing pr".to_owned(),
-					&"this is a test".to_owned(),
-					&"testing_branch".to_owned(),
-					&"other_testing_branch".to_owned(),
-				)
-				.await
-				.expect("create_pull_request");
-			let prs = github_bot
-				.pull_requests(&repo)
-				.await
-				.expect("pull_requests");
-			assert!(prs.iter().any(|pr| pr
-				.title
-				.as_ref()
-				.map_or(false, |x| x == "testing pr")));
-			github_bot
-				.close_pull_request(&test_repo_name, created.number)
-				.await
-				.expect("close_pull_request");
-			let prs = github_bot
-				.pull_requests(&repo)
-				.await
-				.expect("pull_requests");
-			assert!(!prs.iter().any(|pr| pr
-				.title
-				.as_ref()
-				.map_or(false, |x| x == "testing pr")));
+			dbg!(
+				github_bot
+					.pull_request("paritytech", "substrate", 6276)
+					.await
+			);
 		});
 	}
 }
-*/
