@@ -110,12 +110,13 @@ impl Client {
 		}
 
 		let token = {
-            TOKEN_CACHE.lock()
-			.as_ref()
-			// Ensure token is not expired if set.
-			.filter(|(time, _)| time > &Utc::now())
-			.map(|(_, token)| token.clone())
-        };
+			TOKEN_CACHE
+				.lock()
+				.as_ref()
+				// Ensure token is not expired if set.
+				.filter(|(time, _)| time > &Utc::now())
+				.map(|(_, token)| token.clone())
+		};
 
 		if let Some(token) = token {
 			return Ok(token);
