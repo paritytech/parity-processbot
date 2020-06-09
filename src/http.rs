@@ -59,6 +59,7 @@ macro_rules! impl_methods_with_body {
                             continue 'retry;
                         }
                     }
+                    log::debug!("Response {:?}", res);
                     return res;
                 }
             }
@@ -70,6 +71,7 @@ macro_rules! impl_methods_with_body {
 /// Checks the response's status and maps into an `Err` branch if
 /// not successful.
 async fn handle_response(response: Response) -> Result<Response> {
+	log::debug!("{:?}", response);
 	let status = response.status();
 	if status.is_success() {
 		Ok(response)
@@ -336,6 +338,7 @@ impl Client {
 					continue 'retry;
 				}
 			}
+			log::debug!("Response {:?}", res);
 			return res;
 		}
 	}
