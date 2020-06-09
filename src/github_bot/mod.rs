@@ -96,8 +96,7 @@ impl GithubBot {
 			path = path,
             ref_field = ref_field
 		);
-		let params = serde_json::json!({}); // TODO fix get_with_params...
-		self.client.get_with_params(url, params).await
+		self.client.get(url).await
 	}
 
 	/// Returns a link to a diff.

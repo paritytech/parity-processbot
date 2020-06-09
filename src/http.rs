@@ -21,8 +21,8 @@ macro_rules! impl_methods_with_body {
         $(
             pub async fn $method<'b, I, B, T>(&self, url: I, body: &B) -> Result<T>
             where
-                I: Into<Cow<'b, str>>,
-                B: Serialize,
+                I: Into<Cow<'b, str>> + Clone,
+                B: Serialize + Clone,
                 T: serde::de::DeserializeOwned,
             {
                 self.$method_response_fn(url, body)
@@ -30,6 +30,7 @@ macro_rules! impl_methods_with_body {
                     .json::<T>()
                     .await
                     .context(error::Http)
+
             }
 
             pub async fn $method_response_fn<'b, I, B>(
@@ -38,15 +39,27 @@ macro_rules! impl_methods_with_body {
                 body: &B,
             ) -> Result<Response>
             where
-                I: Into<Cow<'b, str>>,
-                B: Serialize,
+                I: Into<Cow<'b, str>> + Clone,
+                B: Serialize + Clone,
             {
-                self.execute(
-                    self.client
-                    .$method(&*url.into())
-                    .json(body),
-                )
-                    .await
+                // retry up to 5 times if request times out
+                let mut retries = 0;
+                'retry: loop {
+                    let res = self.execute(
+                        self.client
+                        .$method(&*url.clone().into())
+                        .json(&body.clone()),
+                    )
+                    .await;
+                    // retry if timeout
+                    if let Err(error::Error::Http { source: e, .. }) = res.as_ref() {
+                        if e.is_timeout() && retries < 5 {
+                            retries += 1;
+                            continue 'retry;
+                        }
+                    }
+                    return res;
+                }
             }
 
         )*
@@ -109,14 +122,13 @@ impl Client {
 			};
 		}
 
-		let token = {
-			TOKEN_CACHE
-				.lock()
-				.as_ref()
-				// Ensure token is not expired if set.
-				.filter(|(time, _)| time > &Utc::now())
-				.map(|(_, token)| token.clone())
-		};
+		let mut token_cache = TOKEN_CACHE.lock();
+
+		let token = token_cache
+			.as_ref()
+			// Ensure token is not expired if set.
+			.filter(|(time, _)| time > &Utc::now())
+			.map(|(_, token)| token.clone());
 
 		if let Some(token) = token {
 			return Ok(token);
@@ -151,9 +163,7 @@ impl Client {
 			.map_or(default_exp, |t| t.parse().unwrap_or(default_exp));
 		let token = install_token.token;
 
-		{
-			*TOKEN_CACHE.lock() = Some((expiry.clone(), token.clone()));
-		}
+		*token_cache = Some((expiry.clone(), token.clone()));
 
 		Ok(token)
 	}
@@ -178,7 +188,7 @@ impl Client {
 				"application/vnd.github.machine-man-preview+json",
 			)
 			.header(header::USER_AGENT, "parity-processbot/0.0.1")
-			.timeout(std::time::Duration::from_secs(5))
+			.timeout(std::time::Duration::from_secs(10))
 			.build()
 			.context(error::Http)?;
 
@@ -225,7 +235,7 @@ impl Client {
 				"application/vnd.github.machine-man-preview+json",
 			)
 			.header(header::USER_AGENT, "parity-processbot/0.0.1")
-			.timeout(std::time::Duration::from_secs(5))
+			.timeout(std::time::Duration::from_secs(10))
 			.send()
 			.await
 			.context(error::Http)?;
@@ -278,15 +288,16 @@ impl Client {
 	}
 
 	/// Get a single entry from a resource in GitHub. TODO fix
+	/*
 	pub async fn get_with_params<'b, I, T, P>(
 		&self,
 		url: I,
 		params: P,
 	) -> Result<T>
 	where
-		I: Into<Cow<'b, str>>,
+		I: Into<Cow<'b, str>> + Clone,
 		T: serde::de::DeserializeOwned,
-		P: Serialize,
+		P: Serialize + Clone,
 	{
 		self.get_response(url, params)
 			.await?
@@ -294,17 +305,37 @@ impl Client {
 			.await
 			.context(error::Http)
 	}
+	*/
 
 	//	/// Sends a `GET` request to `url`, supplying the relevant headers for
 	//	/// authenication and feature detection.
-	pub async fn get_response<'b, I: Into<Cow<'b, str>>, P: Serialize>(
+	pub async fn get_response<'b, I, P>(
 		&self,
 		url: I,
 		params: P,
-	) -> Result<Response> {
+	) -> Result<Response>
+	where
+		I: Into<Cow<'b, str>> + Clone,
+		P: Serialize + Clone,
+	{
 		log::debug!("get_response");
-		self.execute(self.client.get(&*url.into()).json(&params))
-			.await
+		// retry up to 5 times if request times out
+		let mut retries = 0;
+		'retry: loop {
+			let res = self
+				.execute(
+					self.client.get(&*url.clone().into()).json(&params.clone()),
+				)
+				.await;
+			// retry if timeout
+			if let Err(error::Error::Http { source: e, .. }) = res.as_ref() {
+				if e.is_timeout() && retries < 5 {
+					retries += 1;
+					continue 'retry;
+				}
+			}
+			return res;
+		}
 	}
 
 	// Originally adapted from:
