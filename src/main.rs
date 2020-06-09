@@ -64,7 +64,6 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
 	// let config_clone = config.clone();
 	//	let db_clone = db.clone();
-	//
 	/*
 	std::thread::spawn(move || loop {
 		{
