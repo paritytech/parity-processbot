@@ -54,6 +54,7 @@ macro_rules! impl_methods_with_body {
                     // retry if timeout
                     if let Err(error::Error::Http { source: e, .. }) = res.as_ref() {
                         if e.is_timeout() && retries < 5 {
+                            log::debug!("Request timed out; retrying");
                             retries += 1;
                             continue 'retry;
                         }
@@ -330,6 +331,7 @@ impl Client {
 			// retry if timeout
 			if let Err(error::Error::Http { source: e, .. }) = res.as_ref() {
 				if e.is_timeout() && retries < 5 {
+					log::debug!("Request timed out; retrying");
 					retries += 1;
 					continue 'retry;
 				}
@@ -351,6 +353,7 @@ impl Client {
 		let mut next = Some(url.into());
 
 		while let Some(url) = next {
+			log::debug!("getting next");
 			let response =
 				self.get_response(url, serde_json::json!({})).await?;
 
