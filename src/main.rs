@@ -2,7 +2,7 @@ use actix_web::{App, HttpServer};
 use parking_lot::RwLock;
 use rocksdb::DB;
 use snafu::ResultExt;
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 
 use parity_processbot::{
 	bamboo,
@@ -62,7 +62,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 		}
 	}
 
-	let config_clone = config.clone();
+	// let config_clone = config.clone();
 	//	let db_clone = db.clone();
 
 	/*
