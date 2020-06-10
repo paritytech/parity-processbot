@@ -281,13 +281,16 @@ impl Client {
 	pub async fn get<'b, I, T>(&self, url: I) -> Result<T>
 	where
 		I: Into<Cow<'b, str>> + Clone,
-		T: serde::de::DeserializeOwned,
+		T: serde::de::DeserializeOwned + core::fmt::Debug,
 	{
-		self.get_response(url, serde_json::json!({}))
+		let res = self
+			.get_response(url, serde_json::json!({}))
 			.await?
 			.json::<T>()
 			.await
-			.context(error::Http)
+			.context(error::Http);
+		log::debug!("{:?}", res);
+		res
 	}
 
 	/// Get a single entry from a resource in GitHub. TODO fix
@@ -349,7 +352,7 @@ impl Client {
 	pub async fn get_all<'b, I, T>(&self, url: I) -> Result<Vec<T>>
 	where
 		I: Into<Cow<'b, str>>,
-		T: serde::de::DeserializeOwned,
+		T: serde::de::DeserializeOwned + core::fmt::Debug,
 	{
 		log::debug!("get_all");
 		let mut entities = Vec::new();
@@ -380,6 +383,7 @@ impl Client {
 			entities.append(&mut body);
 		}
 
+		log::debug!("{:?}", entities);
 		Ok(entities)
 	}
 }
