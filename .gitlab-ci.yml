@@ -90,7 +90,7 @@ dockerize-processbot:
 #### stage:                        deploy
 
 .deploy-k8s:                       &deploy-k8s
-  image:                           parity/kubetools:helm3
+  image:                           paritytech/kubetools:helm3
   script:
     - helm upgrade processbot kubernetes/processbot
       --install
