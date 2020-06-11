@@ -64,6 +64,7 @@ async fn run() -> anyhow::Result<()> {
 
 	// let config_clone = config.clone();
 	//	let db_clone = db.clone();
+	//
 	/*
 	std::thread::spawn(move || loop {
 		{
