@@ -2,6 +2,11 @@ use actix_web::{error::*, post, web, HttpResponse, Responder};
 use anyhow::{Context, Result};
 use futures::StreamExt;
 use futures_util::future::TryFutureExt;
+use hyper::{
+	http::StatusCode,
+	service::{make_service_fn, service_fn},
+	Body, Request, Response, Server,
+};
 use itertools::Itertools;
 use parking_lot::RwLock;
 use ring::hmac;
@@ -18,13 +23,64 @@ pub const BAMBOO_DATA_KEY: &str = "BAMBOO_DATA";
 pub const CORE_DEVS_KEY: &str = "CORE_DEVS";
 
 pub struct AppState {
-	pub db: Arc<RwLock<DB>>,
+	pub db: DB,
 	pub github_bot: GithubBot,
 	pub matrix_bot: MatrixBot,
 	pub bot_config: BotConfig,
 	pub webhook_secret: String,
 	pub environment: String,
 	pub test_repo: String,
+}
+
+pub async fn webhook(
+	mut req: Request<Body>,
+	state: parking_lot::Mutex<Arc<AppState>>,
+) -> anyhow::Result<Response<Body>> {
+	if req.uri().path() == "/webhook" {
+		let state = Arc::clone(&state.lock());
+		let mut msg_bytes = web::BytesMut::new();
+		while let Some(item) = req.body_mut().next().await {
+			msg_bytes.extend_from_slice(
+				&item.context(format!(
+					"Error getting bytes from request body"
+				))?,
+			);
+		}
+
+		let sig = req
+			.headers()
+			.get("x-hub-signature")
+			.context(format!("Missing x-hub-signature"))?
+			.to_str()
+			.context(format!("Error parsing x-hub-signature"))?
+			.replace("sha1=", "");
+		let sig_bytes = base16::decode(sig.as_bytes())
+			.context(format!("Error decoding x-hub-signature"))?;
+
+		verify(
+			state.webhook_secret.trim().as_bytes(),
+			&msg_bytes,
+			&sig_bytes,
+		)
+		.context(format!("Validation signature does not match"))?;
+
+		let payload = serde_json::from_slice::<Payload>(&msg_bytes)
+			.context(format!("Error parsing request body"))?;
+
+		if let Err(e) = handle_payload(payload, state).await {
+			log::error!("{:?}", e);
+		}
+
+		Response::builder()
+			.status(StatusCode::OK)
+			.body(Body::from(""))
+			.context(format!("Error building response"))
+	} else {
+		Response::builder()
+			.status(StatusCode::NOT_FOUND)
+			.body(Body::from("Not found."))
+			.context(format!("Error building response"))
+	}
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -47,6 +103,7 @@ fn verify(
 	hmac::verify(&key, msg, signature)
 }
 
+/*
 #[post("/webhook")]
 pub async fn webhook(
 	req: web::HttpRequest,
@@ -97,11 +154,9 @@ async fn handle_webhook(
 
 	Ok(HttpResponse::Ok())
 }
+*/
 
-async fn handle_payload(
-	payload: Payload,
-	state: web::Data<Arc<AppState>>,
-) -> Result<()> {
+async fn handle_payload(payload: Payload, state: Arc<AppState>) -> Result<()> {
 	match payload {
 		Payload::IssueComment {
 			action: IssueCommentAction::Created,
@@ -120,11 +175,10 @@ async fn handle_payload(
 					..
 				},
 		} => {
-			handle_comment(body, login, number, html_url, repo_url, &state)
-				.await
+			handle_comment(body, login, number, html_url, repo_url, state).await
 		}
 		Payload::CommitStatus { sha, branches, .. } => {
-			handle_status(sha, branches, &state).await
+			handle_status(sha, branches, state).await
 		}
 		Payload::CheckRun {
 			check_run:
@@ -135,7 +189,7 @@ async fn handle_payload(
 					..
 				},
 			..
-		} => handle_check(status, head_sha, pull_requests, &state).await,
+		} => handle_check(status, head_sha, pull_requests, state).await,
 		_event => {
 			//			log::debug!("{:?}", event);
 			Ok(())
@@ -147,11 +201,11 @@ async fn handle_check(
 	status: String,
 	commit_sha: String,
 	pull_requests: Vec<CheckRunPR>,
-	state: &web::Data<Arc<AppState>>,
+	state: Arc<AppState>,
 ) -> Result<()> {
-	let db = &state.get_ref().db.write();
-	let github_bot = &state.get_ref().github_bot;
-	let bot_config = &state.get_ref().bot_config;
+	let db = &state.db;
+	let github_bot = &state.github_bot;
+	let bot_config = &state.bot_config;
 
 	if status == "completed".to_string() {
 		match db.get(commit_sha.trim().as_bytes()) {
@@ -207,11 +261,11 @@ async fn handle_check(
 async fn handle_status(
 	commit_sha: String,
 	branches: Vec<Branch>,
-	state: &web::Data<Arc<AppState>>,
+	state: Arc<AppState>,
 ) -> Result<()> {
-	let db = &state.get_ref().db.write();
-	let github_bot = &state.get_ref().github_bot;
-	let bot_config = &state.get_ref().bot_config;
+	let db = &state.db;
+	let github_bot = &state.github_bot;
+	let bot_config = &state.bot_config;
 
 	for Branch {
 		name: head_ref,
@@ -273,11 +327,11 @@ async fn handle_comment(
 	number: i64,
 	html_url: String,
 	repo_url: String,
-	state: &web::Data<Arc<AppState>>,
+	state: Arc<AppState>,
 ) -> Result<()> {
-	let db = &state.get_ref().db.write();
-	let github_bot = &state.get_ref().github_bot;
-	let bot_config = &state.get_ref().bot_config;
+	let db = &state.db;
+	let github_bot = &state.github_bot;
+	let bot_config = &state.bot_config;
 
 	let owner = GithubBot::owner_from_html_url(&html_url)
 		.context(format!("Failed parsing owner in url: {}", html_url))?;

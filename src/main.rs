@@ -2,12 +2,14 @@ use actix_web::{App, HttpServer};
 use parking_lot::RwLock;
 use rocksdb::DB;
 use snafu::ResultExt;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
 use parity_processbot::{
 	bamboo,
 	config::{BotConfig, MainConfig},
 	error, github_bot, matrix_bot,
+	server::*,
 	webhook::*,
 };
 
@@ -19,12 +21,12 @@ async fn main() -> std::io::Result<()> {
 	}
 }
 
-async fn run() -> Result<(), Box<dyn std::error::Error>> {
+async fn run() -> anyhow::Result<()> {
 	let config = MainConfig::from_env();
 	env_logger::from_env(env_logger::Env::default().default_filter_or("info"))
 		.init();
 
-	let db = Arc::new(RwLock::new(DB::open_default(&config.db_path)?));
+	let db = DB::open_default(&config.db_path)?;
 
 	log::info!(
 		"Connecting to Matrix homeserver {}",
@@ -46,6 +48,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
 	// the bamboo queries can take a long time so only wait for it
 	// on launch. subsequently update in the background.
+	/*
 	{
 		let db_write = db.write();
 		if db_write.get(BAMBOO_DATA_KEY).ok().flatten().is_none() {
@@ -61,6 +64,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 			}
 		}
 	}
+	*/
 
 	// let config_clone = config.clone();
 	//	let db_clone = db.clone();
@@ -95,14 +99,20 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 	});
 
 	let addr = format!("0.0.0.0:{}", config.webhook_port);
-	log::info!("Listening on {}", addr);
-	Ok(HttpServer::new(move || {
-		App::new().data(app_state.clone()).service(webhook)
-	})
-	.bind(&addr)?
-	.run()
-	.await
-	.context(error::Actix)?)
+	let socket = SocketAddr::new(
+		IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+		config.webhook_port.parse::<u16>().expect("webhook port"),
+	);
+
+	//	Ok(HttpServer::new(move || {
+	//		App::new().data(app_state.clone()).service(webhook)
+	//	})
+	//	.bind(&addr)?
+	//	.run()
+	//	.await
+	//	.context(error::Actix)?)
+
+	init_server(socket, app_state).await
 }
 
 #[cfg(test)]

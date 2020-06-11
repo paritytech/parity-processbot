@@ -1,3 +1,4 @@
+pub mod server;
 //pub mod auto_merge;
 pub mod bamboo;
 //pub mod bots;
