@@ -1,15 +1,14 @@
 use crate::webhook::*;
 use anyhow::{Context, Result};
 use async_std::pin::Pin;
-use futures_util::{future::Future, FutureExt};
+use futures_util::FutureExt;
 use futures_util::{
 	io::{AsyncRead, AsyncWrite},
 	stream::Stream,
 };
-use hyper::http::StatusCode;
 use hyper::{
 	service::{make_service_fn, service_fn},
-	Body, Request, Response, Server,
+	Body, Request, Server,
 };
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -95,19 +94,6 @@ impl std::error::Error for Error {
 	}
 }
 
-#[derive(Clone)]
-pub struct Executor;
-
-impl<T> hyper::rt::Executor<T> for Executor
-where
-	T: Future + Send + 'static,
-	T::Output: Send + 'static,
-{
-	fn execute(&self, future: T) {
-		async_std::task::spawn(future);
-	}
-}
-
 /// Initializes the metrics context, and starts an HTTP server
 /// to serve metrics.
 pub async fn init_server(
@@ -130,12 +116,9 @@ pub async fn init_server(
 		}
 	});
 
-	let server = Server::builder(Incoming(listener.incoming()))
-//		.executor(Executor)
+	Server::builder(Incoming(listener.incoming()))
 		.serve(service)
-		.boxed();
-
-	let result = server.await.context(format!(""));
-
-	result
+		.boxed()
+		.await
+		.context(format!("Server error"))
 }

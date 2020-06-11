@@ -1,14 +1,11 @@
-use actix_web::{error::*, post, web, HttpResponse, Responder};
 use anyhow::{Context, Result};
 use futures::StreamExt;
 use futures_util::future::TryFutureExt;
 use hyper::{
 	http::StatusCode,
-	service::{make_service_fn, service_fn},
-	Body, Request, Response, Server,
+	Body, Request, Response,
 };
 use itertools::Itertools;
-use parking_lot::RwLock;
 use ring::hmac;
 use rocksdb::DB;
 use serde::{Deserialize, Serialize};
@@ -38,7 +35,7 @@ pub async fn webhook(
 ) -> anyhow::Result<Response<Body>> {
 	if req.uri().path() == "/webhook" {
 		let state = Arc::clone(&state.lock());
-		let mut msg_bytes = web::BytesMut::new();
+		let mut msg_bytes = vec![];
 		while let Some(item) = req.body_mut().next().await {
 			msg_bytes.extend_from_slice(
 				&item.context(format!(

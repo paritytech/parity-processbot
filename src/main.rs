@@ -1,19 +1,15 @@
-use actix_web::{App, HttpServer};
-use parking_lot::RwLock;
 use rocksdb::DB;
-use snafu::ResultExt;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
 use parity_processbot::{
-	bamboo,
 	config::{BotConfig, MainConfig},
-	error, github_bot, matrix_bot,
+	github_bot, matrix_bot,
 	server::*,
 	webhook::*,
 };
 
-#[actix_rt::main]
+#[tokio::main]
 async fn main() -> std::io::Result<()> {
 	match run().await {
 		Err(error) => panic!("{}", error),
@@ -98,19 +94,10 @@ async fn run() -> anyhow::Result<()> {
 		test_repo: config.test_repo,
 	});
 
-	let addr = format!("0.0.0.0:{}", config.webhook_port);
 	let socket = SocketAddr::new(
 		IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
 		config.webhook_port.parse::<u16>().expect("webhook port"),
 	);
-
-	//	Ok(HttpServer::new(move || {
-	//		App::new().data(app_state.clone()).service(webhook)
-	//	})
-	//	.bind(&addr)?
-	//	.run()
-	//	.await
-	//	.context(error::Actix)?)
 
 	init_server(socket, app_state).await
 }
