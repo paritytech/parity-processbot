@@ -131,7 +131,7 @@ pub async fn init_server(
 	});
 
 	let server = Server::builder(Incoming(listener.incoming()))
-		.executor(Executor)
+//		.executor(Executor)
 		.serve(service)
 		.boxed();
 
