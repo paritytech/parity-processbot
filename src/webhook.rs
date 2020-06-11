@@ -1,10 +1,7 @@
 use anyhow::{Context, Result};
 use futures::StreamExt;
 use futures_util::future::TryFutureExt;
-use hyper::{
-	http::StatusCode,
-	Body, Request, Response,
-};
+use hyper::{http::StatusCode, Body, Request, Response};
 use itertools::Itertools;
 use ring::hmac;
 use rocksdb::DB;
@@ -1000,7 +997,9 @@ async fn try_merge(
 						owner,
 						repo_name,
 						pr.number,
-						&format!("Error getting process info: {}", e),
+						&format!(
+							"Error getting process info; see logs for details."
+						),
 					)
 					.await
 					.map_err(|e| {
@@ -1047,7 +1046,7 @@ async fn try_merge(
 						|| lead_approved
 					{
 						log::info!("{} has approval; merging.", pr.html_url);
-						let _ = github_bot
+						if let Err(e) = github_bot
 							.merge_pull_request(
 								owner,
 								repo_name,
@@ -1055,10 +1054,23 @@ async fn try_merge(
 								&pr.head.sha,
 							)
 							.await
-							.map_err(|e| {
-								log::error!("Error merging: {}", e);
-								tidy = false;
-							});
+						{
+							log::error!("Error merging: {}", e);
+							tidy = false;
+							let _ = github_bot
+								.create_issue_comment(
+									owner,
+									repo_name,
+									pr.number,
+									&format!(
+										"Error merging; see logs for details."
+									),
+								)
+								.await
+								.map_err(|e| {
+									log::error!("Error posting comment: {}", e);
+								});
+						}
 					} else {
 						if process.is_empty() {
 							log::info!("{} lacks process info - it might not belong to a valid project column.", pr.html_url);
