@@ -125,13 +125,14 @@ impl Client {
 			};
 		}
 
-		let mut token_cache = TOKEN_CACHE.lock();
-
-		let token = token_cache
-			.as_ref()
-			// Ensure token is not expired if set.
-			.filter(|(time, _)| time > &Utc::now())
-			.map(|(_, token)| token.clone());
+		let token = {
+			TOKEN_CACHE
+				.lock()
+				.as_ref()
+				// Ensure token is not expired if set.
+				.filter(|(time, _)| time > &Utc::now())
+				.map(|(_, token)| token.clone())
+		};
 
 		if let Some(token) = token {
 			return Ok(token);
@@ -166,7 +167,9 @@ impl Client {
 			.map_or(default_exp, |t| t.parse().unwrap_or(default_exp));
 		let token = install_token.token;
 
-		*token_cache = Some((expiry.clone(), token.clone()));
+		{
+			*TOKEN_CACHE.lock() = Some((expiry.clone(), token.clone()))
+		};
 
 		Ok(token)
 	}
