@@ -38,28 +38,18 @@ async fn main() -> std::io::Result<()> {
 						.spawn()
 						.expect("spawn commit")
 						.then(|_| {
-							Command::new("rm")
-								.arg("-rf")
-								.arg("repo")
+							Command::new("git")
+								.arg("push")
 								.spawn()
-								.expect("spawn repo")
+								.expect("spawn push")
+								.then(|_| {
+									Command::new("rm")
+										.arg("-rf")
+										.arg("repo")
+										.spawn()
+										.expect("spawn repo")
+								})
 						})
-					/*
-									.then(|_| {
-										Command::new("git")
-											.arg("push")
-											.spawn()
-											.expect("spawn push")
-											.then(|_| {
-												Command::new("rm")
-													.arg("-rf")
-													.arg("repo")
-													.spawn()
-													.expect("spawn repo")
-											})
-									})
-							})
-					*/
 				})
 		});
 
