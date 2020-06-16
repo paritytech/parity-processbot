@@ -1,6 +1,8 @@
+use futures_util::future::FutureExt;
 use rocksdb::DB;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
+use tokio::process::Command;
 
 use parity_processbot::{
 	config::{BotConfig, MainConfig},
@@ -11,10 +13,64 @@ use parity_processbot::{
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
+	let clone = Command::new("git")
+		.arg("clone")
+		.arg("https://github.com/paritytech/polkadot.git")
+		.arg("repo")
+		.spawn()
+		.expect("spawn clone")
+		.then(|_| {
+			Command::new("cd")
+				.arg("repo")
+				.arg("&&")
+				.arg("cargo")
+				.arg("update")
+				.arg("-p")
+				.arg("sp-io")
+				.spawn()
+				.expect("spawn update")
+					.then(|_| {
+						Command::new("git")
+							.arg("commit")
+							.arg("-a")
+							.arg("-m")
+							.arg("'Update substrate'")
+							.spawn()
+							.expect("spawn commit")
+	/*
+							.then(|_| {
+								Command::new("git")
+									.arg("push")
+									.spawn()
+									.expect("spawn push")
+									.then(|_| {
+										Command::new("rm")
+											.arg("-rf")
+											.arg("repo")
+											.spawn()
+											.expect("spawn repo")
+									})
+							})
+					})
+			*/
+			})
+	});
+
+	// Make sure our child succeeded in spawning and process the result
+	let future = clone; //.then(|_| cd).then(|_| update).then(|_| commit).then(|_| rm);
+
+	// Await until the future (and the command) completes
+	let status = future.await?;
+	println!("the command exited with: {}", status);
+
+	Ok(())
+
+	/*
 	match run().await {
 		Err(error) => panic!("{}", error),
 		_ => Ok(()),
 	}
+	*/
 }
 
 async fn run() -> anyhow::Result<()> {
