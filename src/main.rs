@@ -29,32 +29,39 @@ async fn main() -> std::io::Result<()> {
 				.arg("sp-io")
 				.spawn()
 				.expect("spawn update")
-					.then(|_| {
-						Command::new("git")
-							.arg("commit")
-							.arg("-a")
-							.arg("-m")
-							.arg("'Update substrate'")
-							.spawn()
-							.expect("spawn commit")
-	/*
-							.then(|_| {
-								Command::new("git")
-									.arg("push")
-									.spawn()
-									.expect("spawn push")
+				.then(|_| {
+					Command::new("git")
+						.arg("commit")
+						.arg("-a")
+						.arg("-m")
+						.arg("'Update substrate'")
+						.spawn()
+						.expect("spawn commit")
+						.then(|_| {
+							Command::new("rm")
+								.arg("-rf")
+								.arg("repo")
+								.spawn()
+								.expect("spawn repo")
+						})
+					/*
 									.then(|_| {
-										Command::new("rm")
-											.arg("-rf")
-											.arg("repo")
+										Command::new("git")
+											.arg("push")
 											.spawn()
-											.expect("spawn repo")
+											.expect("spawn push")
+											.then(|_| {
+												Command::new("rm")
+													.arg("-rf")
+													.arg("repo")
+													.spawn()
+													.expect("spawn repo")
+											})
 									})
 							})
-					})
-			*/
-			})
-	});
+					*/
+				})
+		});
 
 	// Make sure our child succeeded in spawning and process the result
 	let future = clone; //.then(|_| cd).then(|_| update).then(|_| commit).then(|_| rm);
