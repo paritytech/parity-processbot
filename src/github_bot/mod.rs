@@ -10,7 +10,7 @@ pub mod tag;
 pub mod team;
 
 pub struct GithubBot {
-	client: crate::http::Client,
+	pub client: crate::http::Client,
 }
 
 impl GithubBot {
