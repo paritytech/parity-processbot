@@ -361,16 +361,91 @@ async fn handle_comment(
 								if checks.check_runs.iter().all(|r| {
 									r.conclusion == Some("success".to_string())
 								}) {
-									try_merge(
-										&github_bot,
-										owner,
-										&repo_name,
-										&pr,
-										db,
-										&bot_config,
-										&login,
-									)
-									.await;
+									log::info!(
+										"{} checks successful.",
+										html_url
+									);
+									let m = MergeRequest {
+										owner: owner.to_string(),
+										repo_name: repo_name.clone(),
+										number: pr.number,
+										html_url: pr.html_url.clone(),
+										requested_by: login.to_string(),
+										branch: pr.head.ref_field.clone(),
+									};
+									log::info!(
+										"Serializing merge request: {:?}",
+										m
+									);
+									match bincode::serialize(&m) {
+										Ok(bytes) => {
+											log::info!("Writing merge request to db (head ref: {})", pr.head.ref_field);
+											match db.put(
+												pr.head.sha.trim().as_bytes(),
+												bytes,
+											) {
+												Ok(_) => {
+													log::info!("Trying merge.");
+													let _ = github_bot
+                                                        .create_issue_comment(
+                                                            owner,
+                                                            &repo_name,
+                                                            pr.number,
+                                                            "Trying merge.",
+                                                        )
+                                                        .await
+                                                        .map_err(|e| {
+                                                            log::error!(
+                                                                "Error posting comment: {}",
+                                                                e
+                                                            );
+                                                        });
+													try_merge(
+														&github_bot,
+														owner,
+														&repo_name,
+														&pr,
+														db,
+														&bot_config,
+														&login,
+													)
+													.await;
+												}
+												Err(e) => {
+													log::error!("Error adding merge request to db: {}", e);
+													let _ = github_bot.create_issue_comment(
+                                                        owner,
+                                                        &repo_name,
+                                                        pr.number,
+                                                        "Auto-merge failed due to db error; see logs for details.",
+                                                    )
+                                                    .await
+                                                    .map_err(|e| {
+                                                        log::error!(
+                                                            "Error posting comment: {}",
+                                                            e
+                                                        );
+                                                    });
+												}
+											}
+										}
+										Err(e) => {
+											log::error!("Error serializing merge request: {}", e);
+											let _ = github_bot.create_issue_comment(
+                                                owner,
+                                                &repo_name,
+                                                pr.number,
+                                                "Auto-merge failed due to serialization error; see logs for details.",
+                                            )
+                                            .await
+                                            .map_err(|e| {
+                                                log::error!(
+                                                    "Error posting comment: {}",
+                                                    e
+                                                );
+                                            });
+										}
+									}
 								} else if checks.check_runs.iter().all(|r| {
 									r.status == "completed".to_string()
 								}) {
@@ -977,13 +1052,26 @@ async fn try_merge(
 
 	if team_leads.iter().any(|lead| lead.login == requested_by) {
 		log::info!("{} merge requested by a team lead; merging.", pr.html_url);
-		let _ = github_bot
+		if let Err(e) = github_bot
 			.merge_pull_request(owner, repo_name, pr.number, &pr.head.sha)
 			.await
-			.map_err(|e| {
-				log::error!("Error merging: {}", e);
-				tidy = false;
-			});
+		{
+			log::error!("Error merging: {}", e);
+			tidy = false;
+			let _ = github_bot
+				.create_issue_comment(
+					owner,
+					repo_name,
+					pr.number,
+					&format!("Error merging; see logs for details.  (I may be able to try again if checks are incomplete.)"),
+				)
+				.await
+				.map_err(|e| {
+					log::error!("Error posting comment: {}", e);
+				});
+		} else {
+			log::info!("Merge successful.");
+		}
 	} else {
 		match process::get_process(github_bot, owner, repo_name, pr.number)
 			.await
@@ -1062,9 +1150,7 @@ async fn try_merge(
 									owner,
 									repo_name,
 									pr.number,
-									&format!(
-										"Error merging; see logs for details."
-									),
+                                    &format!("Error merging; see logs for details.  (I may be able to try again if checks are incomplete.)"),
 								)
 								.await
 								.map_err(|e| {
