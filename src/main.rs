@@ -44,6 +44,7 @@ async fn run() -> anyhow::Result<()> {
 
 	// the bamboo queries can take a long time so only wait for it
 	// on launch. subsequently update in the background.
+	//
 	/*
 	{
 		let db_write = db.write();
