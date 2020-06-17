@@ -1004,9 +1004,9 @@ async fn continue_merge(
 		//
 		log::info!("{} merge requested by a team lead; merging.", pr.html_url);
 		tidy = merge(github_bot, owner, repo_name, pr).await;
-        //
-        //
-        //
+	//
+	//
+	//
 	} else {
 		match process::get_process(github_bot, owner, repo_name, pr.number)
 			.await
@@ -1073,9 +1073,9 @@ async fn continue_merge(
 						//
 						log::info!("{} has approval; merging.", pr.html_url);
 						tidy = merge(github_bot, owner, repo_name, pr).await;
-                        //
-                        //
-                        //
+					//
+					//
+					//
 					} else {
 						if process.is_empty() {
 							log::info!("{} lacks process info - it might not belong to a valid project column.", pr.html_url);
