@@ -107,6 +107,7 @@ async fn run() -> anyhow::Result<()> {
 		config.webhook_port.parse::<u16>().expect("webhook port"),
 	);
 
+	Ok(())
 	//	init_server(socket, app_state).await
 }
 
