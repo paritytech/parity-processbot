@@ -90,7 +90,14 @@ async fn run() -> anyhow::Result<()> {
 	});
 	*/
 
-	companion_update(&github_bot, "paritytech", "polkadot", "master").await?;
+	companion_update(
+		&github_bot,
+		"paritytech",
+		"polkadot",
+		"master",
+		&config.home,
+	)
+	.await?;
 
 	let app_state = Arc::new(AppState {
 		db: db,

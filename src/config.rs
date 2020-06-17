@@ -1,5 +1,6 @@
 #[derive(Debug, Clone)]
 pub struct MainConfig {
+	pub home: String,
 	pub environment: String,
 	pub test_repo: String,
 	pub installation_login: String,
@@ -21,6 +22,7 @@ impl MainConfig {
 	pub fn from_env() -> Self {
 		dotenv::dotenv().ok();
 
+		let home = dotenv::var("HOME").expect("HOME");
 		let environment = dotenv::var("ENVIRONMENT").expect("ENVIRONMENT");
 		let test_repo = dotenv::var("TEST_REPO_NAME").expect("TEST_REPO_NAME");
 		let installation_login =
@@ -56,6 +58,7 @@ impl MainConfig {
 			.expect("Couldn't find private key.");
 
 		Self {
+			home,
 			environment,
 			test_repo,
 			installation_login,
