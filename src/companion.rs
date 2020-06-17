@@ -10,7 +10,7 @@ pub async fn companion_update(
 	branch: &str,
 ) -> anyhow::Result<()> {
 	let token = github_bot.client.auth_key().await?;
-	let child = Command::new("rustup")
+	let child = Command::new("$HOME/.cargo/bin/rustup")
 		.arg("update")
 		.spawn()
 		.expect("spawn rustup")
