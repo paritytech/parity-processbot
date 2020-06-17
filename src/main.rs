@@ -90,8 +90,7 @@ async fn run() -> anyhow::Result<()> {
 	});
 	*/
 
-	return companion_update(&github_bot, "paritytech", "polkadot", "master")
-		.await;
+	companion_update(&github_bot, "paritytech", "polkadot", "master").await?;
 
 	let app_state = Arc::new(AppState {
 		db: db,
@@ -108,7 +107,7 @@ async fn run() -> anyhow::Result<()> {
 		config.webhook_port.parse::<u16>().expect("webhook port"),
 	);
 
-	//	init_server(socket, app_state).await
+	init_server(socket, app_state).await
 }
 
 #[cfg(test)]
