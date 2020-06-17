@@ -6,7 +6,7 @@ RUN set -ev; \
     apt-get update; \
     apt-get upgrade -y; \
     apt-get install -y --no-install-recommends \
-        pkg-config curl ca-certificates libssl-dev; \
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+        pkg-config curl ca-certificates libssl-dev apt-utils; \
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 
 CMD ["parity-processbot"]
