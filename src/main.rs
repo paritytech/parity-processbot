@@ -48,6 +48,7 @@ async fn run() -> anyhow::Result<()> {
 
 	// the bamboo queries can take a long time so only wait for it
 	// on launch. subsequently update in the background.
+	//
 	/*
 	{
 		let db_write = db.write();
@@ -68,7 +69,6 @@ async fn run() -> anyhow::Result<()> {
 
 	// let config_clone = config.clone();
 	//	let db_clone = db.clone();
-	//
 	/*
 	std::thread::spawn(move || loop {
 		{
