@@ -1003,10 +1003,10 @@ async fn continue_merge(
 		// MERGE
 		//
 		log::info!("{} merge requested by a team lead; merging.", pr.html_url);
-		tidy = merge(github_bot, owner, repo_name, pr);
-	//
-	//
-	//
+		tidy = merge(github_bot, owner, repo_name, pr).await;
+        //
+        //
+        //
 	} else {
 		match process::get_process(github_bot, owner, repo_name, pr.number)
 			.await
@@ -1072,10 +1072,10 @@ async fn continue_merge(
 						// MERGE
 						//
 						log::info!("{} has approval; merging.", pr.html_url);
-						tidy = merge(github_bot, owner, repo_name, pr);
-					//
-					//
-					//
+						tidy = merge(github_bot, owner, repo_name, pr).await;
+                        //
+                        //
+                        //
 					} else {
 						if process.is_empty() {
 							log::info!("{} lacks process info - it might not belong to a valid project column.", pr.html_url);
@@ -1138,9 +1138,6 @@ async fn merge(
 	owner: &str,
 	repo_name: &str,
 	pr: &PullRequest,
-	db: &DB,
-	bot_config: &BotConfig,
-	requested_by: &str,
 ) -> bool {
 	if let Err(e) = github_bot
 		.merge_pull_request(owner, repo_name, pr.number, &pr.head.sha)
