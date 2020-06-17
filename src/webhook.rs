@@ -995,7 +995,7 @@ async fn continue_merge(
 		vec![]
 	});
 
-    // If merge fails then do not delete db entry.
+	// If merge fails then do not delete db entry.
 	let mut tidy = true;
 
 	if team_leads.iter().any(|lead| lead.login == requested_by) {
@@ -1004,9 +1004,9 @@ async fn continue_merge(
 		//
 		log::info!("{} merge requested by a team lead; merging.", pr.html_url);
 		tidy = merge(github_bot, owner, repo_name, pr);
-        //
-        //
-        //
+	//
+	//
+	//
 	} else {
 		match process::get_process(github_bot, owner, repo_name, pr.number)
 			.await
@@ -1073,9 +1073,9 @@ async fn continue_merge(
 						//
 						log::info!("{} has approval; merging.", pr.html_url);
 						tidy = merge(github_bot, owner, repo_name, pr);
-                        //
-                        //
-                        //
+					//
+					//
+					//
 					} else {
 						if process.is_empty() {
 							log::info!("{} lacks process info - it might not belong to a valid project column.", pr.html_url);
@@ -1123,7 +1123,7 @@ async fn continue_merge(
 		}
 	}
 
-    // If merge was successful then delete db entry.
+	// If merge was successful then delete db entry.
 	if tidy {
 		// Clean db.
 		let _ = db.delete(pr.head.sha.as_bytes()).map_err(|e| {
