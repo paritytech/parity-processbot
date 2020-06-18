@@ -1,4 +1,4 @@
-use futures_util::future::FutureExt;
+use regex::Regex;
 use tokio::process::Command;
 
 use crate::github_bot::GithubBot;
@@ -11,64 +11,57 @@ pub async fn companion_update(
 	home: &str,
 ) -> anyhow::Result<()> {
 	let token = github_bot.client.auth_key().await?;
-	let child = Command::new("rustup")
+	Command::new("rustup")
 		.arg("update")
-        .current_dir(&format!("{}/.cargo/bin", home))
-		.spawn()
-		.expect("spawn rustup")
-		.then(|_| {
-			Command::new("git")
-				.arg("clone")
-				.arg("-vb")
-				.arg(branch)
-				.arg(format!(
-                    "https://x-access-token:{token}@github.com/{owner}/{repo}.git",
-                    token = token,
-                    owner = owner,
-                    repo = repo,
-                ))
-				.arg("repo")
-				.spawn()
-				.expect("spawn clone")
-				.then(|_| {
-					Command::new("cargo")
-						.arg("update")
-						.arg("-vp")
-						.arg("sp-io")
-						.current_dir("./repo")
-						.spawn()
-						.expect("spawn update")
-						.then(|_| {
-							Command::new("git")
-								.arg("commit")
-								.arg("-a")
-								.arg("-m")
-								.arg("'Update substrate'")
-								.current_dir("./repo")
-								.spawn()
-								.expect("spawn commit")
-								.then(|_| {
-									Command::new("git")
-										.arg("push")
-										.arg("-vn")
-										.current_dir("./repo")
-										.spawn()
-										.expect("spawn push")
-										.then(|_| {
-											Command::new("rm")
-												.arg("-rf")
-												.arg("repo")
-												.spawn()
-												.expect("spawn repo")
-										})
-								})
-						})
-				})
-		});
+		.current_dir(&format!("{}/.cargo/bin", home))
+		.spawn()?
+		.await?;
+	Command::new("git")
+		.arg("clone")
+		.arg("-vb")
+		.arg(branch)
+		.arg(format!(
+			"https://x-access-token:{token}@github.com/{owner}/{repo}.git",
+			token = token,
+			owner = owner,
+			repo = repo,
+		))
+		.arg("repo")
+		.spawn()?
+		.await?;
+	Command::new("cargo")
+		.arg("update")
+		.arg("-vp")
+		.arg("sp-io")
+		.current_dir("./repo")
+		.spawn()?
+		.await?;
+	Command::new("git")
+		.arg("commit")
+		.arg("-a")
+		.arg("-m")
+		.arg("'Update substrate'")
+		.current_dir("./repo")
+		.spawn()?
+		.await?;
+	Command::new("git")
+		.arg("push")
+		.arg("-vn")
+		.current_dir("./repo")
+		.spawn()?
+		.await?;
+	Command::new("rm").arg("-rf").arg("repo").spawn()?.await?;
+	Ok(())
+}
 
-	// Await until the future (and the command) completes
-	let status = child.await?;
-	println!("the command exited with: {}", status);
-
-	return Ok(());
+async fn companion_number(body: &str) -> Option<i64> {
+	let re = Regex::new(
+		r"^https://github.com/paritytech/polkadot/pull/([[:digit:]]+)"
+	)
+	.unwrap();
+    dbg!(re.find(body).unwrap());
+//	while re.captures_iter(&s).count() > 0 {
+//		s = dbg!(re.replace_all(&s, "[$1-$2").to_string());
+//	}
+    Ok(false)
 }

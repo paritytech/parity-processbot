@@ -99,6 +99,14 @@ fn verify(
 
 async fn handle_payload(payload: Payload, state: Arc<AppState>) -> Result<()> {
 	match payload {
+		Payload::PullRequest {
+			action: PullRequestAction::Closed,
+			number,
+			pull_request: PullRequest {
+				merged: true, body, ..
+			},
+			..
+		} => handle_merged(body, number, state).await,
 		Payload::IssueComment {
 			action: IssueCommentAction::Created,
 			comment:
@@ -131,11 +139,19 @@ async fn handle_payload(payload: Payload, state: Arc<AppState>) -> Result<()> {
 				},
 			..
 		} => handle_check(status, head_sha, pull_requests, state).await,
-		_event => {
-			//			log::debug!("{:?}", event);
-			Ok(())
-		}
+		_event => Ok(()),
 	}
+}
+
+async fn handle_merged(
+	body: String,
+	number: i64,
+	state: Arc<AppState>,
+) -> Result<()> {
+	let db = &state.db;
+	let github_bot = &state.github_bot;
+	let bot_config = &state.bot_config;
+    unimplemented!()
 }
 
 async fn handle_check(
@@ -1073,9 +1089,9 @@ async fn continue_merge(
 						//
 						log::info!("{} has approval; merging.", pr.html_url);
 						tidy = merge(github_bot, owner, repo_name, pr).await;
-					//
-					//
-					//
+                        //
+                        //
+                        //
 					} else {
 						if process.is_empty() {
 							log::info!("{} lacks process info - it might not belong to a valid project column.", pr.html_url);
