@@ -289,6 +289,46 @@ async fn handle_comment(
 			html_url,
 			login
 		);
+
+		// Check the user is a member of the org
+		let member = github_bot.org_member(&owner, &login).await;
+		if let Err(e) = member {
+			log::error!("Error getting organization membership: {:?}", e);
+			let _ = github_bot
+                .create_issue_comment(
+                    owner,
+                    &repo_name,
+                    number,
+                    "Error getting organization membership; see logs for details.",
+                )
+                .await
+                .map_err(|e| {
+                    log::error!(
+                        "Error posting comment: {}",
+                        e
+                    );
+                });
+			return Ok(());
+		} else if member.unwrap() != 204 {
+			log::warn!(
+				"Merge requested by {}, who is not a member of {}.",
+				login,
+				owner
+			);
+			let _ = github_bot
+				.create_issue_comment(
+					owner,
+					&repo_name,
+					number,
+					&format!("Only members of {} can request merges.", owner),
+				)
+				.await
+				.map_err(|e| {
+					log::error!("Error posting comment: {}", e);
+				});
+			return Ok(());
+		}
+
 		// Fetch the pr to get all fields (eg. mergeable).
 		match github_bot.pull_request(owner, &repo_name, number).await {
 			Ok(pr) => {
@@ -614,6 +654,20 @@ async fn handle_comment(
 			}
 			Err(e) => {
 				log::error!("Error getting PR: {}", e);
+				let _ = github_bot
+                    .create_issue_comment(
+                        owner,
+                        &repo_name,
+                        number,
+                        "Auto-merge failed due to network error; see logs for details.",
+                    )
+                    .await
+                    .map_err(|e| {
+                        log::error!(
+                            "Error posting comment: {}",
+                            e
+                        );
+                    });
 			}
 		}
 	} else if body.to_lowercase().trim()
@@ -765,6 +819,17 @@ async fn handle_comment(
 			}
 			Err(e) => {
 				log::error!("Error getting PR: {}", e);
+				let _ = github_bot
+					.create_issue_comment(
+						owner,
+						&repo_name,
+						number,
+						"Network error; see logs for details.",
+					)
+					.await
+					.map_err(|e| {
+						log::error!("Error posting comment: {}", e);
+					});
 			}
 		}
 	}
