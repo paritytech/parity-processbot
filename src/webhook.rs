@@ -9,8 +9,8 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use crate::{
-	config::BotConfig, constants::*, github::*, github_bot::GithubBot,
-	matrix_bot::MatrixBot, process,
+	config::BotConfig, constants::*, error::*, github::*,
+	github_bot::GithubBot, matrix_bot::MatrixBot, process,
 };
 
 pub const BAMBOO_DATA_KEY: &str = "BAMBOO_DATA";
@@ -1143,18 +1143,28 @@ async fn merge(
 		.merge_pull_request(owner, repo_name, pr.number, &pr.head.sha)
 		.await
 	{
-		log::error!("Error merging: {}", e);
-		let _ = github_bot
-            .create_issue_comment(
-                owner,
-                repo_name,
-                pr.number,
-                "Error merging; see logs for details.  (I may be able to try again if checks are incomplete.)",
-            )
-            .await
-            .map_err(|e| {
-                log::error!("Error posting comment: {}", e);
-            });
+		log::error!("Error merging: {}", &e);
+		// status can be false green if checks haven't fully begun.
+		// in that case ignore the 405.
+		let should_post = match e {
+			Error::Http { source: re, .. } => {
+				re.status().map_or(true, |s| s.as_u16() != 405)
+			}
+			_ => true,
+		};
+		if should_post {
+			let _ = github_bot
+				.create_issue_comment(
+					owner,
+					repo_name,
+					pr.number,
+					"Error merging; see logs for details.",
+				)
+				.await
+				.map_err(|e| {
+					log::error!("Error posting comment: {}", e);
+				});
+		}
 		false
 	} else {
 		log::info!("Merge successful.");
