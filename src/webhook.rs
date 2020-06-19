@@ -26,6 +26,25 @@ pub struct AppState {
 	pub test_repo: String,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+#[repr(C)]
+pub struct MergeRequest {
+	owner: String,
+	repo_name: String,
+	number: i64,
+	html_url: String,
+	requested_by: String,
+}
+
+fn verify(
+	secret: &[u8],
+	msg: &[u8],
+	signature: &[u8],
+) -> Result<(), ring::error::Unspecified> {
+	let key = hmac::Key::new(hmac::HMAC_SHA1_FOR_LEGACY_USE_ONLY, secret);
+	hmac::verify(&key, msg, signature)
+}
+
 pub async fn webhook(
 	mut req: Request<Body>,
 	state: parking_lot::Mutex<Arc<AppState>>,
@@ -75,25 +94,6 @@ pub async fn webhook(
 			.body(Body::from("Not found."))
 			.context(format!("Error building response"))
 	}
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[repr(C)]
-pub struct MergeRequest {
-	owner: String,
-	repo_name: String,
-	number: i64,
-	html_url: String,
-	requested_by: String,
-}
-
-fn verify(
-	secret: &[u8],
-	msg: &[u8],
-	signature: &[u8],
-) -> Result<(), ring::error::Unspecified> {
-	let key = hmac::Key::new(hmac::HMAC_SHA1_FOR_LEGACY_USE_ONLY, secret);
-	hmac::verify(&key, msg, signature)
 }
 
 async fn handle_payload(payload: Payload, state: Arc<AppState>) -> Result<()> {
