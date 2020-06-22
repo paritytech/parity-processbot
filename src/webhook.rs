@@ -9,8 +9,8 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use crate::{
-	config::BotConfig, constants::*, error::*, github::*,
-	github_bot::GithubBot, matrix_bot::MatrixBot, process,
+	config::BotConfig, constants::*, github::*, github_bot::GithubBot,
+	matrix_bot::MatrixBot, process,
 };
 
 pub const BAMBOO_DATA_KEY: &str = "BAMBOO_DATA";
@@ -1057,18 +1057,12 @@ async fn continue_merge(
 		vec![]
 	});
 
-	// If merge fails then do not delete db entry.
-	let mut tidy = true;
-
 	if team_leads.iter().any(|lead| lead.login == requested_by) {
 		//
 		// MERGE
 		//
 		log::info!("{} merge requested by a team lead; merging.", pr.html_url);
-		tidy = merge(github_bot, owner, repo_name, pr).await;
-	//
-	//
-	//
+		merge(github_bot, owner, repo_name, pr).await;
 	} else {
 		match process::get_process(github_bot, owner, repo_name, pr.number)
 			.await
@@ -1134,10 +1128,7 @@ async fn continue_merge(
 						// MERGE
 						//
 						log::info!("{} has approval; merging.", pr.html_url);
-						tidy = merge(github_bot, owner, repo_name, pr).await;
-					//
-					//
-					//
+						merge(github_bot, owner, repo_name, pr).await;
 					} else {
 						if process.is_empty() {
 							log::info!("{} lacks process info - it might not belong to a valid project column.", pr.html_url);
@@ -1174,7 +1165,7 @@ async fn continue_merge(
 							owner,
 							repo_name,
 							pr.number,
-							"PR is currently unmergeable.",
+							"PR is unmergeable",
 						)
 						.await
 						.map_err(|e| {
@@ -1185,13 +1176,10 @@ async fn continue_merge(
 		}
 	}
 
-	// If merge was successful then delete db entry.
-	if tidy {
-		// Clean db.
-		let _ = db.delete(pr.head.sha.as_bytes()).map_err(|e| {
-			log::error!("Error deleting from db: {}", e);
-		});
-	}
+	// Clean db.
+	let _ = db.delete(pr.head.sha.as_bytes()).map_err(|e| {
+		log::error!("Error deleting from db: {}", e);
+	});
 }
 
 /// Attempt merge and return `true` if successful, otherwise `false`.
@@ -1200,37 +1188,25 @@ async fn merge(
 	owner: &str,
 	repo_name: &str,
 	pr: &PullRequest,
-) -> bool {
+) {
 	if let Err(e) = github_bot
 		.merge_pull_request(owner, repo_name, pr.number, &pr.head.sha)
 		.await
 	{
 		log::error!("Error merging: {}", &e);
-		// status can be false green if checks haven't fully begun.
-		// in that case ignore the 405.
-		let should_post = match e {
-			Error::Http { source: re, .. } => {
-				re.status().map_or(true, |s| s.as_u16() != 405)
-			}
-			_ => true,
-		};
-		if should_post {
-			let _ = github_bot
-				.create_issue_comment(
-					owner,
-					repo_name,
-					pr.number,
-					"Error merging; see logs for details.",
-				)
-				.await
-				.map_err(|e| {
-					log::error!("Error posting comment: {}", e);
-				});
-		}
-		false
+		let _ = github_bot
+			.create_issue_comment(
+				owner,
+				repo_name,
+				pr.number,
+				"Error merging; see logs for details.",
+			)
+			.await
+			.map_err(|e| {
+				log::error!("Error posting comment: {}", e);
+			});
 	} else {
 		log::info!("Merge successful.");
-		true
 	}
 }
 
