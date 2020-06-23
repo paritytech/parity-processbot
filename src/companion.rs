@@ -1,3 +1,4 @@
+use anyhow::Context;
 use regex::Regex;
 use tokio::process::Command;
 
@@ -13,8 +14,9 @@ pub async fn companion_update(
 	let token = github_bot.client.auth_key().await?;
 	Command::new("rustup")
 		.arg("update")
-		.current_dir("/root/.cargo/bin")
-		.spawn()?
+		.current_dir(&format!("{}/.cargo/bin", home))
+		.spawn()
+		.context("rustup update")?
 		.await?;
 	Command::new("git")
 		.arg("clone")
@@ -27,14 +29,16 @@ pub async fn companion_update(
 			repo = repo,
 		))
 		.arg("repo")
-		.spawn()?
+		.spawn()
+		.context("git clone")?
 		.await?;
 	Command::new("cargo")
 		.arg("update")
 		.arg("-vp")
 		.arg("sp-io")
 		.current_dir("./repo")
-		.spawn()?
+		.spawn()
+		.context("cargo update")?
 		.await?;
 	Command::new("git")
 		.arg("commit")
@@ -42,15 +46,22 @@ pub async fn companion_update(
 		.arg("-m")
 		.arg("'Update substrate'")
 		.current_dir("./repo")
-		.spawn()?
+		.spawn()
+		.context("git commit")?
 		.await?;
 	Command::new("git")
 		.arg("push")
 		.arg("-vn")
 		.current_dir("./repo")
-		.spawn()?
+		.spawn()
+		.context("git push")?
 		.await?;
-	Command::new("rm").arg("-rf").arg("repo").spawn()?.await?;
+	Command::new("rm")
+		.arg("-rf")
+		.arg("repo")
+		.spawn()
+		.context("rm")?
+		.await?;
 	Ok(())
 }
 
