@@ -1,5 +1,7 @@
 FROM debian:buster-slim
 
+ENV PATH="$HOME/.cargo/bin:$PATH";
+
 COPY parity-processbot /usr/local/bin/parity-processbot
 
 RUN set -ev; \
@@ -9,8 +11,6 @@ RUN set -ev; \
         pkg-config curl ca-certificates libssl-dev clang git; \
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y; \
     git config --global user.name "parity-processbot"; \
-    git config --global user.email "<>"; \
-    export PATH="$HOME/.cargo/bin:$PATH"; \
-    bash --login;
+    git config --global user.email "<>";
 
 CMD ["parity-processbot"]
