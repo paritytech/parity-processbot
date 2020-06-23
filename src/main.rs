@@ -1,13 +1,8 @@
-#![allow(unused_imports)]
-#![allow(unused_variables)]
-#![allow(unreachable_code)]
-
 use rocksdb::DB;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
 use parity_processbot::{
-	companion::*,
 	config::{BotConfig, MainConfig},
 	github_bot, matrix_bot,
 	server::*,
