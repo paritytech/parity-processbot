@@ -11,7 +11,6 @@ RUN set -ev; \
     git config --global user.name "parity-processbot"; \
     git config --global user.email "<>"; \
     export PATH="$HOME/.cargo/bin:$PATH"; \
-    source ~/.bashrc; \
-    rustup update;
+    bash --login;
 
 CMD ["parity-processbot"]
