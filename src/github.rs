@@ -35,12 +35,13 @@ pub struct PullRequest {
 	pub title: Option<String>,
 	pub user: User,
 	pub body: Option<String>,
-	pub labels: Option<Vec<Label>>,
+	pub labels: Vec<Label>,
 	pub milestone: Option<Milestone>,
 	pub active_lock_reason: Option<String>,
 	pub created_at: Option<chrono::DateTime<chrono::Utc>>,
 	pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
 	pub closed_at: Option<String>,
+	pub merged: Option<bool>,
 	pub mergeable: Option<bool>,
 	pub merged_at: Option<String>,
 	pub merge_commit_sha: Option<String>,
@@ -785,9 +786,10 @@ pub struct CheckRunPR {
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HeadRepo {
-	id: i64,
-	url: String,
-	name: String,
+	pub id: i64,
+	pub url: String,
+	pub name: String,
+	pub owner: Option<User>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

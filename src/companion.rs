@@ -54,14 +54,40 @@ pub async fn companion_update(
 	Ok(())
 }
 
-async fn companion_number(body: &str) -> Option<i64> {
+pub fn companion(body: &str) -> Option<(String, String, String, i64)> {
 	let re = Regex::new(
-		r"^https://github.com/paritytech/polkadot/pull/([[:digit:]]+)"
+		r"companion.*(?P<html_url>https://github.com/(?P<owner>[[:alpha:]]+)/(?P<repo>[[:alpha:]]+)/pull/(?P<number>[[:digit:]]+))"
 	)
 	.unwrap();
-    dbg!(re.find(body).unwrap());
-//	while re.captures_iter(&s).count() > 0 {
-//		s = dbg!(re.replace_all(&s, "[$1-$2").to_string());
-//	}
-    Ok(false)
+	let caps = re.captures(&body)?;
+	let html_url = caps.name("html_url")?.as_str().to_owned();
+	let owner = caps.name("owner")?.as_str().to_owned();
+	let repo = caps.name("repo")?.as_str().to_owned();
+	let number = caps
+		.name("number")?
+		.as_str()
+		.to_owned()
+		.parse::<i64>()
+		.ok()?;
+	Some((html_url, owner, repo, number))
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn test_companion() {
+		assert_eq!(
+			companion(
+				"companion: https://github.com/paritytech/polkadot/pull/1234"
+			),
+			Some((
+				"https://github.com/paritytech/polkadot/pull/1234".to_owned(),
+				"paritytech".to_owned(),
+				"polkadot".to_owned(),
+				1234
+			))
+		);
+	}
 }

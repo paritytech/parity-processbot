@@ -89,15 +89,6 @@ async fn run() -> anyhow::Result<()> {
 	});
 	*/
 
-	companion_update(
-		&github_bot,
-		"paritytech",
-		"polkadot",
-		"master",
-		&config.home,
-	)
-	.await?;
-
 	let app_state = Arc::new(AppState {
 		db: db,
 		github_bot: github_bot,
@@ -105,6 +96,7 @@ async fn run() -> anyhow::Result<()> {
 		bot_config: BotConfig::from_env(),
 		webhook_secret: config.webhook_secret,
 		environment: config.environment,
+		home_dir: config.home,
 		test_repo: config.test_repo,
 	});
 
@@ -113,8 +105,7 @@ async fn run() -> anyhow::Result<()> {
 		config.webhook_port.parse::<u16>().expect("webhook port"),
 	);
 
-	Ok(())
-	//	init_server(socket, app_state).await
+	init_server(socket, app_state).await
 }
 
 #[cfg(test)]
