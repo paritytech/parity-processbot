@@ -13,7 +13,7 @@ pub async fn companion_update(
 	let token = github_bot.client.auth_key().await?;
 	Command::new("rustup")
 		.arg("update")
-		.current_dir(&format!("{}/.cargo/bin", home))
+		.current_dir("/root/.cargo/bin")
 		.spawn()?
 		.await?;
 	Command::new("git")
