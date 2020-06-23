@@ -82,7 +82,6 @@ async fn run() -> anyhow::Result<()> {
 		}
 		std::thread::sleep(Duration::from_secs(config_clone.bamboo_tick_secs));
 	});
-	*/
 
 	let app_state = Arc::new(AppState {
 		db: db,
@@ -99,8 +98,17 @@ async fn run() -> anyhow::Result<()> {
 		IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
 		config.webhook_port.parse::<u16>().expect("webhook port"),
 	);
+	*/
 
-	init_server(socket, app_state).await
+	parity_processbot::companion::companion_update(
+		&github_bot,
+		"paritytech",
+		"polkadot",
+		"master",
+		&config.home,
+	)
+	.await
+	//	init_server(socket, app_state).await
 }
 
 #[cfg(test)]
