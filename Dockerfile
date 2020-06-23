@@ -12,8 +12,6 @@ RUN set -ev; \
     git config --global user.email "<>"; \
     chmod +x $HOME/.cargo/env; \
     $HOME/.cargo/env; \
-    $HOME/.cargo/bin/rustup update; \
-    rustup update; \
-    /root/.cargo/bin/rustup update;
+    $HOME/.cargo/bin/rustup update;
 
 CMD ["parity-processbot"]
