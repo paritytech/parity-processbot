@@ -9,6 +9,11 @@ RUN set -ev; \
         pkg-config curl ca-certificates libssl-dev clang git; \
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y; \
     git config --global user.name "parity-processbot"; \
-    git config --global user.email "<>";
+    git config --global user.email "<>"; \
+    chmod +x $HOME/.cargo/env; \
+    $HOME/.cargo/env; \
+    $HOME/.cargo/bin/rustup update; \
+    rustup update; \
+    /root/.cargo/bin/rustup update;
 
 CMD ["parity-processbot"]
