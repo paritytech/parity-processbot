@@ -33,7 +33,7 @@ pub async fn companion_update(
 		.spawn()
 		.context("spawn git clone")?
 		.await
-		.context("git clone")??;
+		.context("git clone")?;
 	Command::new("cargo")
 		.arg("update")
 		.arg("-vp")
