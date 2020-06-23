@@ -296,6 +296,20 @@ impl Client {
 		res
 	}
 
+	/// Get a disembodied entry from a resource in GitHub.
+	pub async fn get_status<'b, I>(&self, url: I) -> Result<u16>
+	where
+		I: Into<Cow<'b, str>> + Clone,
+	{
+		let res = self
+			.get_response(url, serde_json::json!({}))
+			.await?
+			.status()
+			.as_u16();
+		log::debug!("{:?}", res);
+		Ok(res)
+	}
+
 	/// Get a single entry from a resource in GitHub. TODO fix
 	/*
 	pub async fn get_with_params<'b, I, T, P>(
