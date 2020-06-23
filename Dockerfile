@@ -10,8 +10,8 @@ RUN set -ev; \
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y; \
     git config --global user.name "parity-processbot"; \
     git config --global user.email "<>"; \
-    chmod +x $HOME/.cargo/env; \
-    $HOME/.cargo/env; \
-    $HOME/.cargo/bin/rustup update;
+    export PATH="$HOME/.cargo/bin:$PATH"; \
+    source ~/.bashrc; \
+    rustup update;
 
 CMD ["parity-processbot"]
