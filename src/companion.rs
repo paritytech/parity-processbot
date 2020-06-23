@@ -46,7 +46,7 @@ pub async fn companion_update(
 		.await?;
 	Command::new("git")
 		.arg("push")
-		.arg("-vn")
+		.arg("-v")
 		.current_dir("./repo")
 		.spawn()?
 		.await?;
