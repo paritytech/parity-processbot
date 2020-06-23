@@ -16,8 +16,9 @@ pub async fn companion_update(
 		.arg("update")
 		.current_dir(&format!("{}/.cargo/bin", home))
 		.spawn()
-		.context("rustup update")?
-		.await?;
+		.context("spawn rustup update")?
+		.await
+		.context("rustup update")?;
 	Command::new("git")
 		.arg("clone")
 		.arg("-vb")
@@ -30,16 +31,18 @@ pub async fn companion_update(
 		))
 		.arg("repo")
 		.spawn()
-		.context("git clone")?
-		.await?;
+		.context("spawn git clone")?
+		.await
+		.context("git clone")??;
 	Command::new("cargo")
 		.arg("update")
 		.arg("-vp")
 		.arg("sp-io")
 		.current_dir("./repo")
 		.spawn()
-		.context("cargo update")?
-		.await?;
+		.context("spawn cargo update")?
+		.await
+		.context("cargo update")?;
 	Command::new("git")
 		.arg("commit")
 		.arg("-a")
@@ -47,21 +50,24 @@ pub async fn companion_update(
 		.arg("'Update substrate'")
 		.current_dir("./repo")
 		.spawn()
-		.context("git commit")?
-		.await?;
+		.context("spawn git commit")?
+		.await
+		.context("git commit")?;
 	Command::new("git")
 		.arg("push")
 		.arg("-vn")
 		.current_dir("./repo")
 		.spawn()
-		.context("git push")?
-		.await?;
+		.context("spawn git push")?
+		.await
+		.context("git push")?;
 	Command::new("rm")
 		.arg("-rf")
 		.arg("repo")
 		.spawn()
-		.context("rm")?
-		.await?;
+		.context("spawn rm")?
+		.await
+		.context("rm")?;
 	Ok(())
 }
 
