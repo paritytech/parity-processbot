@@ -1317,7 +1317,7 @@ async fn check_companion(
 						&comp_owner,
 						&comp_repo,
 						comp_number,
-						"Error updating Cargo.lock; see logs for details.",
+						"Error updating Cargo.lock; see logs for details",
 					)
 					.await
 					.map_err(|e| {
