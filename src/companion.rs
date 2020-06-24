@@ -24,7 +24,7 @@ pub async fn companion_update(
 		.arg("-vb")
 		.arg(branch)
 		.arg(format!(
-			"https://x-access-token:{token}@github.com/{owner}/{repo}.git",
+			"https://parity-processbot:{token}@github.com/{owner}/{repo}.git",
 			token = token,
 			owner = owner,
 			repo = repo,
