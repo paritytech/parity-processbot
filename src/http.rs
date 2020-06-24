@@ -172,7 +172,7 @@ impl Client {
 		};
 
 		use tokio::time::delay_for;
-		delay_for(std::time::Duration::from_secs(60)).await;
+		delay_for(std::time::Duration::from_secs(10)).await;
 
 		Ok(token)
 	}
