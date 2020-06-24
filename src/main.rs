@@ -105,7 +105,7 @@ async fn run() -> anyhow::Result<()> {
 		"paritytech",
 		"polkadot",
 		"master",
-		&config.home,
+		&config.home_dir,
 	)
 	.await
 	//	init_server(socket, app_state).await
