@@ -2,6 +2,8 @@ FROM debian:buster-slim
 
 COPY parity-processbot /usr/local/bin/parity-processbot
 
+ENV PATH=$PATH:/root/.cargo/bin
+
 RUN set -ev; \
     apt-get update; \
     apt-get upgrade -y; \
