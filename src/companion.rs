@@ -12,6 +12,12 @@ pub async fn companion_update(
 	home: &str,
 ) -> anyhow::Result<()> {
 	let token = github_bot.client.auth_key().await?;
+	Command::new("ls")
+		.arg("~/.cargo/bin")
+		.spawn()
+		.context("spawn ls")?
+		.await
+		.context("ls")?;
 	Command::new("rustup")
 		.arg("update")
 		.current_dir(&format!("~/.cargo/bin/"))

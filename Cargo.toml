@@ -31,7 +31,6 @@ parking_lot = "0.10"
 jsonwebtoken = "7.1.0"
 lazy_static = "1.4.0"
 bincode = "1.2"
-ring = "0.16"
 base16 = { version = "0.2", features = ["alloc"] }
 anyhow = "1.0"
 async-std = { version = "1.0.1", features = ["unstable"] }
