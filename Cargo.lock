@@ -1136,6 +1136,7 @@ dependencies = [
  "parking_lot",
  "regex",
  "reqwest",
+ "ring",
  "rocksdb",
  "serde",
  "serde_json",
