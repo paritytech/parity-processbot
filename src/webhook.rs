@@ -9,8 +9,8 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use crate::{
-	config::BotConfig, constants::*, github::*, github_bot::GithubBot,
-	matrix_bot::MatrixBot, process,
+	config::BotConfig, constants::*, error::*, github::*,
+	github_bot::GithubBot, matrix_bot::MatrixBot, process,
 };
 
 pub const BAMBOO_DATA_KEY: &str = "BAMBOO_DATA";
@@ -825,7 +825,7 @@ async fn handle_comment(
                             owner,
                             &repo_name,
                             pr.number,
-                            "Auto-merge failed due to network error; see logs for details.",
+                            "Auto-merge failed due to a network error; see logs for details",
                         )
                         .await
                         .map_err(|e| {
@@ -852,7 +852,7 @@ async fn handle_comment(
                         owner,
                         &repo_name,
                         number,
-                        "Auto-merge failed due to network error; see logs for details.",
+                        "Auto-merge failed due to a network error; see logs for details",
                     )
                     .await
                     .map_err(|e| {
@@ -977,7 +977,7 @@ async fn handle_comment(
                                     owner,
                                     &repo_name,
                                     number,
-                                    "Failed getting latest release tag; see logs for details.",
+                                    "Failed getting latest release tag; see logs for details",
                                 )
                                 .await
                                 .map_err(|e| {
@@ -995,7 +995,7 @@ async fn handle_comment(
                             owner,
                             &repo_name,
                             number,
-                            "Failed getting latest release; see logs for details.",
+                            "Failed getting latest release; see logs for details",
                         )
                         .await
                         .map_err(|e| {
@@ -1076,9 +1076,7 @@ async fn continue_merge(
 						owner,
 						repo_name,
 						pr.number,
-						&format!(
-							"Error getting process info; see logs for details."
-						),
+                        "Merge failed to due error getting process info; see logs for details"
 					)
 					.await
 					.map_err(|e| {
@@ -1131,26 +1129,26 @@ async fn continue_merge(
 						merge(github_bot, owner, repo_name, pr).await;
 					} else {
 						if process.is_empty() {
-							log::info!("{} lacks process info - it might not belong to a valid project column.", pr.html_url);
+							log::info!("{} lacks process info - it might not belong to a valid project column", pr.html_url);
 							let _ = github_bot
                                 .create_issue_comment(
                                     owner,
                                     repo_name,
                                     pr.number,
-                                    "PR lacks process info - check that it belongs to a valid project column.",
+                                    "PR lacks process info - check that it belongs to a valid project column",
                                 )
                                 .await
                                 .map_err(|e| {
                                     log::error!("Error posting comment: {}", e);
                                 });
 						} else {
-							log::info!("{} lacks approval from the project owner or at least {} core developers.", pr.html_url, bot_config.min_reviewers);
+							log::info!("{} lacks approval from the project owner or at least {} core developers", pr.html_url, bot_config.min_reviewers);
 							let _ = github_bot
                                 .create_issue_comment(
                                     owner,
                                     repo_name,
                                     pr.number,
-                                    &format!("PR lacks approval from the project owner or at least {} core developers.", bot_config.min_reviewers),
+                                    &format!("PR lacks approval from the project owner or at least {} core developers", bot_config.min_reviewers),
                                 )
                                 .await
                                 .map_err(|e| {
@@ -1159,7 +1157,7 @@ async fn continue_merge(
 						}
 					}
 				} else {
-					log::info!("{} is unmergeable.", pr.html_url);
+					log::info!("{} is unmergeable", pr.html_url);
 					let _ = github_bot
 						.create_issue_comment(
 							owner,
@@ -1194,19 +1192,55 @@ async fn merge(
 		.await
 	{
 		log::error!("Error merging: {}", &e);
-		let _ = github_bot
-			.create_issue_comment(
-				owner,
-				repo_name,
-				pr.number,
-				"Error merging; see logs for details.",
-			)
-			.await
-			.map_err(|e| {
-				log::error!("Error posting comment: {}", e);
-			});
+		match e {
+			Error::Response {
+				body: serde_json::Value::Object(m),
+				..
+			} => {
+				let _ = github_bot
+					.create_issue_comment(
+						owner,
+						repo_name,
+						pr.number,
+						&format!("Merge failed - `{:?}`", m["message"]),
+					)
+					.await
+					.map_err(|e| {
+						log::error!("Error posting comment: {}", e);
+					});
+			}
+			Error::Http { source, .. } => {
+				let _ = github_bot
+					.create_issue_comment(
+						owner,
+						repo_name,
+						pr.number,
+						&format!(
+							"Merge failed due to a network error:\n\n{:?}",
+							source
+						),
+					)
+					.await
+					.map_err(|e| {
+						log::error!("Error posting comment: {}", e);
+					});
+			}
+			_ => {
+				let _ = github_bot
+					.create_issue_comment(
+						owner,
+						repo_name,
+						pr.number,
+						"Merge failed due to an unexpected error; see logs for details.",
+					)
+					.await
+					.map_err(|e| {
+						log::error!("Error posting comment: {}", e);
+					});
+			}
+		};
 	} else {
-		log::info!("Merge successful.");
+		log::info!("Merged {} successfully.", pr.html_url);
 	}
 }
 
@@ -1226,7 +1260,7 @@ async fn status_failure(
 			owner,
 			repo_name,
 			number,
-			"Status failure; auto-merge cancelled.",
+			"Checks failed; merge cancelled",
 		)
 		.await
 		.map_err(|e| {
