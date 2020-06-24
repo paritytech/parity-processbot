@@ -171,9 +171,6 @@ impl Client {
 			*TOKEN_CACHE.lock() = Some((expiry.clone(), token.clone()))
 		};
 
-		use tokio::time::delay_for;
-		delay_for(std::time::Duration::from_secs(10)).await;
-
 		Ok(token)
 	}
 

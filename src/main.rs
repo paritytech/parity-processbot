@@ -104,7 +104,7 @@ async fn run() -> anyhow::Result<()> {
 		&github_bot,
 		"paritytech",
 		"polkadot",
-		"td-check-era-companion",
+		"master",
 		&config.home_dir,
 	)
 	.await
