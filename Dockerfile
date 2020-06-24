@@ -8,8 +8,8 @@ RUN set -ev; \
     apt-get install -y --no-install-recommends \
         pkg-config curl ca-certificates libssl-dev clang git; \
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y; \
-    source $HOME/.cargo/env; \
-    source ~/.profile; \
+    . $HOME/.cargo/env; \
+    . ~/.profile; \
     git config --global user.name "parity-processbot"; \
     git config --global user.email "<>";
 
