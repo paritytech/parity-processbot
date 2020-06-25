@@ -35,7 +35,7 @@ pub struct PullRequest {
 	pub title: Option<String>,
 	pub user: User,
 	pub body: Option<String>,
-	pub labels: Option<Vec<Label>>,
+	pub labels: Vec<Label>,
 	pub milestone: Option<Milestone>,
 	pub active_lock_reason: Option<String>,
 	pub created_at: Option<chrono::DateTime<chrono::Utc>>,
