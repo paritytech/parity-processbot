@@ -132,7 +132,7 @@ mod tests {
 			let github_bot = GithubBot::new(private_key, &installation)
 				.await
 				.expect("github_bot");
-			dbg!(
+			let _ = dbg!(
 				github_bot
 					.pull_request("paritytech", "substrate", 6276)
 					.await

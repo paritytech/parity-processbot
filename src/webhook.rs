@@ -23,7 +23,6 @@ pub struct AppState {
 	pub bot_config: BotConfig,
 	pub webhook_secret: String,
 	pub environment: String,
-	pub home_dir: String,
 	pub test_repo: String,
 }
 
@@ -185,7 +184,6 @@ async fn handle_check(
 	let db = &state.db;
 	let github_bot = &state.github_bot;
 	let bot_config = &state.bot_config;
-	let home_dir = &state.home_dir;
 
 	if status == "completed".to_string() {
 		match db.get(commit_sha.trim().as_bytes()) {
@@ -212,7 +210,6 @@ async fn handle_check(
 							{
 								checks_and_status(
 									github_bot,
-									home_dir,
 									&owner,
 									&repo_name,
 									&commit_sha,
@@ -255,7 +252,6 @@ async fn handle_status(
 	let db = &state.db;
 	let github_bot = &state.github_bot;
 	let bot_config = &state.bot_config;
-	let home_dir = &state.home_dir;
 
 	if status != StatusState::Pending {
 		match db.get(commit_sha.trim().as_bytes()) {
@@ -276,7 +272,6 @@ async fn handle_status(
 						{
 							checks_and_status(
 								github_bot,
-								home_dir,
 								&owner,
 								&repo_name,
 								&commit_sha,
@@ -311,7 +306,6 @@ async fn handle_status(
 
 async fn checks_and_status(
 	github_bot: &GithubBot,
-	home_dir: &str,
 	owner: &str,
 	repo_name: &str,
 	commit_sha: &str,
@@ -351,7 +345,6 @@ async fn checks_and_status(
 							);
 							continue_merge(
 								github_bot,
-								home_dir,
 								&owner,
 								&repo_name,
 								&pr,
@@ -485,7 +478,6 @@ async fn handle_comment(
 	let db = &state.db;
 	let github_bot = &state.github_bot;
 	let bot_config = &state.bot_config;
-	let home_dir = &state.home_dir;
 
 	let owner = GithubBot::owner_from_html_url(&html_url)
 		.context(format!("Failed parsing owner in url: {}", html_url))?;
@@ -601,7 +593,6 @@ async fn handle_comment(
                                                         });
 													continue_merge(
 														github_bot,
-														home_dir,
 														owner,
 														&repo_name,
 														&pr,
@@ -1047,7 +1038,6 @@ async fn handle_comment(
 
 async fn continue_merge(
 	github_bot: &GithubBot,
-	home_dir: &str,
 	owner: &str,
 	repo_name: &str,
 	pr: &PullRequest,
@@ -1081,7 +1071,7 @@ async fn continue_merge(
 		// MERGE
 		//
 		log::info!("{} merge requested by a team lead; merging.", pr.html_url);
-		merge(github_bot, home_dir, owner, repo_name, pr).await;
+		merge(github_bot, owner, repo_name, pr).await;
 	} else {
 		match process::get_process(github_bot, owner, repo_name, pr.number)
 			.await
@@ -1145,7 +1135,7 @@ async fn continue_merge(
 						// MERGE
 						//
 						log::info!("{} has approval; merging.", pr.html_url);
-						merge(github_bot, home_dir, owner, repo_name, pr).await;
+						merge(github_bot, owner, repo_name, pr).await;
 					} else {
 						if process.is_empty() {
 							log::info!("{} lacks process info - it might not belong to a valid project column", pr.html_url);
@@ -1202,7 +1192,6 @@ async fn continue_merge(
 /// Attempt merge and return `true` if successful, otherwise `false`.
 async fn merge(
 	github_bot: &GithubBot,
-	home_dir: &str,
 	owner: &str,
 	repo_name: &str,
 	pr: &PullRequest,
@@ -1222,7 +1211,7 @@ async fn merge(
 						owner,
 						repo_name,
 						pr.number,
-						&format!("Merge failed - `{:?}`", m["message"]),
+						&format!("Merge failed - `{}`", m["message"]),
 					)
 					.await
 					.map_err(|e| {
@@ -1236,7 +1225,7 @@ async fn merge(
 						repo_name,
 						pr.number,
 						&format!(
-							"Merge failed due to a network error:\n\n{:?}",
+							"Merge failed due to a network error:\n\n{}",
 							source
 						),
 					)
@@ -1265,20 +1254,18 @@ async fn merge(
 			pr.html_url
 		);
 		if let Some(body) = &pr.body {
-			let _ =
-				check_companion(github_bot, home_dir, &body, &pr.labels).await;
+			let _ = check_companion(github_bot, &body, &pr.labels).await;
 		}
 	}
 }
 
 async fn check_companion(
 	github_bot: &GithubBot,
-	home_dir: &str,
 	body: &str,
 	_labels: &[Label],
 ) -> Result<()> {
 	if let Some((comp_html_url, comp_owner, comp_repo, comp_number)) =
-		companion(&body)
+		companion_parse(&body)
 	{
 		log::info!("Found companion {}", comp_html_url);
 		if let Ok(PullRequest {
@@ -1307,7 +1294,6 @@ async fn check_companion(
 				&comp_head_owner,
 				&comp_head_repo,
 				&comp_head_branch,
-				home_dir,
 			)
 			.await
 			{

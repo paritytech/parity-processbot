@@ -9,7 +9,6 @@ pub async fn companion_update(
 	owner: &str,
 	repo: &str,
 	branch: &str,
-	home: &str,
 ) -> anyhow::Result<()> {
 	let token = github_bot.client.auth_key().await?;
 	Command::new("rustup")
@@ -54,7 +53,7 @@ pub async fn companion_update(
 		.context("git commit")?;
 	Command::new("git")
 		.arg("push")
-		.arg("-vn")
+		.arg("-v")
 		.current_dir("./repo")
 		.spawn()
 		.context("spawn git push")?
@@ -70,7 +69,7 @@ pub async fn companion_update(
 	Ok(())
 }
 
-pub fn companion(body: &str) -> Option<(String, String, String, i64)> {
+pub fn companion_parse(body: &str) -> Option<(String, String, String, i64)> {
 	let re = Regex::new(
 		r"companion.*(?P<html_url>https://github.com/(?P<owner>[[:alpha:]]+)/(?P<repo>[[:alpha:]]+)/pull/(?P<number>[[:digit:]]+))"
 	)
@@ -93,10 +92,38 @@ mod tests {
 	use super::*;
 
 	#[test]
-	fn test_companion() {
+	fn test_companion_parse() {
 		assert_eq!(
-			companion(
+			companion_parse(
 				"companion: https://github.com/paritytech/polkadot/pull/1234"
+			),
+			Some((
+				"https://github.com/paritytech/polkadot/pull/1234".to_owned(),
+				"paritytech".to_owned(),
+				"polkadot".to_owned(),
+				1234
+			))
+		);
+		assert_eq!(
+			companion_parse(
+				"\nthis is a companion pr https://github.com/paritytech/polkadot/pull/1234"
+			),
+			Some((
+				"https://github.com/paritytech/polkadot/pull/1234".to_owned(),
+				"paritytech".to_owned(),
+				"polkadot".to_owned(),
+				1234
+			))
+		);
+		assert_eq!(
+			companion_parse(
+				"\nthis is some other pr https://github.com/paritytech/polkadot/pull/1234"
+			),
+            None,
+		);
+		assert_eq!(
+			companion_parse(
+				"\nthis is a companion pr https://github.com/paritytech/polkadot/pull/1234/plus+some&other_stuff"
 			),
 			Some((
 				"https://github.com/paritytech/polkadot/pull/1234".to_owned(),
