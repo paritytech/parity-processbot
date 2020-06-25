@@ -1048,42 +1048,88 @@ async fn continue_merge(
 	bot_config: &BotConfig,
 	requested_by: &str,
 ) {
-	let core_devs = github_bot
-		.team(owner, "core-devs")
-		.and_then(|team| github_bot.team_members(team.id))
-		.await
-		.unwrap_or_else(|e| {
-			log::error!("Error getting core devs: {}", e);
-			vec![]
-		});
-	let team_leads = github_bot
-		.team(owner, "substrateteamleads")
-		.and_then(|team| github_bot.team_members(team.id))
-		.await
-		.unwrap_or_else(|e| {
-			log::error!("Error getting core devs: {}", e);
-			vec![]
-		});
-	let reviews = github_bot.reviews(&pr.url).await.unwrap_or_else(|e| {
-		log::error!("Error getting reviews: {}", e);
-		vec![]
-	});
-
-	if team_leads.iter().any(|lead| lead.login == requested_by) {
-		//
-		// MERGE
-		//
-		log::info!("{} merge requested by a team lead; merging.", pr.html_url);
-		merge(github_bot, owner, repo_name, pr).await;
-	} else {
-		match process::get_process(github_bot, owner, repo_name, pr.number)
+	let mergeable = pr.mergeable.unwrap_or(false);
+	if !mergeable {
+		log::info!("{} is unmergeable", pr.html_url);
+		let _ = github_bot
+			.create_issue_comment(
+				owner,
+				repo_name,
+				pr.number,
+				"PR is unmergeable",
+			)
 			.await
-		{
-			Err(e) => {
-				log::error!("Error getting process info: {}", e);
-				// Without process info the merge cannot complete so
-				// let people know.
-				let _ = github_bot
+			.map_err(|e| {
+				log::error!("Error posting comment: {}", e);
+			});
+	} else {
+		log::info!("{} is mergeable.", pr.html_url);
+
+		let team_leads = github_bot
+			.team(owner, "substrateteamleads")
+			.and_then(|team| github_bot.team_members(team.id))
+			.await
+			.unwrap_or_else(|e| {
+				log::error!("Error getting core devs: {}", e);
+				vec![]
+			});
+
+		if team_leads.iter().any(|lead| lead.login == requested_by) {
+			//
+			// MERGE
+			//
+			log::info!(
+				"{} merge requested by a team lead; merging.",
+				pr.html_url
+			);
+			merge(github_bot, owner, repo_name, pr).await;
+		} else {
+			fn label_insubstantial(label: &&Label) -> bool {
+				label.name == "insubstantial"
+			}
+			let min_reviewers =
+				if pr.labels.iter().find(label_insubstantial).is_some() {
+					1
+				} else {
+					bot_config.min_reviewers
+				};
+			let core_devs = github_bot
+				.team(owner, "core-devs")
+				.and_then(|team| github_bot.team_members(team.id))
+				.await
+				.unwrap_or_else(|e| {
+					log::error!("Error getting core devs: {}", e);
+					vec![]
+				});
+			let reviews =
+				github_bot.reviews(&pr.url).await.unwrap_or_else(|e| {
+					log::error!("Error getting reviews: {}", e);
+					vec![]
+				});
+			let core_approved = reviews
+				.iter()
+				.filter(|r| {
+					core_devs.iter().any(|u| u.login == r.user.login)
+						&& r.state == Some(ReviewState::Approved)
+				})
+				.count() >= min_reviewers;
+			if core_approved {
+				//
+				// MERGE
+				//
+				log::info!("{} has core approval; merging.", pr.html_url);
+				merge(github_bot, owner, repo_name, pr).await;
+			} else {
+				match process::get_process(
+					github_bot, owner, repo_name, pr.number,
+				)
+				.await
+				{
+					Err(e) => {
+						log::error!("Error getting process info: {}", e);
+						// Without process info the merge cannot complete so
+						// let people know.
+						let _ = github_bot
 					.create_issue_comment(
 						owner,
 						repo_name,
@@ -1094,55 +1140,32 @@ async fn continue_merge(
 					.map_err(|e| {
 						log::error!("Error posting comment: {}", e);
 					});
-			}
-			Ok(process) => {
-				let mergeable = pr.mergeable.unwrap_or(false);
-				if mergeable {
-					log::info!("{} is mergeable.", pr.html_url);
-
-					let core_approved = reviews
-						.iter()
-						.filter(|r| {
-							core_devs.iter().any(|u| u.login == r.user.login)
-								&& r.state == Some(ReviewState::Approved)
-						})
-						.count() >= bot_config.min_reviewers;
-
-					let owner_approved = reviews
-						.iter()
-						.sorted_by_key(|r| r.submitted_at)
-						.rev()
-						.find(|r| process.is_owner(&r.user.login))
-						.map_or(false, |r| {
-							r.state == Some(ReviewState::Approved)
-						});
-
-					let owner_requested = process.is_owner(&requested_by);
-
-					let lead_approved = team_leads.iter().any(|lead| {
-						reviews
+					}
+					Ok(process) => {
+						let owner_approved = reviews
 							.iter()
 							.sorted_by_key(|r| r.submitted_at)
 							.rev()
-							.find(|r| lead.login == r.user.login)
+							.find(|r| process.is_owner(&r.user.login))
 							.map_or(false, |r| {
 								r.state == Some(ReviewState::Approved)
-							})
-					});
+							});
 
-					if core_approved
-						|| owner_approved || owner_requested
-						|| lead_approved
-					{
-						//
-						// MERGE
-						//
-						log::info!("{} has approval; merging.", pr.html_url);
-						merge(github_bot, owner, repo_name, pr).await;
-					} else {
-						if process.is_empty() {
-							log::info!("{} lacks process info - it might not belong to a valid project column", pr.html_url);
-							let _ = github_bot
+						let owner_requested = process.is_owner(&requested_by);
+
+						if owner_approved || owner_requested {
+							//
+							// MERGE
+							//
+							log::info!(
+								"{} has owner approval; merging.",
+								pr.html_url
+							);
+							merge(github_bot, owner, repo_name, pr).await;
+						} else {
+							if process.is_empty() {
+								log::info!("{} lacks process info - it might not belong to a valid project column", pr.html_url);
+								let _ = github_bot
                                 .create_issue_comment(
                                     owner,
                                     repo_name,
@@ -1153,9 +1176,9 @@ async fn continue_merge(
                                 .map_err(|e| {
                                     log::error!("Error posting comment: {}", e);
                                 });
-						} else {
-							log::info!("{} lacks approval from the project owner or at least {} core developers", pr.html_url, bot_config.min_reviewers);
-							let _ = github_bot
+							} else {
+								log::info!("{} lacks approval from the project owner or at least {} core developers", pr.html_url, bot_config.min_reviewers);
+								let _ = github_bot
                                 .create_issue_comment(
                                     owner,
                                     repo_name,
@@ -1166,21 +1189,9 @@ async fn continue_merge(
                                 .map_err(|e| {
                                     log::error!("Error posting comment: {}", e);
                                 });
+							}
 						}
 					}
-				} else {
-					log::info!("{} is unmergeable", pr.html_url);
-					let _ = github_bot
-						.create_issue_comment(
-							owner,
-							repo_name,
-							pr.number,
-							"PR is unmergeable",
-						)
-						.await
-						.map_err(|e| {
-							log::error!("Error posting comment: {}", e);
-						});
 				}
 			}
 		}
