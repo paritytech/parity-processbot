@@ -117,6 +117,7 @@ pub async fn init_server(
 	});
 
 	Server::builder(Incoming(listener.incoming()))
+		.http1_half_close(true)
 		.serve(service)
 		.boxed()
 		.await
