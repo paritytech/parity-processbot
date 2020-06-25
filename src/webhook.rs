@@ -309,6 +309,10 @@ async fn checks_and_status(
 	// Head sha should not have changed since request was made.
 	if commit_sha == pr.head.sha {
 		log::info!("Commit sha {} matches head of {}", commit_sha, html_url);
+
+		// Delay after status hook to avoid false success
+		tokio::time::delay_for(std::time::Duration::from_secs(30)).await;
+
 		let checks =
 			github_bot.check_runs(&owner, &repo_name, &commit_sha).await;
 		log::info!("{:?}", checks);
@@ -329,7 +333,6 @@ async fn checks_and_status(
 							state: StatusState::Success,
 							..
 						}) => {
-							log::info!("Combined status success");
 							log::info!(
 								"{} is green; attempting merge.",
 								html_url
