@@ -59,7 +59,6 @@ macro_rules! impl_methods_with_body {
                             continue 'retry;
                         }
                     }
-                    log::debug!("Response {:?}", res);
                     return res;
                 }
             }
@@ -71,7 +70,6 @@ macro_rules! impl_methods_with_body {
 /// Checks the response's status and maps into an `Err` branch if
 /// not successful.
 async fn handle_response(response: Response) -> Result<Response> {
-	log::debug!("{:?}", response);
 	let status = response.status();
 	if status.is_success() {
 		Ok(response)
@@ -292,7 +290,6 @@ impl Client {
 			.json::<T>()
 			.await
 			.context(error::Http);
-		log::debug!("{:?}", res);
 		res
 	}
 
@@ -306,7 +303,6 @@ impl Client {
 			.await?
 			.status()
 			.as_u16();
-		log::debug!("{:?}", res);
 		Ok(res)
 	}
 
@@ -358,7 +354,6 @@ impl Client {
 					continue 'retry;
 				}
 			}
-			log::debug!("Response {:?}", res);
 			return res;
 		}
 	}
@@ -400,7 +395,6 @@ impl Client {
 			entities.append(&mut body);
 		}
 
-		log::debug!("{:?}", entities);
 		Ok(entities)
 	}
 }
