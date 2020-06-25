@@ -1076,7 +1076,7 @@ async fn continue_merge(
 			merge(github_bot, owner, repo_name, pr).await;
 		} else {
 			fn label_insubstantial(label: &&Label) -> bool {
-				label.name == "insubstantial"
+				label.name.contains("insubstantial")
 			}
 			let min_reviewers =
 				if pr.labels.iter().find(label_insubstantial).is_some() {
@@ -1168,7 +1168,7 @@ async fn continue_merge(
                                     log::error!("Error posting comment: {}", e);
                                 });
 							} else {
-								log::info!("{} lacks approval from the project owner or at least {} core developers", pr.html_url, bot_config.min_reviewers);
+								log::info!("{} lacks approval from the project owner or at least {} core developers", pr.html_url, min_reviewers);
 								let _ = github_bot
                                 .create_issue_comment(
                                     owner,
