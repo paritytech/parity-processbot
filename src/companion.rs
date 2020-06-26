@@ -32,7 +32,7 @@ pub async fn companion_update(
 		.context("spawn git fetch")?
 		.await
 		.context("git fetch")?;
-	Command::new("git")
+	let checkout = Command::new("git")
 		.arg("checkout")
 		.arg("-b")
 		.arg(branch)
@@ -42,58 +42,60 @@ pub async fn companion_update(
 		.context("spawn git checkout -b")?
 		.await
 		.context("git checkout -b")?;
-	Command::new("git")
-		.arg("pull")
-		.arg("-v")
-		.current_dir(format!("./{}", repo))
-		.spawn()
-		.context("spawn git pull")?
-		.await
-		.context("git pull")?;
-	Command::new("cargo")
-		.arg("update")
-		.arg("-vp")
-		.arg("sp-io")
-		.current_dir(format!("./{}", repo))
-		.spawn()
-		.context("spawn cargo update")?
-		.await
-		.context("cargo update")?;
-	Command::new("git")
-		.arg("commit")
-		.arg("-a")
-		.arg("-m")
-		.arg("'Update substrate'")
-		.current_dir(format!("./{}", repo))
-		.spawn()
-		.context("spawn git commit")?
-		.await
-		.context("git commit")?;
-	Command::new("git")
-		.arg("push")
-		.arg("-vn")
-		.current_dir(format!("./{}", repo))
-		.spawn()
-		.context("spawn git push")?
-		.await
-		.context("git push")?;
-	Command::new("git")
-		.arg("checkout")
-		.arg("master")
-		.current_dir(format!("./{}", repo))
-		.spawn()
-		.context("spawn git checkout master")?
-		.await
-		.context("git checkout master")?;
-	Command::new("git")
-		.arg("branch")
-		.arg("-D")
-		.arg(branch)
-		.current_dir(format!("./{}", repo))
-		.spawn()
-		.context("spawn git branch -D")?
-		.await
-		.context("git branch -D")?;
+	if checkout.success() {
+		Command::new("git")
+			.arg("pull")
+			.arg("-v")
+			.current_dir(format!("./{}", repo))
+			.spawn()
+			.context("spawn git pull")?
+			.await
+			.context("git pull")?;
+		Command::new("cargo")
+			.arg("update")
+			.arg("-vp")
+			.arg("sp-io")
+			.current_dir(format!("./{}", repo))
+			.spawn()
+			.context("spawn cargo update")?
+			.await
+			.context("cargo update")?;
+		Command::new("git")
+			.arg("commit")
+			.arg("-a")
+			.arg("-m")
+			.arg("'Update substrate'")
+			.current_dir(format!("./{}", repo))
+			.spawn()
+			.context("spawn git commit")?
+			.await
+			.context("git commit")?;
+		Command::new("git")
+			.arg("push")
+			.arg("-vn")
+			.current_dir(format!("./{}", repo))
+			.spawn()
+			.context("spawn git push")?
+			.await
+			.context("git push")?;
+		Command::new("git")
+			.arg("checkout")
+			.arg("master")
+			.current_dir(format!("./{}", repo))
+			.spawn()
+			.context("spawn git checkout master")?
+			.await
+			.context("git checkout master")?;
+		Command::new("git")
+			.arg("branch")
+			.arg("-D")
+			.arg(branch)
+			.current_dir(format!("./{}", repo))
+			.spawn()
+			.context("spawn git branch -D")?
+			.await
+			.context("git branch -D")?;
+	}
 	Ok(())
 }
 
