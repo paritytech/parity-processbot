@@ -107,6 +107,14 @@ async fn run() -> anyhow::Result<()> {
 		"polkadot",
 		"gav-as-limited-sub-unique",
 	)
+	.await?;
+
+	parity_processbot::companion::companion_update(
+		&github_bot,
+		"paritytech",
+		"polkadot",
+		"ben-update-substrate-deps",
+	)
 	.await
 }
 
