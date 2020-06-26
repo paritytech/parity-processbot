@@ -13,8 +13,7 @@ pub async fn companion_update(
 	let token = github_bot.client.auth_key().await?;
 	Command::new("git")
 		.arg("clone")
-		.arg("-vb")
-		.arg(branch)
+		.arg("-v")
 		.arg(format!(
 			"https://x-access-token:{token}@github.com/{owner}/{repo}.git",
 			token = token,
@@ -40,9 +39,9 @@ pub async fn companion_update(
 		.arg(format!("origin/{}", branch))
 		.current_dir(format!("./{}", repo))
 		.spawn()
-		.context("spawn git checkout")?
+		.context("spawn git checkout -b")?
 		.await
-		.context("git checkout")?;
+		.context("git checkout -b")?;
 	Command::new("git")
 		.arg("pull")
 		.arg("-v")
@@ -78,6 +77,23 @@ pub async fn companion_update(
 		.context("spawn git push")?
 		.await
 		.context("git push")?;
+	Command::new("git")
+		.arg("checkout")
+		.arg("master")
+		.current_dir(format!("./{}", repo))
+		.spawn()
+		.context("spawn git checkout master")?
+		.await
+		.context("git checkout master")?;
+	Command::new("git")
+		.arg("branch")
+		.arg("-D")
+		.arg(branch)
+		.current_dir(format!("./{}", repo))
+		.spawn()
+		.context("spawn git branch -D")?
+		.await
+		.context("git branch -D")?;
 	Ok(())
 }
 
