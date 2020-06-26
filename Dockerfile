@@ -1,15 +1,12 @@
-FROM debian:buster-slim
+FROM paritytech/ci-linux:10a6c216-20200625
 
 COPY parity-processbot /usr/local/bin/parity-processbot
-
-ENV PATH=$PATH:/root/.cargo/bin
 
 RUN set -ev; \
     apt-get update; \
     apt-get upgrade -y; \
     apt-get install -y --no-install-recommends \
-        pkg-config curl ca-certificates libssl-dev clang git; \
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y; \
+        pkg-config curl ca-certificates libssl-dev git; \
     git config --global user.name "parity-processbot"; \
     git config --global user.email "<>";
 
