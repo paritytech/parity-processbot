@@ -21,16 +21,41 @@ pub async fn companion_update(
 			owner = owner,
 			repo = repo,
 		))
-		.arg("repo")
 		.spawn()
 		.context("spawn git clone")?
 		.await
 		.context("git clone")?;
+	Command::new("git")
+		.arg("fetch")
+		.arg("-v")
+		.current_dir(format!("./{}", repo))
+		.spawn()
+		.context("spawn git fetch")?
+		.await
+		.context("git fetch")?;
+	Command::new("git")
+		.arg("checkout")
+		.arg("-b")
+		.arg(branch)
+		.arg(format!("origin/{}", branch))
+		.current_dir(format!("./{}", repo))
+		.spawn()
+		.context("spawn git checkout")?
+		.await
+		.context("git checkout")?;
+	Command::new("git")
+		.arg("pull")
+		.arg("-v")
+		.current_dir(format!("./{}", repo))
+		.spawn()
+		.context("spawn git pull")?
+		.await
+		.context("git pull")?;
 	Command::new("cargo")
 		.arg("update")
 		.arg("-vp")
 		.arg("sp-io")
-		.current_dir("./repo")
+		.current_dir(format!("./{}", repo))
 		.spawn()
 		.context("spawn cargo update")?
 		.await
@@ -40,26 +65,19 @@ pub async fn companion_update(
 		.arg("-a")
 		.arg("-m")
 		.arg("'Update substrate'")
-		.current_dir("./repo")
+		.current_dir(format!("./{}", repo))
 		.spawn()
 		.context("spawn git commit")?
 		.await
 		.context("git commit")?;
 	Command::new("git")
 		.arg("push")
-		.arg("-v")
-		.current_dir("./repo")
+		.arg("-vn")
+		.current_dir(format!("./{}", repo))
 		.spawn()
 		.context("spawn git push")?
 		.await
 		.context("git push")?;
-	Command::new("rm")
-		.arg("-rf")
-		.arg("repo")
-		.spawn()
-		.context("spawn rm")?
-		.await
-		.context("rm")?;
 	Ok(())
 }
 

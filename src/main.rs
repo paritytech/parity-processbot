@@ -82,7 +82,6 @@ async fn run() -> anyhow::Result<()> {
 		}
 		std::thread::sleep(Duration::from_secs(config_clone.bamboo_tick_secs));
 	});
-	*/
 
 	let app_state = Arc::new(AppState {
 		db: db,
@@ -100,6 +99,15 @@ async fn run() -> anyhow::Result<()> {
 	);
 
 	init_server(socket, app_state).await
+	*/
+
+	parity_processbot::companion::companion_update(
+		&github_bot,
+		"paritytech",
+		"polkadot",
+		"gav-as-limited-sub-unique",
+	)
+	.await
 }
 
 #[cfg(test)]

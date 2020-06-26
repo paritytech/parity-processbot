@@ -360,6 +360,7 @@ pub struct IssuePullRequest {
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Head {
+	pub label: String,
 	#[serde(rename = "ref")]
 	pub ref_field: String,
 	pub sha: String,

@@ -32,6 +32,24 @@ impl GithubBot {
 			.await
 	}
 
+	pub async fn pull_request_with_head(
+		&self,
+		owner: &str,
+		repo_name: &str,
+		head: &str,
+	) -> Result<Option<github::PullRequest>> {
+		self.client
+			.get_all(format!(
+				"{base_url}/repos/{owner}/{repo}/pulls?head={head}",
+				base_url = Self::BASE_URL,
+				owner = owner,
+				repo = repo_name,
+				head = head,
+			))
+			.await
+			.map(|v| v.first().cloned())
+	}
+
 	/// Creates a new pull request to merge `head` into `base`.
 	pub async fn create_pull_request<A>(
 		&self,

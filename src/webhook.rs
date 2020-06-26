@@ -1268,7 +1268,7 @@ async fn merge(
 			pr.html_url
 		);
 		if let Some(body) = &pr.body {
-			let _ = check_companion(github_bot, &body, &pr.labels).await;
+			let _ = check_companion(github_bot, &body, &pr.head.label).await;
 		}
 	}
 }
@@ -1276,14 +1276,13 @@ async fn merge(
 async fn check_companion(
 	github_bot: &GithubBot,
 	body: &str,
-	_labels: &[Label],
+	head: &str,
 ) -> Result<()> {
 	if let Some((comp_html_url, comp_owner, comp_repo, comp_number)) =
 		companion_parse(&body)
 	{
 		log::info!("Found companion {}", comp_html_url);
 		if let Ok(PullRequest {
-			//			labels: comp_labels,
 			head:
 				Head {
 					ref_field: comp_head_branch,
@@ -1302,73 +1301,93 @@ async fn check_companion(
 			..
 		}) = get_pr(github_bot, &comp_owner, &comp_repo, comp_number).await
 		{
-			log::info!("Updating companion {}", comp_html_url);
-			if let Err(e) = companion_update(
+			update_companion(
 				github_bot,
+				&comp_html_url,
+				&comp_owner,
+				&comp_repo,
+				comp_number,
 				&comp_head_owner,
 				&comp_head_repo,
 				&comp_head_branch,
 			)
-			.await
-			{
-				log::error!("Error updating companion: {:?}", e);
-				let _ = github_bot
-					.create_issue_comment(
-						&comp_owner,
-						&comp_repo,
-						comp_number,
-						"Error updating Cargo.lock; see logs for details",
-					)
-					.await
-					.map_err(|e| {
-						log::error!("Error posting comment: {}", e);
-					});
-			} else {
-				log::info!(
-					"Companion updated; requesting merge for {}",
-					comp_html_url
-				);
-				let _ = github_bot
-					.create_issue_comment(
-						&comp_owner,
-						&comp_repo,
-						comp_number,
-						"bot merge",
-					)
-					.await
-					.map_err(|e| {
-						log::error!("Error posting comment: {}", e);
-					});
-			}
-
-			/*
-			fn label_mergeoncegreen(label: &&Label) -> bool {
-				label.name == "mergeoncegreen"
-			}
-			if merged_labels.iter().find(label_mergeoncegreen).is_some()
-				&& comp_labels.iter().find(label_mergeoncegreen).is_some()
-			{
-				log::info!("Requesting companion merge for {}", comp_html_url);
-				let _ = github_bot
-					.create_issue_comment(
-						&comp_owner,
-						&comp_repo,
-						comp_number,
-						"bot merge",
-					)
-					.await
-					.map_err(|e| {
-						log::error!("Error posting comment: {}", e);
-					});
-			} else {
-				log::info!("`mergeoncegreen` is absent on either merged or companion PR.");
-			}
-			*/
+			.await?;
 		}
+	} else if let Ok(Some(PullRequest {
+		html_url: comp_html_url,
+		number: comp_number,
+		head: Head {
+			ref_field: comp_head_branch,
+			..
+		},
+		..
+	})) = github_bot
+		.pull_request_with_head("paritytech", "polkadot", &format!("{}", head))
+		.await
+	{
+		update_companion(
+			github_bot,
+			&comp_html_url,
+			"paritytech",
+			"polkadot",
+			comp_number,
+			"paritytech",
+			"polkadot",
+			&comp_head_branch,
+		)
+		.await?;
 	} else {
 		log::info!("No companion found.");
 	}
 
+	Ok(())
+}
+
+async fn update_companion(
+	github_bot: &GithubBot,
+	comp_html_url: &str,
+	comp_owner: &str,
+	comp_repo: &str,
+	comp_number: i64,
+	comp_head_owner: &str,
+	comp_head_repo: &str,
+	comp_head_branch: &str,
+) -> Result<()> {
+	log::info!("Updating companion {}", comp_html_url);
+	if let Err(e) = companion_update(
+		github_bot,
+		&comp_head_owner,
+		&comp_head_repo,
+		&comp_head_branch,
+	)
+	.await
+	{
+		log::error!("Error updating companion: {:?}", e);
+		let _ = github_bot
+			.create_issue_comment(
+				&comp_owner,
+				&comp_repo,
+				comp_number,
+				"Error updating Cargo.lock; see logs for details",
+			)
+			.await
+			.map_err(|e| {
+				log::error!("Error posting comment: {}", e);
+			});
+	} else {
+		log::info!("Companion updated; requesting merge for {}", comp_html_url);
+		let _ = github_bot
+			.create_issue_comment(
+				&comp_owner,
+				&comp_repo,
+				comp_number,
+				"bot merge",
+			)
+			.await
+			.map_err(|e| {
+				log::error!("Error posting comment: {}", e);
+			});
+	}
 	Ok(())
 }
 
