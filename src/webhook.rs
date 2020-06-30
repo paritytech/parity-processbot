@@ -1338,26 +1338,26 @@ async fn merge(
 			}
 		};
 	} else {
-		log::info!(
-			"{} merged successfully - checking for companion.",
-			pr.html_url
-		);
-		if let Some(label) = &pr.head.label {
-			if let Some(body) = &pr.body {
-				let _ = check_companion(github_bot, &body, &label).await;
+		log::info!("{} merged successfully.", pr.html_url);
+		if repo_name == "substrate" {
+			log::info!("Checking for companion.");
+			if let Some(label) = &pr.head.label {
+				if let Some(body) = &pr.body {
+					let _ = check_companion(github_bot, &body, &label).await;
+				} else {
+					log::info!("No PR body found.");
+				}
 			} else {
-				log::info!("No PR body found.");
-			}
-		} else {
-			if let Some(body) = &pr.body {
-				let _ = check_companion(
-					github_bot,
-					&body,
-					&format!("paritytech:{}", pr.head.ref_field),
-				)
-				.await;
-			} else {
-				log::info!("No PR body found.");
+				if let Some(body) = &pr.body {
+					let _ = check_companion(
+						github_bot,
+						&body,
+						&format!("paritytech:{}", pr.head.ref_field),
+					)
+					.await;
+				} else {
+					log::info!("No PR body found.");
+				}
 			}
 		}
 	}
