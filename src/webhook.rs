@@ -156,19 +156,16 @@ async fn get_pr(
 		Err(e) => {
 			log::error!("Error getting PR: {}", e);
 			let _ = github_bot
-            .create_issue_comment(
-                &owner,
-                &repo_name,
-                number,
-                "Auto-merge failed due to network error; see logs for details.",
-            )
-            .await
-            .map_err(|e| {
-                log::error!(
-                    "Error posting comment: {}",
-                    e
-                );
-            });
+				.create_issue_comment(
+					&owner,
+					&repo_name,
+					number,
+					"Merge failed due to network error; see logs for details.",
+				)
+				.await
+				.map_err(|e| {
+					log::error!("Error posting comment: {}", e);
+				});
 			Err(anyhow!(e))
 		}
 		Ok(pr) => Ok(pr),
@@ -362,15 +359,16 @@ async fn checks_and_status(
 							statuses,
 							..
 						}) => {
-							match github_bot
-								.contents(
-									owner,
-									repo_name,
-									".gitlab-ci.yaml",
-									&pr.head.ref_field,
-								)
-								.await
-							{
+							match dbg!(
+								github_bot
+									.contents(
+										owner,
+										repo_name,
+										".gitlab-ci.yaml",
+										&pr.head.ref_field,
+									)
+									.await
+							) {
 								Ok(ci) => {
 									if statuses.iter().any(
 										|Status { state, context, .. }| {
@@ -382,7 +380,7 @@ async fn checks_and_status(
 										},
 									) {
 										log::info!(
-											"{} failed status checks.",
+											"{} failed a required status check.",
 											html_url
 										);
 										status_failure(
@@ -447,7 +445,7 @@ async fn checks_and_status(
 							state: StatusState::Error,
 							..
 						}) => {
-							log::info!("{} failed status checks.", html_url);
+							log::info!("{} status error.", html_url);
 							status_failure(
 								&github_bot,
 								&owner,
@@ -472,7 +470,7 @@ async fn checks_and_status(
                                     &owner,
                                     &repo_name,
                                     pr.number,
-                                    "Auto-merge failed due to network error; see logs for details.",
+                                    "Merge failed due to network error; see logs for details.",
                                 )
                                 .await
                                 .map_err(|e| {
@@ -693,7 +691,7 @@ async fn handle_comment(
                                                         owner,
                                                         &repo_name,
                                                         pr.number,
-                                                        "Auto-merge failed due to db error; see logs for details.",
+                                                        "Merge failed due to a database error.",
                                                     )
                                                     .await
                                                     .map_err(|e| {
@@ -711,7 +709,7 @@ async fn handle_comment(
                                                 owner,
                                                 &repo_name,
                                                 pr.number,
-                                                "Auto-merge failed due to serialization error; see logs for details.",
+                                                "Merge failed due to a serialization error.",
                                             )
                                             .await
                                             .map_err(|e| {
@@ -789,7 +787,7 @@ async fn handle_comment(
                                                         owner,
                                                         &repo_name,
                                                         pr.number,
-                                                        "Auto-merge failed due to db error; see logs for details.",
+                                                        "Merge failed due to a database error.",
                                                     )
                                                     .await
                                                     .map_err(|e| {
@@ -807,7 +805,7 @@ async fn handle_comment(
                                                 owner,
                                                 &repo_name,
                                                 pr.number,
-                                                "Auto-merge failed due to serialization error; see logs for details.",
+                                                "Merge failed due to serialization error.",
                                             )
                                             .await
                                             .map_err(|e| {
@@ -866,7 +864,7 @@ async fn handle_comment(
                                             owner,
                                             &repo_name,
                                             pr.number,
-                                            "Auto-merge failed due to db error; see logs for details.",
+                                            "Merge failed due to a database error.",
                                         )
                                         .await
                                         .map_err(|e| {
@@ -887,7 +885,7 @@ async fn handle_comment(
                                     owner,
                                     &repo_name,
                                     pr.number,
-                                    "Auto-merge failed due to serialization error; see logs for details.",
+                                    "Merge failed due to a serialization error.",
                                 )
                                 .await
                                 .map_err(|e| {
@@ -915,19 +913,17 @@ async fn handle_comment(
 					Err(e) => {
 						log::error!("Error getting PR status: {}", e);
 						// Notify people of merge failure.
-						let _ = github_bot.create_issue_comment(
-                            owner,
-                            &repo_name,
-                            pr.number,
-                            "Auto-merge failed due to a network error; see logs for details",
-                        )
-                        .await
-                        .map_err(|e| {
-                            log::error!(
-                                "Error posting comment: {}",
-                                e
-                            );
-                        });
+						let _ = github_bot
+							.create_issue_comment(
+								owner,
+								&repo_name,
+								pr.number,
+								"Merge failed due to a network error.",
+							)
+							.await
+							.map_err(|e| {
+								log::error!("Error posting comment: {}", e);
+							});
 						// Clean db.
 						let _ =
 							db.delete(pr.head.sha.as_bytes()).map_err(|e| {
@@ -942,19 +938,16 @@ async fn handle_comment(
 			Err(e) => {
 				log::error!("Error getting PR: {}", e);
 				let _ = github_bot
-                    .create_issue_comment(
-                        owner,
-                        &repo_name,
-                        number,
-                        "Auto-merge failed due to a network error; see logs for details",
-                    )
-                    .await
-                    .map_err(|e| {
-                        log::error!(
-                            "Error posting comment: {}",
-                            e
-                        );
-                    });
+					.create_issue_comment(
+						owner,
+						&repo_name,
+						number,
+						"Merge failed due to a network error.",
+					)
+					.await
+					.map_err(|e| {
+						log::error!("Error posting comment: {}", e);
+					});
 			}
 		}
 	} else if body.to_lowercase().trim()
@@ -1349,8 +1342,23 @@ async fn merge(
 			"{} merged successfully - checking for companion.",
 			pr.html_url
 		);
-		if let Some(body) = &pr.body {
-			let _ = check_companion(github_bot, &body, &pr.head.label).await;
+		if let Some(label) = &pr.head.label {
+			if let Some(body) = &pr.body {
+				let _ = check_companion(github_bot, &body, &label).await;
+			} else {
+				log::info!("No PR body found.");
+			}
+		} else {
+			if let Some(body) = &pr.body {
+				let _ = check_companion(
+					github_bot,
+					&body,
+					&format!("paritytech:{}", pr.head.ref_field),
+				)
+				.await;
+			} else {
+				log::info!("No PR body found.");
+			}
 		}
 	}
 }
@@ -1489,7 +1497,7 @@ async fn status_failure(
 			owner,
 			repo_name,
 			number,
-			"Checks failed; merge cancelled",
+			"Failed a required check; merge cancelled.",
 		)
 		.await
 		.map_err(|e| {
