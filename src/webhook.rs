@@ -359,9 +359,91 @@ async fn checks_and_status(
 						}
 						Ok(CombinedStatus {
 							state: StatusState::Failure,
+							statuses,
 							..
-						})
-						| Ok(CombinedStatus {
+						}) => {
+							match github_bot
+								.contents(
+									owner,
+									repo_name,
+									".gitlab-ci.yaml",
+									&pr.head.ref_field,
+								)
+								.await
+							{
+								Ok(ci) => {
+									if statuses.iter().any(
+										|Status { state, context, .. }| {
+											state == &StatusState::Failure
+												&& !status_failure_allowed(
+													&ci.content,
+													&context,
+												)
+										},
+									) {
+										log::info!(
+											"{} failed status checks.",
+											html_url
+										);
+										status_failure(
+											&github_bot,
+											&owner,
+											&repo_name,
+											pr.number,
+											&html_url,
+											&commit_sha,
+											db,
+										)
+										.await
+									} else if statuses.iter().all(
+										|Status { state, context, .. }| {
+											state == &StatusState::Success
+												|| (state
+													== &StatusState::Failure
+													&& status_failure_allowed(
+														&ci.content,
+														&context,
+													))
+										},
+									) {
+										log::info!(
+                                            "{} required statuses are green; attempting merge.",
+                                            html_url
+                                        );
+										continue_merge(
+											github_bot,
+											&owner,
+											&repo_name,
+											&pr,
+											db,
+											&bot_config,
+											&requested_by,
+										)
+										.await
+									} else if statuses.iter().all(
+										|Status { state, context, .. }| {
+											state == &StatusState::Success
+												|| state
+													== &StatusState::Pending || (state
+												== &StatusState::Failure
+												&& status_failure_allowed(
+													&ci.content,
+													&context,
+												))
+										},
+									) {
+										log::info!("{} is pending.", html_url);
+									}
+								}
+								Err(e) => {
+									log::error!(
+										"Error getting .gitlab-ci.yaml: {}",
+										e
+									);
+								}
+							}
+						}
+						Ok(CombinedStatus {
 							state: StatusState::Error,
 							..
 						}) => {
@@ -1417,4 +1499,15 @@ async fn status_failure(
 	let _ = db.delete(sha.as_bytes()).map_err(|e| {
 		log::error!("Error deleting from db: {}", e);
 	});
+}
+
+fn status_failure_allowed(ci: &str, context: &str) -> bool {
+	let d: serde_yaml::Result<serde_yaml::Value> = serde_yaml::from_str(ci);
+	match d {
+		Ok(v) => v[context]["allow_failure"].as_bool().unwrap_or(false),
+		Err(e) => {
+			log::error!("Error parsing value from ci yaml: {}", e);
+			false
+		}
+	}
 }

@@ -585,6 +585,7 @@ pub struct Status {
 	pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
 	pub state: StatusState,
 	pub creator: Option<User>,
+	pub context: String,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
