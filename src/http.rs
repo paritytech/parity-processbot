@@ -59,7 +59,6 @@ macro_rules! impl_methods_with_body {
                             continue 'retry;
                         }
                     }
-                    log::debug!("Response {:?}", res);
                     return res;
                 }
             }
@@ -71,7 +70,6 @@ macro_rules! impl_methods_with_body {
 /// Checks the response's status and maps into an `Err` branch if
 /// not successful.
 async fn handle_response(response: Response) -> Result<Response> {
-	log::debug!("{:?}", response);
 	let status = response.status();
 	if status.is_success() {
 		Ok(response)
@@ -117,7 +115,7 @@ impl Client {
 		self.client.request(method, url)
 	}
 
-	async fn auth_key(&self) -> Result<String> {
+	pub async fn auth_key(&self) -> Result<String> {
 		log::debug!("auth_key");
 		lazy_static::lazy_static! {
 			static ref TOKEN_CACHE: parking_lot::Mutex<Option<(DateTime<Utc>, String)>> = {
@@ -125,13 +123,14 @@ impl Client {
 			};
 		}
 
-		let mut token_cache = TOKEN_CACHE.lock();
-
-		let token = token_cache
-			.as_ref()
-			// Ensure token is not expired if set.
-			.filter(|(time, _)| time > &Utc::now())
-			.map(|(_, token)| token.clone());
+		let token = {
+			TOKEN_CACHE
+				.lock()
+				.as_ref()
+				// Ensure token is not expired if set.
+				.filter(|(time, _)| time > &Utc::now())
+				.map(|(_, token)| token.clone())
+		};
 
 		if let Some(token) = token {
 			return Ok(token);
@@ -166,7 +165,9 @@ impl Client {
 			.map_or(default_exp, |t| t.parse().unwrap_or(default_exp));
 		let token = install_token.token;
 
-		*token_cache = Some((expiry.clone(), token.clone()));
+		{
+			*TOKEN_CACHE.lock() = Some((expiry.clone(), token.clone()))
+		};
 
 		Ok(token)
 	}
@@ -281,13 +282,28 @@ impl Client {
 	pub async fn get<'b, I, T>(&self, url: I) -> Result<T>
 	where
 		I: Into<Cow<'b, str>> + Clone,
-		T: serde::de::DeserializeOwned,
+		T: serde::de::DeserializeOwned + core::fmt::Debug,
 	{
-		self.get_response(url, serde_json::json!({}))
+		let res = self
+			.get_response(url, serde_json::json!({}))
 			.await?
 			.json::<T>()
 			.await
-			.context(error::Http)
+			.context(error::Http);
+		res
+	}
+
+	/// Get a disembodied entry from a resource in GitHub.
+	pub async fn get_status<'b, I>(&self, url: I) -> Result<u16>
+	where
+		I: Into<Cow<'b, str>> + Clone,
+	{
+		let res = self
+			.get_response(url, serde_json::json!({}))
+			.await?
+			.status()
+			.as_u16();
+		Ok(res)
 	}
 
 	/// Get a single entry from a resource in GitHub. TODO fix
@@ -338,7 +354,6 @@ impl Client {
 					continue 'retry;
 				}
 			}
-			log::debug!("Response {:?}", res);
 			return res;
 		}
 	}
@@ -349,7 +364,7 @@ impl Client {
 	pub async fn get_all<'b, I, T>(&self, url: I) -> Result<Vec<T>>
 	where
 		I: Into<Cow<'b, str>>,
-		T: serde::de::DeserializeOwned,
+		T: serde::de::DeserializeOwned + core::fmt::Debug,
 	{
 		log::debug!("get_all");
 		let mut entities = Vec::new();

@@ -10,7 +10,7 @@ pub mod tag;
 pub mod team;
 
 pub struct GithubBot {
-	client: crate::http::Client,
+	pub client: crate::http::Client,
 }
 
 impl GithubBot {
@@ -116,16 +116,26 @@ impl GithubBot {
 			head = head,
 		)
 	}
+
+	/// Returns true if the user is a member of the org.
+	pub async fn org_member(&self, org: &str, username: &str) -> Result<u16> {
+		let url = &format!(
+			"{base_url}/orgs/{org}/members/{username}",
+			base_url = Self::BASE_URL,
+			org = org,
+			username = username,
+		);
+		self.client.get_status(url).await
+	}
 }
 
-/*
 #[cfg(test)]
 mod tests {
 	use super::*;
 
 	#[ignore]
 	#[test]
-	fn test_statuses() {
+	fn test_org_member() {
 		dotenv::dotenv().ok();
 		let installation = dotenv::var("TEST_INSTALLATION_LOGIN")
 			.expect("TEST_INSTALLATION_LOGIN");
@@ -133,58 +143,82 @@ mod tests {
 			dotenv::var("PRIVATE_KEY_PATH").expect("PRIVATE_KEY_PATH");
 		let private_key = std::fs::read(&private_key_path)
 			.expect("Couldn't find private key.");
-		let test_repo_name =
-			dotenv::var("TEST_REPO_NAME").expect("TEST_REPO_NAME");
-
-		let mut rt = tokio::runtime::Runtime::new().expect("runtime");
-		rt.block_on(async {
-			let github_bot = GithubBot::new(private_key, &installation)
-				.await
-				.expect("github_bot");
-			let created_pr = github_bot
-				.create_pull_request(
-					&test_repo_name,
-					&"testing pr".to_owned(),
-					&"this is a test".to_owned(),
-					&"testing_branch".to_owned(),
-					&"other_testing_branch".to_owned(),
-				)
-				.await
-				.expect("create_pull_request");
-			let status = github_bot
-				.status(&test_repo_name, &created_pr.head.sha)
-				.await
-				.expect("statuses");
-			assert!(status.state != github::StatusState::Failure);
-			github_bot
-				.close_pull_request(&test_repo_name, created_pr.number)
-				.await
-				.expect("close_pull_request");
-		});
-	}
-
-	#[ignore]
-	#[test]
-	fn test_contents() {
-		dotenv::dotenv().ok();
-		let installation = dotenv::var("TEST_INSTALLATION_LOGIN")
-			.expect("TEST_INSTALLATION_LOGIN");
-		let private_key_path =
-			dotenv::var("PRIVATE_KEY_PATH").expect("PRIVATE_KEY_PATH");
-		let private_key = std::fs::read(&private_key_path)
-			.expect("Couldn't find private key.");
-		let test_repo_name =
+		let _test_repo_name =
 			dotenv::var("TEST_REPO_NAME").expect("TEST_REPO_NAME");
 		let mut rt = tokio::runtime::Runtime::new().expect("runtime");
 		rt.block_on(async {
 			let github_bot = GithubBot::new(private_key, &installation)
 				.await
 				.expect("github_bot");
-			let _contents = github_bot
-				.contents(&test_repo_name, "README.md")
+			let _member = dbg!(github_bot
+				.org_member(&installation, "sjeohp")
 				.await
-				.expect("contents");
+				.expect("org_member"));
 		});
 	}
+	/*
+		#[ignore]
+		#[test]
+		fn test_statuses() {
+			dotenv::dotenv().ok();
+			let installation = dotenv::var("TEST_INSTALLATION_LOGIN")
+				.expect("TEST_INSTALLATION_LOGIN");
+			let private_key_path =
+				dotenv::var("PRIVATE_KEY_PATH").expect("PRIVATE_KEY_PATH");
+			let private_key = std::fs::read(&private_key_path)
+				.expect("Couldn't find private key.");
+			let test_repo_name =
+				dotenv::var("TEST_REPO_NAME").expect("TEST_REPO_NAME");
+
+			let mut rt = tokio::runtime::Runtime::new().expect("runtime");
+			rt.block_on(async {
+				let github_bot = GithubBot::new(private_key, &installation)
+					.await
+					.expect("github_bot");
+				let created_pr = github_bot
+					.create_pull_request(
+						&test_repo_name,
+						&"testing pr".to_owned(),
+						&"this is a test".to_owned(),
+						&"testing_branch".to_owned(),
+						&"other_testing_branch".to_owned(),
+					)
+					.await
+					.expect("create_pull_request");
+				let status = github_bot
+					.status(&test_repo_name, &created_pr.head.sha)
+					.await
+					.expect("statuses");
+				assert!(status.state != github::StatusState::Failure);
+				github_bot
+					.close_pull_request(&test_repo_name, created_pr.number)
+					.await
+					.expect("close_pull_request");
+			});
+		}
+
+		#[ignore]
+		#[test]
+		fn test_contents() {
+			dotenv::dotenv().ok();
+			let installation = dotenv::var("TEST_INSTALLATION_LOGIN")
+				.expect("TEST_INSTALLATION_LOGIN");
+			let private_key_path =
+				dotenv::var("PRIVATE_KEY_PATH").expect("PRIVATE_KEY_PATH");
+			let private_key = std::fs::read(&private_key_path)
+				.expect("Couldn't find private key.");
+			let test_repo_name =
+				dotenv::var("TEST_REPO_NAME").expect("TEST_REPO_NAME");
+			let mut rt = tokio::runtime::Runtime::new().expect("runtime");
+			rt.block_on(async {
+				let github_bot = GithubBot::new(private_key, &installation)
+					.await
+					.expect("github_bot");
+				let _contents = github_bot
+					.contents(&test_repo_name, "README.md")
+					.await
+					.expect("contents");
+			});
+		}
+	*/
 }
-*/
