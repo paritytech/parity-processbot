@@ -115,7 +115,7 @@ impl Client {
 		self.client.request(method, url)
 	}
 
-	async fn auth_key(&self) -> Result<String> {
+	pub async fn auth_key(&self) -> Result<String> {
 		log::debug!("auth_key");
 		lazy_static::lazy_static! {
 			static ref TOKEN_CACHE: parking_lot::Mutex<Option<(DateTime<Utc>, String)>> = {

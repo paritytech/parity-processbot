@@ -41,6 +41,7 @@ pub struct PullRequest {
 	pub created_at: Option<chrono::DateTime<chrono::Utc>>,
 	pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
 	pub closed_at: Option<String>,
+	pub merged: Option<bool>,
 	pub mergeable: Option<bool>,
 	pub merged_at: Option<String>,
 	pub merge_commit_sha: Option<String>,
@@ -359,6 +360,7 @@ pub struct IssuePullRequest {
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Head {
+	pub label: String,
 	#[serde(rename = "ref")]
 	pub ref_field: String,
 	pub sha: String,
@@ -785,9 +787,10 @@ pub struct CheckRunPR {
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HeadRepo {
-	id: i64,
-	url: String,
-	name: String,
+	pub id: i64,
+	pub url: String,
+	pub name: String,
+	pub owner: Option<User>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -814,7 +817,32 @@ pub struct Branch {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged, rename_all = "snake_case")]
+pub enum PullRequestAction {
+	Opened,
+	Edited,
+	Closed,
+	Assigned,
+	Unassigned,
+	ReviewRequested,
+	ReviewRequestRemoved,
+	ReadyForReview,
+	Labeled,
+	Unlabeled,
+	Synchronized,
+	Locked,
+	Unlocked,
+	Reopened,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged, rename_all = "snake_case")]
 pub enum Payload {
+	PullRequest {
+		action: PullRequestAction,
+		number: i64,
+		pull_request: PullRequest,
+		repository: Repository,
+	},
 	IssueComment {
 		action: IssueCommentAction,
 		issue: Issue,

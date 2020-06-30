@@ -10,7 +10,7 @@ pub mod tag;
 pub mod team;
 
 pub struct GithubBot {
-	client: crate::http::Client,
+	pub client: crate::http::Client,
 }
 
 impl GithubBot {
@@ -143,14 +143,14 @@ mod tests {
 			dotenv::var("PRIVATE_KEY_PATH").expect("PRIVATE_KEY_PATH");
 		let private_key = std::fs::read(&private_key_path)
 			.expect("Couldn't find private key.");
-		let test_repo_name =
+		let _test_repo_name =
 			dotenv::var("TEST_REPO_NAME").expect("TEST_REPO_NAME");
 		let mut rt = tokio::runtime::Runtime::new().expect("runtime");
 		rt.block_on(async {
 			let github_bot = GithubBot::new(private_key, &installation)
 				.await
 				.expect("github_bot");
-			let member = dbg!(github_bot
+			let _member = dbg!(github_bot
 				.org_member(&installation, "sjeohp")
 				.await
 				.expect("org_member"));

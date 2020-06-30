@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use crate::{
-	config::BotConfig, constants::*, error::*, github::*,
+	companion::*, config::BotConfig, constants::*, error::*, github::*,
 	github_bot::GithubBot, matrix_bot::MatrixBot, process,
 };
 
@@ -98,6 +98,18 @@ pub async fn webhook(
 
 async fn handle_payload(payload: Payload, state: Arc<AppState>) -> Result<()> {
 	match payload {
+		Payload::PullRequest {
+			action: PullRequestAction::Closed,
+			pull_request:
+				PullRequest {
+//					html_url,
+//					merged: Some(true),
+//					body: Some(body),
+//					labels,
+					..
+				},
+			..
+		} => Ok(()), // handle_merged(html_url, body, labels, state).await,
 		Payload::IssueComment {
 			action: IssueCommentAction::Created,
 			comment:
@@ -130,10 +142,36 @@ async fn handle_payload(payload: Payload, state: Arc<AppState>) -> Result<()> {
 				},
 			..
 		} => handle_check(status, head_sha, pull_requests, state).await,
-		_event => {
-			//			log::debug!("{:?}", event);
-			Ok(())
+		_event => Ok(()),
+	}
+}
+
+async fn get_pr(
+	github_bot: &GithubBot,
+	owner: &str,
+	repo_name: &str,
+	number: i64,
+) -> Result<PullRequest> {
+	match github_bot.pull_request(&owner, &repo_name, number).await {
+		Err(e) => {
+			log::error!("Error getting PR: {}", e);
+			let _ = github_bot
+            .create_issue_comment(
+                &owner,
+                &repo_name,
+                number,
+                "Auto-merge failed due to network error; see logs for details.",
+            )
+            .await
+            .map_err(|e| {
+                log::error!(
+                    "Error posting comment: {}",
+                    e
+                );
+            });
+			Err(anyhow!(e))
 		}
+		Ok(pr) => Ok(pr),
 	}
 }
 
@@ -266,35 +304,6 @@ async fn handle_status(
 	Ok(())
 }
 
-async fn get_pr(
-	github_bot: &GithubBot,
-	owner: &str,
-	repo_name: &str,
-	number: i64,
-) -> Result<PullRequest> {
-	match github_bot.pull_request(&owner, &repo_name, number).await {
-		Err(e) => {
-			log::error!("Error getting PR: {}", e);
-			let _ = github_bot
-            .create_issue_comment(
-                &owner,
-                &repo_name,
-                number,
-                "Auto-merge failed due to network error; see logs for details.",
-            )
-            .await
-            .map_err(|e| {
-                log::error!(
-                    "Error posting comment: {}",
-                    e
-                );
-            });
-			Err(anyhow!(e))
-		}
-		Ok(pr) => Ok(pr),
-	}
-}
-
 async fn checks_and_status(
 	github_bot: &GithubBot,
 	owner: &str,
@@ -338,7 +347,7 @@ async fn checks_and_status(
 								html_url
 							);
 							continue_merge(
-								&github_bot,
+								github_bot,
 								&owner,
 								&repo_name,
 								&pr,
@@ -586,7 +595,7 @@ async fn handle_comment(
                                                             );
                                                         });
 													continue_merge(
-														&github_bot,
+														github_bot,
 														owner,
 														&repo_name,
 														&pr,
@@ -1216,7 +1225,7 @@ async fn merge(
 						owner,
 						repo_name,
 						pr.number,
-						&format!("Merge failed - `{:?}`", m["message"]),
+						&format!("Merge failed - `{}`", m["message"]),
 					)
 					.await
 					.map_err(|e| {
@@ -1230,7 +1239,7 @@ async fn merge(
 						repo_name,
 						pr.number,
 						&format!(
-							"Merge failed due to a network error:\n\n{:?}",
+							"Merge failed due to a network error:\n\n{}",
 							source
 						),
 					)
@@ -1254,8 +1263,132 @@ async fn merge(
 			}
 		};
 	} else {
-		log::info!("Merged {} successfully.", pr.html_url);
+		log::info!(
+			"{} merged successfully - checking for companion.",
+			pr.html_url
+		);
+		if let Some(body) = &pr.body {
+			let _ = check_companion(github_bot, &body, &pr.head.label).await;
+		}
 	}
+}
+
+async fn check_companion(
+	github_bot: &GithubBot,
+	body: &str,
+	head: &str,
+) -> Result<()> {
+	if let Some((comp_html_url, comp_owner, comp_repo, comp_number)) =
+		companion_parse(&body)
+	{
+		log::info!("Found companion {}", comp_html_url);
+		if let Ok(PullRequest {
+			head:
+				Head {
+					ref_field: comp_head_branch,
+					repo:
+						HeadRepo {
+							name: comp_head_repo,
+							owner:
+								Some(User {
+									login: comp_head_owner,
+									..
+								}),
+							..
+						},
+					..
+				},
+			..
+		}) = get_pr(github_bot, &comp_owner, &comp_repo, comp_number).await
+		{
+			update_companion(
+				github_bot,
+				&comp_html_url,
+				&comp_owner,
+				&comp_repo,
+				comp_number,
+				&comp_head_owner,
+				&comp_head_repo,
+				&comp_head_branch,
+			)
+			.await?;
+		}
+	} else if let Ok(Some(PullRequest {
+		html_url: comp_html_url,
+		number: comp_number,
+		head: Head {
+			ref_field: comp_head_branch,
+			..
+		},
+		..
+	})) = github_bot
+		.pull_request_with_head("paritytech", "polkadot", &format!("{}", head))
+		.await
+	{
+		update_companion(
+			github_bot,
+			&comp_html_url,
+			"paritytech",
+			"polkadot",
+			comp_number,
+			"paritytech",
+			"polkadot",
+			&comp_head_branch,
+		)
+		.await?;
+	} else {
+		log::info!("No companion found.");
+	}
+
+	Ok(())
+}
+
+async fn update_companion(
+	github_bot: &GithubBot,
+	comp_html_url: &str,
+	comp_owner: &str,
+	comp_repo: &str,
+	comp_number: i64,
+	comp_head_owner: &str,
+	comp_head_repo: &str,
+	comp_head_branch: &str,
+) -> Result<()> {
+	log::info!("Updating companion {}", comp_html_url);
+	if let Err(e) = companion_update(
+		github_bot,
+		&comp_head_owner,
+		&comp_head_repo,
+		&comp_head_branch,
+	)
+	.await
+	{
+		log::error!("Error updating companion: {:?}", e);
+		let _ = github_bot
+			.create_issue_comment(
+				&comp_owner,
+				&comp_repo,
+				comp_number,
+				"Error updating Cargo.lock; see logs for details",
+			)
+			.await
+			.map_err(|e| {
+				log::error!("Error posting comment: {}", e);
+			});
+	} else {
+		log::info!("Companion updated; requesting merge for {}", comp_html_url);
+		let _ = github_bot
+			.create_issue_comment(
+				&comp_owner,
+				&comp_repo,
+				comp_number,
+				"bot merge",
+			)
+			.await
+			.map_err(|e| {
+				log::error!("Error posting comment: {}", e);
+			});
+	}
+	Ok(())
 }
 
 async fn status_failure(
