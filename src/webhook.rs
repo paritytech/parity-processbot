@@ -578,11 +578,12 @@ async fn handle_comment(
 			requested_by
 		);
 
-		// Check the user is a member of the org
-		let member = github_bot.org_member(&owner, &requested_by).await;
-		if let Err(e) = member {
-			log::error!("Error getting organization membership: {:?}", e);
-			let _ = github_bot
+		if requested_by != "parity-processbot" {
+			// Check the user is a member of the org
+			let member = github_bot.org_member(&owner, &requested_by).await;
+			if let Err(e) = member {
+				log::error!("Error getting organization membership: {:?}", e);
+				let _ = github_bot
                 .create_issue_comment(
                     owner,
                     &repo_name,
@@ -596,25 +597,29 @@ async fn handle_comment(
                         e
                     );
                 });
-			return Ok(());
-		} else if member.unwrap() != 204 {
-			log::warn!(
-				"Merge requested by {}, who is not a member of {}.",
-				requested_by,
-				owner
-			);
-			let _ = github_bot
-				.create_issue_comment(
-					owner,
-					&repo_name,
-					number,
-					&format!("Only members of {} can request merges.", owner),
-				)
-				.await
-				.map_err(|e| {
-					log::error!("Error posting comment: {}", e);
-				});
-			return Ok(());
+				return Ok(());
+			} else if member.unwrap() != 204 {
+				log::warn!(
+					"Merge requested by {}, who is not a member of {}.",
+					requested_by,
+					owner
+				);
+				let _ = github_bot
+					.create_issue_comment(
+						owner,
+						&repo_name,
+						number,
+						&format!(
+							"Only members of {} can request merges.",
+							owner
+						),
+					)
+					.await
+					.map_err(|e| {
+						log::error!("Error posting comment: {}", e);
+					});
+				return Ok(());
+			}
 		}
 
 		// Fetch the pr to get all fields (eg. mergeable).
