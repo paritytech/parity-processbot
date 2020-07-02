@@ -70,7 +70,7 @@ test-build:
     DOCKER_IMAGE:                  "${CI_REGISTRY}/${KUBE_NAMESPACE}"
   interruptible:                   true
   script:
-    - echo "$Docker_Hub_Pass_Parity" | docker login -u "$Docker_Hub_User_Parity" --password-stdin
+    - docker login -u "$Docker_Hub_User_Parity" -p "$Docker_Hub_Pass_Parity"
     - cd ./artifacts
     - docker build -t "$DOCKER_IMAGE:$CI_COMMIT_REF_NAME" .
     - docker push "$DOCKER_IMAGE:$CI_COMMIT_REF_NAME"
