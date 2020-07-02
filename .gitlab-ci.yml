@@ -68,6 +68,7 @@ test-build:
     DOCKER_DRIVER:                 overlay2
     DOCKER_HOST:                   tcp://localhost:2375
     DOCKER_IMAGE:                  "${CI_REGISTRY}/${KUBE_NAMESPACE}"
+  interruptible:                   true
   script:
     - echo "$Docker_Hub_Pass_Parity" | docker login -u "$Docker_Hub_User_Parity" --password-stdin
     - cd ./artifacts
@@ -84,13 +85,14 @@ dockerize-processbot:
       artifacts:                   true
   environment:
     name:                          parity-build
-  only:
-    - tags
+  # only:
+  #   - tags
 
 #### stage:                        deploy
 
 .deploy-k8s:                       &deploy-k8s
   image:                           paritytech/kubetools:helm3
+  interruptible:                   true
   script:
     - helm upgrade processbot kubernetes/processbot
       --install
