@@ -72,7 +72,7 @@ pub async fn companion_update(
 			.context("git commit")?;
 		Command::new("git")
 			.arg("push")
-			.arg("-vn")
+			.arg("-v")
 			.current_dir(format!("./{}", repo))
 			.spawn()
 			.context("spawn git push")?

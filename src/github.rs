@@ -360,7 +360,7 @@ pub struct IssuePullRequest {
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Head {
-	pub label: String,
+	pub label: Option<String>,
 	#[serde(rename = "ref")]
 	pub ref_field: String,
 	pub sha: String,
@@ -585,6 +585,7 @@ pub struct Status {
 	pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
 	pub state: StatusState,
 	pub creator: Option<User>,
+	pub context: String,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
