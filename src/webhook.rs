@@ -1,4 +1,3 @@
-use anyhow::{anyhow, Context, Result};
 use futures::StreamExt;
 use futures_util::future::TryFutureExt;
 use hyper::{http::StatusCode, Body, Request, Response};
@@ -6,11 +5,13 @@ use itertools::Itertools;
 use ring::hmac;
 use rocksdb::DB;
 use serde::{Deserialize, Serialize};
+use snafu::OptionExt;
 use std::sync::Arc;
+use tokio::sync::Mutex;
 
 use crate::{
 	companion::*, config::BotConfig, constants::*, error::*, github::*,
-	github_bot::GithubBot, matrix_bot::MatrixBot, process,
+	github_bot::GithubBot, matrix_bot::MatrixBot, process, Result,
 };
 
 pub const BAMBOO_DATA_KEY: &str = "BAMBOO_DATA";
@@ -23,7 +24,6 @@ pub struct AppState {
 	pub bot_config: BotConfig,
 	pub webhook_secret: String,
 	pub environment: String,
-	pub test_repo: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -40,76 +40,147 @@ fn verify(
 	secret: &[u8],
 	msg: &[u8],
 	signature: &[u8],
-) -> Result<(), ring::error::Unspecified> {
+) -> std::result::Result<(), ring::error::Unspecified> {
 	let key = hmac::Key::new(hmac::HMAC_SHA1_FOR_LEGACY_USE_ONLY, secret);
 	hmac::verify(&key, msg, signature)
 }
 
 pub async fn webhook(
-	mut req: Request<Body>,
-	state: parking_lot::Mutex<Arc<AppState>>,
-) -> anyhow::Result<Response<Body>> {
+	req: Request<Body>,
+	state: Arc<Mutex<AppState>>,
+) -> Result<Response<Body>> {
 	if req.uri().path() == "/webhook" {
-		let state = Arc::clone(&state.lock());
-		let mut msg_bytes = vec![];
-		while let Some(item) = req.body_mut().next().await {
-			msg_bytes.extend_from_slice(
-				&item.context(format!(
-					"Error getting bytes from request body"
-				))?,
-			);
-		}
-
+		let state = &*state.lock().await;
 		let sig = req
 			.headers()
 			.get("x-hub-signature")
-			.context(format!("Missing x-hub-signature"))?
+			.context(Message {
+				msg: format!("Missing x-hub-signature"),
+			})?
 			.to_str()
-			.context(format!("Error parsing x-hub-signature"))?
-			.replace("sha1=", "");
-		let sig_bytes = base16::decode(sig.as_bytes())
-			.context(format!("Error decoding x-hub-signature"))?;
-
-		verify(
-			state.webhook_secret.trim().as_bytes(),
-			&msg_bytes,
-			&sig_bytes,
-		)
-		.context(format!("Validation signature does not match"))?;
-
-		let payload = serde_json::from_slice::<Payload>(&msg_bytes)
-			.context(format!("Error parsing request body"))?;
-
-		if let Err(e) = handle_payload(payload, state).await {
-			log::error!("{:?}", e);
+			.ok()
+			.context(Message {
+				msg: format!("Error parsing x-hub-signature"),
+			})?
+			.to_string();
+		log::info!("Lock acquired for {:?}", sig);
+		match webhook_inner(req, state).await {
+			Err(e) => {
+				log::error!("{}", e);
+				match e {
+					Error::WithIssue {
+						source,
+						issue: Some((owner, repo, number)),
+						..
+					} => match *source {
+						Error::Response {
+							body: serde_json::Value::Object(m),
+							..
+						} => {
+							let _ = state
+								.github_bot
+								.create_issue_comment(
+									&owner,
+									&repo,
+									number,
+									&format!("Error: `{}`", m["message"]),
+								)
+								.await
+								.map_err(|e| {
+									log::error!("Error posting comment: {}", e);
+								});
+						}
+						_ => {
+							let _ = state
+								.github_bot
+								.create_issue_comment(
+									&owner,
+									&repo,
+									number,
+									"Unexpected error; see logs.",
+								)
+								.await
+								.map_err(|e| {
+									log::error!("Error posting comment: {}", e);
+								});
+						}
+					},
+					_ => {}
+				}
+			}
+			_ => {}
 		}
-
+		log::info!("Will release lock for {:?}", sig);
 		Response::builder()
 			.status(StatusCode::OK)
 			.body(Body::from(""))
-			.context(format!("Error building response"))
+			.ok()
+			.context(Message {
+				msg: format!("Error building response"),
+			})
 	} else {
 		Response::builder()
 			.status(StatusCode::NOT_FOUND)
 			.body(Body::from("Not found."))
-			.context(format!("Error building response"))
+			.ok()
+			.context(Message {
+				msg: format!("Error building response"),
+			})
 	}
 }
 
-async fn handle_payload(payload: Payload, state: Arc<AppState>) -> Result<()> {
+pub async fn webhook_inner(
+	mut req: Request<Body>,
+	state: &AppState,
+) -> Result<()> {
+	let mut msg_bytes = vec![];
+	while let Some(item) = req.body_mut().next().await {
+		msg_bytes.extend_from_slice(&item.ok().context(Message {
+			msg: format!("Error getting bytes from request body"),
+		})?);
+	}
+
+	let sig = req
+		.headers()
+		.get("x-hub-signature")
+		.context(Message {
+			msg: format!("Missing x-hub-signature"),
+		})?
+		.to_str()
+		.ok()
+		.context(Message {
+			msg: format!("Error parsing x-hub-signature"),
+		})?
+		.replace("sha1=", "");
+	let sig_bytes = base16::decode(sig.as_bytes()).ok().context(Message {
+		msg: format!("Error decoding x-hub-signature"),
+	})?;
+
+	verify(
+		state.webhook_secret.trim().as_bytes(),
+		&msg_bytes,
+		&sig_bytes,
+	)
+	.ok()
+	.context(Message {
+		msg: format!("Validation signature does not match"),
+	})?;
+
+	let payload = serde_json::from_slice::<Payload>(&msg_bytes).ok().context(
+		Message {
+			msg: format!("Error parsing request body"),
+		},
+	)?;
+
+	if let Err(e) = handle_payload(payload, state).await {
+		log::error!("{:?}", e);
+	}
+
+	Ok(())
+}
+
+async fn handle_payload(payload: Payload, state: &AppState) -> Result<()> {
 	match payload {
-		Payload::PullRequest {
-			action: PullRequestAction::Closed,
-			pull_request:
-				PullRequest {
-//					html_url,
-//					merged: Some(true),
-//					body: Some(body),
-//					labels,
-					..
-				},
-			..
-		} => Ok(()), // handle_merged(html_url, body, labels, state).await,
 		Payload::IssueComment {
 			action: IssueCommentAction::Created,
 			comment:
@@ -160,13 +231,13 @@ async fn get_pr(
 					&owner,
 					&repo_name,
 					number,
-					"Merge failed due to network error; see logs for details.",
+					"Merge failed due to network error; see logs.",
 				)
 				.await
 				.map_err(|e| {
 					log::error!("Error posting comment: {}", e);
 				});
-			Err(anyhow!(e))
+			Err(e)
 		}
 		Ok(pr) => Ok(pr),
 	}
@@ -176,7 +247,7 @@ async fn handle_check(
 	status: String,
 	commit_sha: String,
 	pull_requests: Vec<CheckRunPR>,
-	state: Arc<AppState>,
+	state: &AppState,
 ) -> Result<()> {
 	let db = &state.db;
 	let github_bot = &state.github_bot;
@@ -244,7 +315,7 @@ async fn handle_check(
 async fn handle_status(
 	commit_sha: String,
 	status: StatusState,
-	state: Arc<AppState>,
+	state: &AppState,
 ) -> Result<()> {
 	let db = &state.db;
 	let github_bot = &state.github_bot;
@@ -317,7 +388,7 @@ async fn checks_and_status(
 		log::info!("Commit sha {} matches head of {}", commit_sha, html_url);
 
 		// Delay after status hook to avoid false success
-		tokio::time::delay_for(std::time::Duration::from_secs(5)).await;
+		tokio::time::delay_for(std::time::Duration::from_millis(1000)).await;
 
 		let checks =
 			github_bot.check_runs(&owner, &repo_name, &commit_sha).await;
@@ -556,20 +627,22 @@ async fn handle_comment(
 	number: i64,
 	html_url: String,
 	repo_url: String,
-	state: Arc<AppState>,
+	state: &AppState,
 ) -> Result<()> {
 	let db = &state.db;
 	let github_bot = &state.github_bot;
 	let bot_config = &state.bot_config;
 
-	let owner = GithubBot::owner_from_html_url(&html_url)
-		.context(format!("Failed parsing owner in url: {}", html_url))?;
+	let owner = GithubBot::owner_from_html_url(&html_url).context(Message {
+		msg: format!("Failed parsing owner in url: {}", html_url),
+	})?;
 
-	let repo_name = repo_url
-		.rsplit('/')
-		.next()
-		.map(|s| s.to_string())
-		.context(format!("Failed parsing repo name in url: {}", repo_url))?;
+	let repo_name =
+		repo_url.rsplit('/').next().map(|s| s.to_string()).context(
+			Message {
+				msg: format!("Failed parsing repo name in url: {}", repo_url),
+			},
+		)?;
 
 	if body.to_lowercase().trim() == AUTO_MERGE_REQUEST.to_lowercase().trim() {
 		log::info!(
@@ -1517,16 +1590,16 @@ async fn continue_merge(
 						// Without process info the merge cannot complete so
 						// let people know.
 						let _ = github_bot
-					.create_issue_comment(
-						owner,
-						repo_name,
-						pr.number,
-                        "Merge failed to due error getting process info; see logs for details"
-					)
-					.await
-					.map_err(|e| {
-						log::error!("Error posting comment: {}", e);
-					});
+                            .create_issue_comment(
+                                owner,
+                                repo_name,
+                                pr.number,
+                                "Merge failed to due error getting process info; see logs."
+                            )
+                            .await
+                            .map_err(|e| {
+                                log::error!("Error posting comment: {}", e);
+                            });
 					}
 					Ok(process) => {
 						let owner_approved = reviews
@@ -1600,7 +1673,13 @@ async fn merge(
 	if let Err(e) = github_bot
 		.merge_pull_request(owner, repo_name, pr.number, &pr.head.sha)
 		.await
-	{
+		.map_err(|e| {
+			e.map_issue(Some((
+				owner.to_string(),
+				repo_name.to_string(),
+				pr.number,
+			)))
+		}) {
 		log::error!("Error merging: {}", &e);
 		match e {
 			Error::Response {

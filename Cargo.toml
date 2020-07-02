@@ -37,3 +37,4 @@ anyhow = "1.0"
 async-std = { version = "1.0.1", features = ["unstable"] }
 hyper = { version = "0.13.1", default-features = false, features = ["stream"] }
 serde_yaml = "0.8"
+thiserror = "1"
