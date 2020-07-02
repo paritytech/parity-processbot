@@ -12,10 +12,24 @@ pub enum Error {
 		issue: IssueDetails,
 	},
 
-	#[snafu(display("Error: {}\nBacktrace:\n{}", msg, backtrace))]
+	#[snafu(display("Checks failed for {}", commit_sha))]
+	ChecksFailed {
+		commit_sha: String,
+	},
+
+	#[snafu(display("Head SHA changed from {}", commit_sha))]
+	HeadChanged {
+		commit_sha: String,
+	},
+
+	#[snafu(display("Error getting organization membership: {}", source))]
+	OrganizationMembership {
+		source: Box<Error>,
+	},
+
+	#[snafu(display("Error: {}", msg))]
 	Message {
 		msg: String,
-		backtrace: Backtrace,
 	},
 
 	/// An error occurred with an integration service (e.g. GitHub).
@@ -89,6 +103,12 @@ pub enum Error {
 
 	Jwt {
 		source: jsonwebtoken::errors::Error,
+	},
+
+	#[snafu(display("Source: {}\nBacktrace:\n{}", source, backtrace))]
+	Bincode {
+		source: bincode::Error,
+		backtrace: Backtrace,
 	},
 }
 
