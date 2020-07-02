@@ -1,6 +1,7 @@
 use rocksdb::DB;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
+use tokio::sync::Mutex;
 
 use parity_processbot::{
 	config::{BotConfig, MainConfig},
@@ -84,15 +85,14 @@ async fn run() -> anyhow::Result<()> {
 	});
 	*/
 
-	let app_state = Arc::new(AppState {
+	let app_state = Arc::new(Mutex::new(AppState {
 		db: db,
 		github_bot: github_bot,
 		matrix_bot: matrix_bot,
 		bot_config: BotConfig::from_env(),
 		webhook_secret: config.webhook_secret,
 		environment: config.environment,
-		test_repo: config.test_repo,
-	});
+	}));
 
 	let socket = SocketAddr::new(
 		IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),

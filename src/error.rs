@@ -1,18 +1,33 @@
 use crate::Result;
-use snafu::{Backtrace, GenerateBacktrace, Snafu};
+use snafu::{Backtrace, Snafu};
 
-pub fn unwrap_field<T>(x: Option<T>) -> Result<T> {
-	x.ok_or(Error::MissingData {
-		backtrace: snafu::Backtrace::generate(),
-	})
-}
+type IssueDetails = Option<(String, String, i64)>;
 
 #[derive(Debug, Snafu)]
 #[snafu(visibility = "pub")]
 pub enum Error {
-	#[snafu(display("Source: {}\nBacktrace:\n{}", source, backtrace))]
-	Actix {
-		source: std::io::Error,
+	#[snafu(display("Source: {}", source))]
+	WithIssue {
+		source: Box<Error>,
+		issue: IssueDetails,
+	},
+
+	#[snafu(display("Error: {}\nBacktrace:\n{}", msg, backtrace))]
+	Message {
+		msg: String,
+		backtrace: Backtrace,
+	},
+
+	/// An error occurred with an integration service (e.g. GitHub).
+	#[snafu(display(
+		"Status code: {}\nBody:\n{:#?}\nBacktrace:\n{}",
+		status,
+		body,
+		backtrace
+	))]
+	Response {
+		status: reqwest::StatusCode,
+		body: serde_json::Value,
 		backtrace: Backtrace,
 	},
 
@@ -65,19 +80,6 @@ pub enum Error {
 		backtrace: Backtrace,
 	},
 
-	/// An error occurred with an integration service (e.g. GitHub).
-	#[snafu(display(
-		"Status code: {}\nBody:\n{:#?}\nBacktrace:\n{}",
-		status,
-		body,
-		backtrace
-	))]
-	Response {
-		status: reqwest::StatusCode,
-		body: serde_json::Value,
-		backtrace: Backtrace,
-	},
-
 	/// An error occurred with a curl request.
 	#[snafu(display("Status code: {}\nBody:\n{:#?}", status, body))]
 	Curl {
@@ -88,6 +90,15 @@ pub enum Error {
 	Jwt {
 		source: jsonwebtoken::errors::Error,
 	},
+}
+
+impl Error {
+	pub fn map_issue(self, issue: IssueDetails) -> Self {
+		Self::WithIssue {
+			source: Box::new(self),
+			issue: issue,
+		}
+	}
 }
 
 /// Maps a curl error into a crate::error::Error.
