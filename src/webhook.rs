@@ -387,90 +387,19 @@ async fn checks_and_status(
 						}
 						Ok(CombinedStatus {
 							state: StatusState::Failure,
-							statuses,
 							..
 						}) => {
-							match dbg!(
-								github_bot
-									.contents(
-										owner,
-										repo_name,
-										".gitlab-ci.yml",
-										&pr.head.ref_field,
-									)
-									.await
-							) {
-								Ok(ci) => {
-									if statuses.iter().any(
-										|Status { state, context, .. }| {
-											state == &StatusState::Failure
-												&& !status_failure_allowed(
-													&ci.content,
-													&context,
-												)
-										},
-									) {
-										log::info!(
-											"{} failed a required status check.",
-											html_url
-										);
-										status_failure(
-											&github_bot,
-											&owner,
-											&repo_name,
-											pr.number,
-											&html_url,
-											&commit_sha,
-											db,
-										)
-										.await
-									} else if statuses.iter().all(
-										|Status { state, context, .. }| {
-											state == &StatusState::Success
-												|| (state
-													== &StatusState::Failure
-													&& status_failure_allowed(
-														&ci.content,
-														&context,
-													))
-										},
-									) {
-										log::info!(
-                                            "{} required statuses are green; attempting merge.",
-                                            html_url
-                                        );
-										continue_merge(
-											github_bot,
-											&owner,
-											&repo_name,
-											&pr,
-											db,
-											&bot_config,
-											&requested_by,
-										)
-										.await
-									} else if statuses.iter().all(
-										|Status { state, context, .. }| {
-											state == &StatusState::Success
-												|| state
-													== &StatusState::Pending || (state
-												== &StatusState::Failure
-												&& status_failure_allowed(
-													&ci.content,
-													&context,
-												))
-										},
-									) {
-										log::info!("{} is pending.", html_url);
-									}
-								}
-								Err(e) => {
-									log::error!(
-										"Error getting .gitlab-ci.yml: {}",
-										e
-									);
-								}
-							}
+							log::info!("{} status failure.", html_url);
+							status_failure(
+								&github_bot,
+								&owner,
+								&repo_name,
+								pr.number,
+								&html_url,
+								&commit_sha,
+								db,
+							)
+							.await
 						}
 						Ok(CombinedStatus {
 							state: StatusState::Error,
@@ -939,305 +868,19 @@ async fn handle_comment(
 					}
 					Ok(CombinedStatus {
 						state: StatusState::Failure,
-						statuses,
 						..
 					}) => {
-						match dbg!(
-							github_bot
-								.contents(
-									owner,
-									&repo_name,
-									".gitlab-ci.yml",
-									&pr.head.ref_field,
-								)
-								.await
-						) {
-							Ok(ci) => {
-								if statuses.iter().any(
-									|Status { state, context, .. }| {
-										state == &StatusState::Failure
-											&& !status_failure_allowed(
-												&ci.content,
-												&context,
-											)
-									},
-								) {
-									log::info!(
-										"{} failed a required status check.",
-										html_url
-									);
-									status_failure(
-										&github_bot,
-										&owner,
-										&repo_name,
-										pr.number,
-										&pr.html_url,
-										&pr.head.sha,
-										db,
-									)
-									.await
-								} else if statuses.iter().all(
-									|Status { state, context, .. }| {
-										state == &StatusState::Success
-											|| (state == &StatusState::Failure
-												&& status_failure_allowed(
-													&ci.content,
-													&context,
-												))
-									},
-								) {
-									log::info!(
-										"{} required statuses are green.",
-										html_url
-									);
-									let checks = github_bot
-										.check_runs(
-											&owner,
-											&repo_name,
-											&pr.head.sha,
-										)
-										.await;
-									log::info!("{:?}", checks);
-									match checks {
-										Ok(checks) => {
-											if checks.check_runs.iter().all(
-												|r| {
-													r.conclusion
-														== Some(
-															"success"
-																.to_string(),
-														)
-												},
-											) {
-												log::info!(
-													"{} checks successful.",
-													html_url
-												);
-												let m = MergeRequest {
-													owner: owner.to_string(),
-													repo_name: repo_name
-														.clone(),
-													number: pr.number,
-													html_url: pr
-														.html_url
-														.clone(),
-													requested_by: requested_by
-														.to_string(),
-												};
-												log::info!(
-                                                    "Serializing merge request: {:?}",
-                                                    m
-                                                );
-												match bincode::serialize(&m) {
-													Ok(bytes) => {
-														log::info!("Writing merge request to db (head ref: {})", pr.head.ref_field);
-														match db.put(
-															pr.head
-																.sha
-																.trim()
-																.as_bytes(),
-															bytes,
-														) {
-															Ok(_) => {
-																log::info!("Trying merge.");
-																let _ = github_bot
-                                                                    .create_issue_comment(
-                                                                        owner,
-                                                                        &repo_name,
-                                                                        pr.number,
-                                                                        "Trying merge.",
-                                                                    )
-                                                                    .await
-                                                                    .map_err(|e| {
-                                                                        log::error!(
-                                                                            "Error posting comment: {}",
-                                                                            e
-                                                                        );
-                                                                    });
-																continue_merge(
-                                                                    github_bot,
-                                                                    owner,
-                                                                    &repo_name,
-                                                                    &pr,
-                                                                    db,
-                                                                    &bot_config,
-                                                                    &requested_by,
-                                                                )
-                                                                .await;
-															}
-															Err(e) => {
-																log::error!("Error adding merge request to db: {}", e);
-																let _ = github_bot.create_issue_comment(
-                                                                    owner,
-                                                                    &repo_name,
-                                                                    pr.number,
-                                                                    "Merge failed due to a database error.",
-                                                                )
-                                                                .await
-                                                                .map_err(|e| {
-                                                                    log::error!(
-                                                                        "Error posting comment: {}",
-                                                                        e
-                                                                    );
-                                                                });
-															}
-														}
-													}
-													Err(e) => {
-														log::error!("Error serializing merge request: {}", e);
-														let _ = github_bot.create_issue_comment(
-                                                            owner,
-                                                            &repo_name,
-                                                            pr.number,
-                                                            "Merge failed due to a serialization error.",
-                                                        )
-                                                        .await
-                                                        .map_err(|e| {
-                                                            log::error!(
-                                                                "Error posting comment: {}",
-                                                                e
-                                                            );
-                                                        });
-													}
-												}
-											} else if checks
-												.check_runs
-												.iter()
-												.all(|r| {
-													r.status
-														== "completed"
-															.to_string()
-												}) {
-												log::info!(
-                                                    "{} checks were unsuccessful.",
-                                                    html_url
-                                                );
-												// Notify people of merge failure.
-												let _ = github_bot.create_issue_comment(
-                                                    owner,
-                                                    &repo_name,
-                                                    pr.number,
-                                                    "Checks were unsuccessful; aborting merge.",
-                                                )
-                                                .await
-                                                .map_err(|e| {
-                                                    log::error!(
-                                                        "Error posting comment: {}",
-                                                        e
-                                                    );
-                                                });
-											} else {
-												log::info!(
-													"{} checks incomplete.",
-													html_url
-												);
-												let m = MergeRequest {
-													owner: owner.to_string(),
-													repo_name: repo_name
-														.clone(),
-													number: pr.number,
-													html_url: pr
-														.html_url
-														.clone(),
-													requested_by: requested_by
-														.to_string(),
-												};
-												log::info!(
-                                                    "Serializing merge request: {:?}",
-                                                    m
-                                                );
-												match bincode::serialize(&m) {
-													Ok(bytes) => {
-														log::info!("Writing merge request to db (head ref: {})", pr.head.ref_field);
-														match db.put(
-															pr.head
-																.sha
-																.trim()
-																.as_bytes(),
-															bytes,
-														) {
-															Ok(_) => {
-																log::info!("Waiting for commit status...");
-																let _ = github_bot
-                                                                    .create_issue_comment(
-                                                                        owner,
-                                                                        &repo_name,
-                                                                        pr.number,
-                                                                        "Waiting for commit status...",
-                                                                    )
-                                                                    .await
-                                                                    .map_err(|e| {
-                                                                        log::error!(
-                                                                            "Error posting comment: {}",
-                                                                            e
-                                                                        );
-                                                                    });
-															}
-															Err(e) => {
-																log::error!("Error adding merge request to db: {}", e);
-																let _ = github_bot.create_issue_comment(
-                                                                    owner,
-                                                                    &repo_name,
-                                                                    pr.number,
-                                                                    "Merge failed due to a database error.",
-                                                                )
-                                                                .await
-                                                                .map_err(|e| {
-                                                                    log::error!(
-                                                                        "Error posting comment: {}",
-                                                                        e
-                                                                    );
-                                                                });
-															}
-														}
-													}
-													Err(e) => {
-														log::error!("Error serializing merge request: {}", e);
-														let _ = github_bot.create_issue_comment(
-                                                            owner,
-                                                            &repo_name,
-                                                            pr.number,
-                                                            "Merge failed due to serialization error.",
-                                                        )
-                                                        .await
-                                                        .map_err(|e| {
-                                                            log::error!(
-                                                                "Error posting comment: {}",
-                                                                e
-                                                            );
-                                                        });
-													}
-												}
-											}
-										}
-										Err(e) => {
-											log::error!(
-												"Error getting check runs: {}",
-												e
-											);
-										}
-									}
-								} else if statuses.iter().all(
-									|Status { state, context, .. }| {
-										state == &StatusState::Success
-											|| state == &StatusState::Pending
-											|| (state == &StatusState::Failure
-												&& status_failure_allowed(
-													&ci.content,
-													&context,
-												))
-									},
-								) {
-									log::info!("{} is pending.", html_url);
-								}
-							}
-							Err(e) => {
-								log::error!(
-									"Error getting .gitlab-ci.yml: {}",
-									e
-								);
-							}
-						}
+						log::info!("{} status failure.", html_url);
+						status_failure(
+							&github_bot,
+							&owner,
+							&repo_name,
+							pr.number,
+							&pr.html_url,
+							&pr.head.sha,
+							db,
+						)
+						.await
 					}
 					Ok(CombinedStatus {
 						state: StatusState::Error,
@@ -1825,6 +1468,7 @@ async fn status_failure(
 	});
 }
 
+#[allow(dead_code)]
 fn status_failure_allowed(ci: &str, context: &str) -> bool {
 	let d: serde_yaml::Result<serde_yaml::Value> = serde_yaml::from_str(ci);
 	match d {
