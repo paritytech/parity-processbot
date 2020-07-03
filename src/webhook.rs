@@ -395,7 +395,7 @@ async fn checks_and_status(
 									.contents(
 										owner,
 										repo_name,
-										".gitlab-ci.yaml",
+										".gitlab-ci.yml",
 										&pr.head.ref_field,
 									)
 									.await
@@ -466,7 +466,7 @@ async fn checks_and_status(
 								}
 								Err(e) => {
 									log::error!(
-										"Error getting .gitlab-ci.yaml: {}",
+										"Error getting .gitlab-ci.yml: {}",
 										e
 									);
 								}
@@ -947,7 +947,7 @@ async fn handle_comment(
 								.contents(
 									owner,
 									&repo_name,
-									".gitlab-ci.yaml",
+									".gitlab-ci.yml",
 									&pr.head.ref_field,
 								)
 								.await
@@ -1233,7 +1233,7 @@ async fn handle_comment(
 							}
 							Err(e) => {
 								log::error!(
-									"Error getting .gitlab-ci.yaml: {}",
+									"Error getting .gitlab-ci.yml: {}",
 									e
 								);
 							}
