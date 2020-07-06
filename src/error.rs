@@ -12,6 +12,12 @@ pub enum Error {
 		issue: IssueDetails,
 	},
 
+	#[snafu(display("Error merging: {}", source))]
+	Merge {
+		source: Box<Error>,
+		commit_sha: String,
+	},
+
 	#[snafu(display("Checks failed for {}", commit_sha))]
 	ChecksFailed {
 		commit_sha: String,
@@ -25,6 +31,22 @@ pub enum Error {
 	#[snafu(display("Error getting organization membership: {}", source))]
 	OrganizationMembership {
 		source: Box<Error>,
+	},
+
+	#[snafu(display("Error getting process info: {}", source))]
+	ProcessFile {
+		source: Box<Error>,
+		commit_sha: String,
+	},
+
+	#[snafu(display("Missing process info for {}", commit_sha))]
+	ProcessInfo {
+		commit_sha: String,
+	},
+
+	#[snafu(display("Missing approval for {}", commit_sha))]
+	Approval {
+		commit_sha: String,
 	},
 
 	#[snafu(display("Error: {}", msg))]
@@ -110,15 +132,6 @@ pub enum Error {
 		source: bincode::Error,
 		backtrace: Backtrace,
 	},
-}
-
-impl Error {
-	pub fn map_issue(self, issue: IssueDetails) -> Self {
-		Self::WithIssue {
-			source: Box::new(self),
-			issue: issue,
-		}
-	}
 }
 
 impl Error {
