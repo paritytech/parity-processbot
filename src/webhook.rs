@@ -540,7 +540,7 @@ async fn handle_comment(
 			requested_by
 		);
 
-		if requested_by != "parity-processbot" {
+		if requested_by != "parity-processbot[bot]" {
 			// Check the user is a member of the org
 			let member = github_bot.org_member(&owner, &requested_by).await;
 			if let Err(e) = member {
