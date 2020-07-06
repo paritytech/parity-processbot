@@ -1411,13 +1411,13 @@ async fn update_companion(
 	)
 	.await
 	{
-		log::error!("Error updating companion: {:?}", e);
+		log::error!("Error updating companion: {}", e);
 		let _ = github_bot
 			.create_issue_comment(
 				&comp_owner,
 				&comp_repo,
 				comp_number,
-				"Error updating Cargo.lock; see logs for details",
+				&format!("Error updating Substrate: {}", e),
 			)
 			.await
 			.map_err(|e| {
