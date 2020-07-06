@@ -712,7 +712,7 @@ async fn handle_comment(
 			requested_by
 		);
 
-		if requested_by != "parity-processbot" {
+		if requested_by != "parity-processbot[bot]" {
 			// Check the user is a member of the org
 			let member = github_bot
 				.org_member(&owner, &requested_by)
@@ -1202,23 +1202,10 @@ async fn merge(
 		log::info!("{} merged successfully.", pr.html_url);
 		if repo_name == "substrate" {
 			log::info!("Checking for companion.");
-			if let Some(label) = &pr.head.label {
-				if let Some(body) = &pr.body {
-					let _ = check_companion(github_bot, &body, &label).await;
-				} else {
-					log::info!("No PR body found.");
-				}
+			if let Some(body) = &pr.body {
+				let _ = check_companion(github_bot, &body).await;
 			} else {
-				if let Some(body) = &pr.body {
-					let _ = check_companion(
-						github_bot,
-						&body,
-						&format!("paritytech:{}", pr.head.ref_field),
-					)
-					.await;
-				} else {
-					log::info!("No PR body found.");
-				}
+				log::info!("No PR body found.");
 			}
 		}
 	}
@@ -1227,8 +1214,9 @@ async fn merge(
 async fn check_companion(
 	github_bot: &GithubBot,
 	body: &str,
-	head: &str,
+	//	head: &str,
 ) -> Result<()> {
+	// check for link in pr body
 	if let Some((comp_html_url, comp_owner, comp_repo, comp_number)) =
 		companion_parse(&body)
 	{
@@ -1266,29 +1254,6 @@ async fn check_companion(
 			)
 			.await?;
 		}
-	} else if let Ok(Some(PullRequest {
-		html_url: comp_html_url,
-		number: comp_number,
-		head: Head {
-			ref_field: comp_head_branch,
-			..
-		},
-		..
-	})) = github_bot
-		.pull_request_with_head("paritytech", "polkadot", &format!("{}", head))
-		.await
-	{
-		update_companion(
-			github_bot,
-			&comp_html_url,
-			"paritytech",
-			"polkadot",
-			comp_number,
-			"paritytech",
-			"polkadot",
-			&comp_head_branch,
-		)
-		.await?;
 	} else {
 		log::info!("No companion found.");
 	}
@@ -1315,13 +1280,13 @@ async fn update_companion(
 	)
 	.await
 	{
-		log::error!("Error updating companion: {:?}", e);
+		log::error!("Error updating companion: {}", e);
 		let _ = github_bot
 			.create_issue_comment(
 				&comp_owner,
 				&comp_repo,
 				comp_number,
-				"Error updating Cargo.lock; see logs for details",
+				&format!("Error updating Substrate: {}", e),
 			)
 			.await
 			.map_err(|e| {

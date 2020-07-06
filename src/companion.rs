@@ -51,33 +51,43 @@ pub async fn companion_update(
 			.context("spawn git pull")?
 			.await
 			.context("git pull")?;
-		Command::new("cargo")
-			.arg("update")
-			.arg("-vp")
-			.arg("sp-io")
+		let merge_master = Command::new("git")
+			.arg("merge")
+			.arg("origin/master")
 			.current_dir(format!("./{}", repo))
 			.spawn()
-			.context("spawn cargo update")?
+			.context("spawn git merge")?
 			.await
-			.context("cargo update")?;
-		Command::new("git")
-			.arg("commit")
-			.arg("-a")
-			.arg("-m")
-			.arg("'Update substrate'")
-			.current_dir(format!("./{}", repo))
-			.spawn()
-			.context("spawn git commit")?
-			.await
-			.context("git commit")?;
-		Command::new("git")
-			.arg("push")
-			.arg("-v")
-			.current_dir(format!("./{}", repo))
-			.spawn()
-			.context("spawn git push")?
-			.await
-			.context("git push")?;
+			.context("git merge")?;
+		if merge_master.success() {
+			Command::new("cargo")
+				.arg("update")
+				.arg("-vp")
+				.arg("sp-io")
+				.current_dir(format!("./{}", repo))
+				.spawn()
+				.context("spawn cargo update")?
+				.await
+				.context("cargo update")?;
+			Command::new("git")
+				.arg("commit")
+				.arg("-a")
+				.arg("-m")
+				.arg("'Update substrate'")
+				.current_dir(format!("./{}", repo))
+				.spawn()
+				.context("spawn git commit")?
+				.await
+				.context("git commit")?;
+			Command::new("git")
+				.arg("push")
+				.arg("-v")
+				.current_dir(format!("./{}", repo))
+				.spawn()
+				.context("spawn git push")?
+				.await
+				.context("git push")?;
+		}
 		Command::new("git")
 			.arg("checkout")
 			.arg("master")

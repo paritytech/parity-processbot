@@ -121,6 +121,15 @@ impl Error {
 	}
 }
 
+impl Error {
+	pub fn map_issue(self, issue: IssueDetails) -> Self {
+		Self::WithIssue {
+			source: Box::new(self),
+			issue: issue,
+		}
+	}
+}
+
 /// Maps a curl error into a crate::error::Error.
 pub fn map_curl_error<T>(err: curl::Error) -> Result<T> {
 	Err(Error::Curl {
