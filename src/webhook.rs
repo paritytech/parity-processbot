@@ -172,7 +172,7 @@ pub async fn webhook(
 									&owner,
 									&repo,
 									number,
-									"Missing process info; check that the PR belongs to a project column",
+									"Missing process info; check that the PR belongs to a project column.",
 								)
 								.await
 								.map_err(|e| {
@@ -421,7 +421,6 @@ async fn handle_check(
 ) -> Result<()> {
 	let db = &state.db;
 	let github_bot = &state.github_bot;
-	let bot_config = &state.bot_config;
 
 	if status == "completed".to_string() {
 		if let Some(b) = db.get(commit_sha.trim().as_bytes()).context(Db)? {
@@ -433,7 +432,7 @@ async fn handle_check(
 				repo_name,
 				number,
 				html_url,
-				requested_by,
+				requested_by: _,
 			} = m;
 			if pull_requests
 				.iter()
@@ -450,8 +449,6 @@ async fn handle_check(
 					&pr,
 					&html_url,
 					db,
-					bot_config,
-					&requested_by,
 				)
 				.await?;
 			}
@@ -468,7 +465,6 @@ async fn handle_status(
 ) -> Result<()> {
 	let db = &state.db;
 	let github_bot = &state.github_bot;
-	let bot_config = &state.bot_config;
 
 	if status != StatusState::Pending {
 		if let Some(b) = db.get(commit_sha.trim().as_bytes()).context(Db)? {
@@ -480,7 +476,7 @@ async fn handle_status(
 				repo_name,
 				number,
 				html_url,
-				requested_by,
+				requested_by: _,
 			} = m;
 			let pr =
 				github_bot.pull_request(&owner, &repo_name, number).await?;
@@ -492,8 +488,6 @@ async fn handle_status(
 				&pr,
 				&html_url,
 				db,
-				bot_config,
-				&requested_by,
 			)
 			.await?;
 		}
@@ -509,9 +503,7 @@ async fn checks_required(
 	repo_name: &str,
 	number: i64,
 	html_url: &str,
-	requested_by: &str,
 	pr: &PullRequest,
-	bot_config: &BotConfig,
 	db: &DB,
 ) -> Result<()> {
 	match dbg!(
@@ -544,16 +536,12 @@ async fn checks_required(
 					"{} required statuses are green; attempting merge.",
 					html_url
 				);
-				continue_merge(
-					github_bot,
-					&owner,
-					&repo_name,
-					&pr,
-					db,
-					&bot_config,
-					&requested_by,
-				)
-				.await?;
+				// to reach here merge must be allowed
+				merge(github_bot, owner, repo_name, pr).await?;
+				// clean db
+				let _ = db.delete(pr.head.sha.as_bytes()).map_err(|e| {
+					log::error!("Error deleting merge request from db: {}", e);
+				});
 			} else if statuses.iter().all(
 				|Status { state, context, .. }| {
 					state == &StatusState::Success
@@ -577,6 +565,7 @@ async fn checks_required(
 			))))?;
 		}
 	}
+
 	Ok(())
 }
 
@@ -588,8 +577,6 @@ async fn checks_and_status(
 	pr: &PullRequest,
 	html_url: &str,
 	db: &DB,
-	bot_config: &BotConfig,
-	requested_by: &str,
 ) -> Result<()> {
 	// Head sha should not have changed since request was made.
 	if commit_sha == pr.head.sha {
@@ -617,16 +604,15 @@ async fn checks_and_status(
 					..
 				} => {
 					log::info!("{} is green; attempting merge.", html_url);
-					continue_merge(
-						github_bot,
-						&owner,
-						&repo_name,
-						&pr,
-						db,
-						&bot_config,
-						&requested_by,
-					)
-					.await?;
+					// to reach here merge must be allowed
+					merge(github_bot, owner, repo_name, pr).await?;
+					// clean db
+					let _ = db.delete(pr.head.sha.as_bytes()).map_err(|e| {
+						log::error!(
+							"Error deleting merge request from db: {}",
+							e
+						);
+					});
 				}
 				CombinedStatus {
 					state: StatusState::Failure,
@@ -754,7 +740,6 @@ async fn checks_success(
 	html_url: &str,
 	requested_by: &str,
 	pr: &PullRequest,
-	bot_config: &BotConfig,
 	db: &DB,
 ) -> Result<()> {
 	log::info!("{} checks successful.", html_url);
@@ -786,16 +771,13 @@ async fn checks_success(
 		.map_err(|e| {
 			log::error!("Error posting comment: {}", e);
 		});
-	continue_merge(
-		github_bot,
-		owner,
-		&repo_name,
-		&pr,
-		db,
-		&bot_config,
-		&requested_by,
-	)
-	.await
+	// to reach here merge must be allowed
+	merge(github_bot, owner, repo_name, pr).await?;
+	// clean db
+	let _ = db.delete(pr.head.sha.as_bytes()).map_err(|e| {
+		log::error!("Error deleting merge request from db: {}", e);
+	});
+	Ok(())
 }
 
 async fn handle_comment(
@@ -859,11 +841,6 @@ async fn handle_comment(
 					)))
 				})?;
 			if member != 204 {
-				log::warn!(
-					"{} is not a member of {}; aborting.",
-					requested_by,
-					owner
-				);
 				Err(Error::Message {
 					msg: format!(
 						"{} is not a member of {}; aborting.",
@@ -878,6 +855,22 @@ async fn handle_comment(
 			}
 		}
 
+		//
+		// merge allowed
+		//
+		merge_allowed(
+			github_bot,
+			owner,
+			&repo_name,
+			&pr,
+			&bot_config,
+			&requested_by,
+		)
+		.await?;
+
+		//
+		// status
+		//
 		match github_bot
 			.status(owner, &repo_name, &pr.head.sha)
 			.await
@@ -893,6 +886,9 @@ async fn handle_comment(
 				..
 			} => {
 				log::info!("{} is green.", html_url);
+				//
+				// checks
+				//
 				let checks = github_bot
 					.check_runs(&owner, &repo_name, &pr.head.sha)
 					.await
@@ -909,6 +905,9 @@ async fn handle_comment(
 					.iter()
 					.all(|r| r.conclusion == Some("success".to_string()))
 				{
+					//
+					// status/checks green
+					//
 					checks_success(
 						github_bot,
 						owner,
@@ -917,7 +916,6 @@ async fn handle_comment(
 						&html_url,
 						&requested_by,
 						&pr,
-						bot_config,
 						db,
 					)
 					.await?;
@@ -926,6 +924,9 @@ async fn handle_comment(
 					.iter()
 					.all(|r| r.status == "completed".to_string())
 				{
+					//
+					// status/checks failure
+					//
 					log::info!("{} checks were unsuccessful.", html_url);
 					Err(Error::ChecksFailed {
 						commit_sha: pr.head.sha,
@@ -936,6 +937,9 @@ async fn handle_comment(
 						pr.number,
 					))))?;
 				} else {
+					//
+					// status/checks pending
+					//
 					wait_for_checks(
 						github_bot,
 						owner,
@@ -953,6 +957,9 @@ async fn handle_comment(
 				state: StatusState::Pending,
 				..
 			} => {
+				//
+				// status/checks pending
+				//
 				wait_for_checks(
 					github_bot,
 					owner,
@@ -969,6 +976,9 @@ async fn handle_comment(
 				state: StatusState::Failure,
 				..
 			} => {
+				//
+				// status/checks failure
+				//
 				log::info!("{} status failure.", html_url);
 				Err(Error::ChecksFailed {
 					commit_sha: pr.head.sha.to_string(),
@@ -983,6 +993,9 @@ async fn handle_comment(
 				state: StatusState::Error,
 				..
 			} => {
+				//
+				// status/checks failure
+				//
 				log::info!("{} status error.", html_url);
 				Err(Error::ChecksFailed {
 					commit_sha: pr.head.sha.to_string(),
@@ -1082,7 +1095,7 @@ async fn handle_comment(
 				});
 		} else {
 			if let Err(e) = release_substrate_commit {
-				log::error!("Error getting substrate commit: {}", e);
+				log::error!("Error getting release substrate commit: {}", e);
 				Err(e.map_issue(Some((
 					owner.to_string(),
 					repo_name.to_string(),
@@ -1090,7 +1103,7 @@ async fn handle_comment(
 				))))?;
 			}
 			if let Err(e) = branch_substrate_commit {
-				log::error!("Error getting substrate commit: {}", e);
+				log::error!("Error getting branch substrate commit: {}", e);
 				Err(e.map_issue(Some((
 					owner.to_string(),
 					repo_name.to_string(),
@@ -1103,12 +1116,11 @@ async fn handle_comment(
 	Ok(())
 }
 
-async fn continue_merge(
+async fn merge_allowed(
 	github_bot: &GithubBot,
 	owner: &str,
 	repo_name: &str,
 	pr: &PullRequest,
-	db: &DB,
 	bot_config: &BotConfig,
 	requested_by: &str,
 ) -> Result<()> {
@@ -1137,13 +1149,9 @@ async fn continue_merge(
 
 		if team_leads.iter().any(|lead| lead.login == requested_by) {
 			//
-			// MERGE
+			// MERGE ALLOWED
 			//
-			log::info!(
-				"{} merge requested by a team lead; merging.",
-				pr.html_url
-			);
-			merge(github_bot, owner, repo_name, pr).await?;
+			log::info!("{} merge requested by a team lead.", pr.html_url);
 		} else {
 			fn label_insubstantial(label: &&Label) -> bool {
 				label.name.contains("insubstantial")
@@ -1176,10 +1184,9 @@ async fn continue_merge(
 				.count() >= min_reviewers;
 			if core_approved {
 				//
-				// MERGE
+				// MERGE ALLOWED
 				//
-				log::info!("{} has core approval; merging.", pr.html_url);
-				merge(github_bot, owner, repo_name, pr).await?;
+				log::info!("{} has core approval.", pr.html_url);
 			} else {
 				// get process info
 				let process = process::get_process(
@@ -1208,13 +1215,11 @@ async fn continue_merge(
 
 				if owner_approved || owner_requested {
 					//
-					// MERGE
+					// MERGE ALLOWED
 					//
-					log::info!("{} has owner approval; merging.", pr.html_url);
-					merge(github_bot, owner, repo_name, pr).await?;
+					log::info!("{} has owner approval.", pr.html_url);
 				} else {
 					if process.is_empty() {
-						log::info!("{} lacks process info - it might not belong to a valid project column", pr.html_url);
 						Err(Error::ProcessInfo {
 							commit_sha: pr.head.sha.clone(),
 						}
@@ -1224,7 +1229,6 @@ async fn continue_merge(
 							pr.number,
 						))))?;
 					} else {
-						log::info!("{} lacks approval from the project owner or at least {} core developers", pr.html_url, min_reviewers);
 						Err(Error::Approval {
 							commit_sha: pr.head.sha.clone(),
 						}
@@ -1238,11 +1242,6 @@ async fn continue_merge(
 			}
 		}
 	}
-
-	// Clean db.
-	let _ = db.delete(pr.head.sha.as_bytes()).map_err(|e| {
-		log::error!("Error deleting from db: {}", e);
-	});
 
 	Ok(())
 }
