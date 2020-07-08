@@ -13,7 +13,8 @@ pub async fn companion_update(
 	let token = github_bot.client.auth_key().await?;
 	Command::new("git")
 		.arg("clone")
-		.arg("-v")
+		.arg("-vb")
+		.arg(branch)
 		.arg(format!(
 			"https://x-access-token:{token}@github.com/{owner}/{repo}.git",
 			token = token,
@@ -24,88 +25,49 @@ pub async fn companion_update(
 		.context("spawn git clone")?
 		.await
 		.context("git clone")?;
-	Command::new("git")
-		.arg("fetch")
-		.arg("-v")
+	let merge_master = Command::new("git")
+		.arg("merge")
+		.arg("origin/master")
 		.current_dir(format!("./{}", repo))
 		.spawn()
-		.context("spawn git fetch")?
+		.context("spawn git merge")?
 		.await
-		.context("git fetch")?;
-	let checkout = Command::new("git")
-		.arg("checkout")
-		.arg("-b")
-		.arg(branch)
-		.arg(format!("origin/{}", branch))
-		.current_dir(format!("./{}", repo))
-		.spawn()
-		.context("spawn git checkout -b")?
-		.await
-		.context("git checkout -b")?;
-	if checkout.success() {
+		.context("git merge")?;
+	if merge_master.success() {
+		Command::new("cargo")
+			.arg("update")
+			.arg("-vp")
+			.arg("sp-io")
+			.current_dir(format!("./{}", repo))
+			.spawn()
+			.context("spawn cargo update")?
+			.await
+			.context("cargo update")?;
 		Command::new("git")
-			.arg("pull")
+			.arg("commit")
+			.arg("-am")
+			.arg("'Update substrate'")
+			.current_dir(format!("./{}", repo))
+			.spawn()
+			.context("spawn git commit")?
+			.await
+			.context("git commit")?;
+		Command::new("git")
+			.arg("push")
 			.arg("-v")
 			.current_dir(format!("./{}", repo))
 			.spawn()
-			.context("spawn git pull")?
+			.context("spawn git push")?
 			.await
-			.context("git pull")?;
-		let merge_master = Command::new("git")
-			.arg("merge")
-			.arg("origin/master")
-			.current_dir(format!("./{}", repo))
-			.spawn()
-			.context("spawn git merge")?
-			.await
-			.context("git merge")?;
-		if merge_master.success() {
-			Command::new("cargo")
-				.arg("update")
-				.arg("-vp")
-				.arg("sp-io")
-				.current_dir(format!("./{}", repo))
-				.spawn()
-				.context("spawn cargo update")?
-				.await
-				.context("cargo update")?;
-			Command::new("git")
-				.arg("commit")
-				.arg("-a")
-				.arg("-m")
-				.arg("'Update substrate'")
-				.current_dir(format!("./{}", repo))
-				.spawn()
-				.context("spawn git commit")?
-				.await
-				.context("git commit")?;
-			Command::new("git")
-				.arg("push")
-				.arg("-v")
-				.current_dir(format!("./{}", repo))
-				.spawn()
-				.context("spawn git push")?
-				.await
-				.context("git push")?;
-		}
-		Command::new("git")
-			.arg("checkout")
-			.arg("master")
-			.current_dir(format!("./{}", repo))
-			.spawn()
-			.context("spawn git checkout master")?
-			.await
-			.context("git checkout master")?;
-		Command::new("git")
-			.arg("branch")
-			.arg("-D")
-			.arg(branch)
-			.current_dir(format!("./{}", repo))
-			.spawn()
-			.context("spawn git branch -D")?
-			.await
-			.context("git branch -D")?;
+			.context("git push")?;
 	}
+	Command::new("rm")
+		.arg("-rf")
+		.arg(repo)
+		.spawn()
+		.context("spawn rm")?
+		.await
+		.context("rm")?;
 	Ok(())
 }
 
