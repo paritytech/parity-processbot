@@ -5,7 +5,7 @@ use itertools::Itertools;
 use ring::hmac;
 use rocksdb::DB;
 use serde::{Deserialize, Serialize};
-use snafu::{OptionExt, ResultExt};
+use snafu::{GenerateBacktrace, OptionExt, ResultExt};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -73,6 +73,23 @@ pub async fn webhook(
 						issue: Some((owner, repo, number)),
 						..
 					} => match *source {
+						Error::Companion { source } => {
+							let _ = state
+								.github_bot
+								.create_issue_comment(
+									&owner,
+									&repo,
+									number,
+									&format!(
+										"Error updating substrate: {}",
+										*source
+									),
+								)
+								.await
+								.map_err(|e| {
+									log::error!("Error posting comment: {}", e);
+								});
+						}
 						Error::Merge { source, commit_sha } => {
 							match *source {
 								Error::Response {
@@ -441,16 +458,27 @@ async fn handle_check(
 			{
 				let pr =
 					github_bot.pull_request(&owner, &repo_name, number).await?;
-				checks_and_status(
+				if checks_and_status(
 					github_bot,
 					&owner,
 					&repo_name,
 					&commit_sha,
 					&pr,
 					&html_url,
-					db,
 				)
-				.await?;
+				.await?
+				{
+					merge(github_bot, &owner, &repo_name, &pr).await?;
+					// clean db
+					let _ = db.delete(pr.head.sha.as_bytes()).map_err(|e| {
+						log::error!(
+							"Error deleting merge request from db: {}",
+							e
+						);
+					});
+					let _ =
+						update_companion(github_bot, &repo_name, &pr, db).await;
+				}
 			}
 		}
 	}
@@ -480,92 +508,25 @@ async fn handle_status(
 			} = m;
 			let pr =
 				github_bot.pull_request(&owner, &repo_name, number).await?;
-			checks_and_status(
+			if checks_and_status(
 				github_bot,
 				&owner,
 				&repo_name,
 				&commit_sha,
 				&pr,
 				&html_url,
-				db,
 			)
-			.await?;
-		}
-	}
-	Ok(())
-}
-
-#[allow(dead_code)]
-async fn checks_required(
-	github_bot: &GithubBot,
-	statuses: Vec<Status>,
-	owner: &str,
-	repo_name: &str,
-	number: i64,
-	html_url: &str,
-	pr: &PullRequest,
-	db: &DB,
-) -> Result<()> {
-	match dbg!(
-		github_bot
-			.contents(owner, repo_name, ".gitlab-ci.yaml", &pr.head.ref_field,)
-			.await
-	) {
-		Ok(ci) => {
-			if statuses.iter().any(|Status { state, context, .. }| {
-				state == &StatusState::Failure
-					&& !status_failure_allowed(&ci.content, &context)
-			}) {
-				log::info!("{} failed a required status check.", html_url);
-				Err(Error::ChecksFailed {
-					commit_sha: pr.head.sha.to_string(),
-				}
-				.map_issue(Some((
-					owner.to_string(),
-					repo_name.to_string(),
-					number,
-				))))?;
-			} else if statuses.iter().all(
-				|Status { state, context, .. }| {
-					state == &StatusState::Success
-						|| (state == &StatusState::Failure
-							&& status_failure_allowed(&ci.content, &context))
-				},
-			) {
-				log::info!(
-					"{} required statuses are green; attempting merge.",
-					html_url
-				);
-				// to reach here merge must be allowed
-				merge(github_bot, owner, repo_name, pr).await?;
+			.await?
+			{
+				merge(github_bot, &owner, &repo_name, &pr).await?;
 				// clean db
 				let _ = db.delete(pr.head.sha.as_bytes()).map_err(|e| {
 					log::error!("Error deleting merge request from db: {}", e);
 				});
-			} else if statuses.iter().all(
-				|Status { state, context, .. }| {
-					state == &StatusState::Success
-						|| state == &StatusState::Pending
-						|| (state == &StatusState::Failure
-							&& status_failure_allowed(&ci.content, &context))
-				},
-			) {
-				log::info!("{} is pending.", html_url);
+				let _ = update_companion(github_bot, &repo_name, &pr, db).await;
 			}
-		}
-		Err(e) => {
-			log::error!("Error getting .gitlab-ci.yaml: {}", e);
-			Err(Error::ChecksFailed {
-				commit_sha: pr.head.sha.to_string(),
-			}
-			.map_issue(Some((
-				owner.to_string(),
-				repo_name.to_string(),
-				number,
-			))))?;
 		}
 	}
-
 	Ok(())
 }
 
@@ -576,8 +537,7 @@ async fn checks_and_status(
 	commit_sha: &str,
 	pr: &PullRequest,
 	html_url: &str,
-	db: &DB,
-) -> Result<()> {
+) -> Result<bool> {
 	// Head sha should not have changed since request was made.
 	if commit_sha == pr.head.sha {
 		log::info!("Commit sha {} matches head of {}", commit_sha, html_url);
@@ -605,48 +565,42 @@ async fn checks_and_status(
 				} => {
 					log::info!("{} is green; attempting merge.", html_url);
 					// to reach here merge must be allowed
-					merge(github_bot, owner, repo_name, pr).await?;
-					// clean db
-					let _ = db.delete(pr.head.sha.as_bytes()).map_err(|e| {
-						log::error!(
-							"Error deleting merge request from db: {}",
-							e
-						);
-					});
+					return Ok(true);
 				}
 				CombinedStatus {
 					state: StatusState::Failure,
 					..
 				} => {
 					log::info!("{} status failure.", html_url);
-					Err(Error::ChecksFailed {
+					return Err(Error::ChecksFailed {
 						commit_sha: commit_sha.to_string(),
 					}
 					.map_issue(Some((
 						owner.to_string(),
 						repo_name.to_string(),
 						pr.number,
-					))))?;
+					))));
 				}
 				CombinedStatus {
 					state: StatusState::Error,
 					..
 				} => {
 					log::info!("{} status error.", html_url);
-					Err(Error::ChecksFailed {
+					return Err(Error::ChecksFailed {
 						commit_sha: commit_sha.to_string(),
 					}
 					.map_issue(Some((
 						owner.to_string(),
 						repo_name.to_string(),
 						pr.number,
-					))))?;
+					))));
 				}
 				CombinedStatus {
 					state: StatusState::Pending,
 					..
 				} => {
 					log::info!("{} is pending.", html_url);
+					return Ok(false);
 				}
 			}
 		} else if checks
@@ -655,16 +609,17 @@ async fn checks_and_status(
 			.all(|r| r.status == "completed".to_string())
 		{
 			log::info!("{} checks were unsuccessful", html_url);
-			Err(Error::ChecksFailed {
+			return Err(Error::ChecksFailed {
 				commit_sha: commit_sha.to_string(),
 			}
 			.map_issue(Some((
 				owner.to_string(),
 				repo_name.to_string(),
 				pr.number,
-			))))?;
+			))));
 		} else {
 			log::info!("{} checks incomplete", html_url);
+			return Ok(false);
 		}
 	} else {
 		// Head sha has changed since merge request.
@@ -672,17 +627,15 @@ async fn checks_and_status(
 			"Head sha has changed since merge was requested on {}",
 			html_url
 		);
-		Err(Error::HeadChanged {
+		return Err(Error::HeadChanged {
 			commit_sha: commit_sha.to_string(),
 		}
 		.map_issue(Some((
 			owner.to_string(),
 			repo_name.to_string(),
 			pr.number,
-		))))?;
+		))));
 	}
-
-	Ok(())
 }
 
 async fn wait_for_checks(
@@ -772,11 +725,6 @@ async fn checks_success(
 			log::error!("Error posting comment: {}", e);
 		});
 	// to reach here merge must be allowed
-	merge(github_bot, owner, repo_name, pr).await?;
-	// clean db
-	let _ = db.delete(pr.head.sha.as_bytes()).map_err(|e| {
-		log::error!("Error deleting merge request from db: {}", e);
-	});
 	Ok(())
 }
 
@@ -869,143 +817,38 @@ async fn handle_comment(
 		.await?;
 
 		//
-		// status
+		// status and merge
 		//
-		match github_bot
-			.status(owner, &repo_name, &pr.head.sha)
-			.await
-			.map_err(|e| {
-				e.map_issue(Some((
-					owner.to_string(),
-					repo_name.to_string(),
-					number,
-				)))
-			})? {
-			CombinedStatus {
-				state: StatusState::Success,
-				..
-			} => {
-				log::info!("{} is green.", html_url);
-				//
-				// checks
-				//
-				let checks = github_bot
-					.check_runs(&owner, &repo_name, &pr.head.sha)
-					.await
-					.map_err(|e| {
-						e.map_issue(Some((
-							owner.to_string(),
-							repo_name.to_string(),
-							number,
-						)))
-					})?;
-				log::info!("{:?}", checks);
-				if checks
-					.check_runs
-					.iter()
-					.all(|r| r.conclusion == Some("success".to_string()))
-				{
-					//
-					// status/checks green
-					//
-					checks_success(
-						github_bot,
-						owner,
-						&repo_name,
-						pr.number,
-						&html_url,
-						&requested_by,
-						&pr,
-						db,
-					)
-					.await?;
-				} else if checks
-					.check_runs
-					.iter()
-					.all(|r| r.status == "completed".to_string())
-				{
-					//
-					// status/checks failure
-					//
-					log::info!("{} checks were unsuccessful.", html_url);
-					Err(Error::ChecksFailed {
-						commit_sha: pr.head.sha,
-					}
-					.map_issue(Some((
-						owner.to_string(),
-						repo_name.to_string(),
-						pr.number,
-					))))?;
-				} else {
-					//
-					// status/checks pending
-					//
-					wait_for_checks(
-						github_bot,
-						owner,
-						&repo_name,
-						pr.number,
-						&html_url,
-						&requested_by,
-						&pr.head.sha,
-						db,
-					)
-					.await?;
-				}
-			}
-			CombinedStatus {
-				state: StatusState::Pending,
-				..
-			} => {
-				//
-				// status/checks pending
-				//
-				wait_for_checks(
-					github_bot,
-					owner,
-					&repo_name,
-					pr.number,
-					&html_url,
-					&requested_by,
-					&pr.head.sha,
-					db,
-				)
-				.await?;
-			}
-			CombinedStatus {
-				state: StatusState::Failure,
-				..
-			} => {
-				//
-				// status/checks failure
-				//
-				log::info!("{} status failure.", html_url);
-				Err(Error::ChecksFailed {
-					commit_sha: pr.head.sha.to_string(),
-				}
-				.map_issue(Some((
-					owner.to_string(),
-					repo_name.to_string(),
-					pr.number,
-				))))?;
-			}
-			CombinedStatus {
-				state: StatusState::Error,
-				..
-			} => {
-				//
-				// status/checks failure
-				//
-				log::info!("{} status error.", html_url);
-				Err(Error::ChecksFailed {
-					commit_sha: pr.head.sha.to_string(),
-				}
-				.map_issue(Some((
-					owner.to_string(),
-					repo_name.to_string(),
-					pr.number,
-				))))?;
-			}
+		if ready_to_merge(github_bot, owner, &repo_name, &pr).await? {
+			checks_success(
+				github_bot,
+				owner,
+				&repo_name,
+				pr.number,
+				&pr.html_url,
+				&requested_by,
+				&pr,
+				db,
+			)
+			.await?;
+			merge(github_bot, owner, &repo_name, &pr).await?;
+			// clean db
+			let _ = db.delete(pr.head.sha.as_bytes()).map_err(|e| {
+				log::error!("Error deleting merge request from db: {}", e);
+			});
+			let _ = update_companion(github_bot, &repo_name, &pr, db).await;
+		} else {
+			wait_for_checks(
+				github_bot,
+				owner,
+				&repo_name,
+				pr.number,
+				&pr.html_url,
+				&requested_by,
+				&pr.head.sha,
+				db,
+			)
+			.await?;
 		}
 	} else if body.to_lowercase().trim()
 		== AUTO_MERGE_CANCEL.to_lowercase().trim()
@@ -1246,6 +1089,123 @@ async fn merge_allowed(
 	Ok(())
 }
 
+async fn ready_to_merge(
+	github_bot: &GithubBot,
+	owner: &str,
+	repo_name: &str,
+	pr: &PullRequest,
+) -> Result<bool> {
+	//
+	// status
+	//
+	match github_bot
+		.status(owner, &repo_name, &pr.head.sha)
+		.await
+		.map_err(|e| {
+			e.map_issue(Some((
+				owner.to_string(),
+				repo_name.to_string(),
+				pr.number,
+			)))
+		})? {
+		CombinedStatus {
+			state: StatusState::Success,
+			..
+		} => {
+			log::info!("{} is green.", pr.html_url);
+			//
+			// checks
+			//
+			let checks = github_bot
+				.check_runs(&owner, &repo_name, &pr.head.sha)
+				.await
+				.map_err(|e| {
+					e.map_issue(Some((
+						owner.to_string(),
+						repo_name.to_string(),
+						pr.number,
+					)))
+				})?;
+			log::info!("{:?}", checks);
+			if checks
+				.check_runs
+				.iter()
+				.all(|r| r.conclusion == Some("success".to_string()))
+			{
+				//
+				// status/checks green
+				//
+				return Ok(true);
+			} else if checks
+				.check_runs
+				.iter()
+				.all(|r| r.status == "completed".to_string())
+			{
+				//
+				// status/checks failure
+				//
+				log::info!("{} checks were unsuccessful.", pr.html_url);
+				return Err(Error::ChecksFailed {
+					commit_sha: pr.head.sha.clone(),
+				}
+				.map_issue(Some((
+					owner.to_string(),
+					repo_name.to_string(),
+					pr.number,
+				))));
+			} else {
+				//
+				// status/checks pending
+				//
+				return Ok(false);
+			}
+		}
+		CombinedStatus {
+			state: StatusState::Pending,
+			..
+		} => {
+			//
+			// status/checks pending
+			//
+			return Ok(false);
+		}
+		CombinedStatus {
+			state: StatusState::Failure,
+			..
+		} => {
+			//
+			// status/checks failure
+			//
+			log::info!("{} status failure.", pr.html_url);
+			return Err(Error::ChecksFailed {
+				commit_sha: pr.head.sha.to_string(),
+			}
+			.map_issue(Some((
+				owner.to_string(),
+				repo_name.to_string(),
+				pr.number,
+			))));
+		}
+		CombinedStatus {
+			state: StatusState::Error,
+			..
+		} => {
+			//
+			// status/checks failure
+			//
+			log::info!("{} status error.", pr.html_url);
+			return Err(Error::ChecksFailed {
+				commit_sha: pr.head.sha.to_string(),
+			}
+			.map_issue(Some((
+				owner.to_string(),
+				repo_name.to_string(),
+				pr.number,
+			))));
+		}
+	}
+}
+
 /// Attempt merge and return `true` if successful, otherwise `false`.
 async fn merge(
 	github_bot: &GithubBot,
@@ -1268,112 +1228,129 @@ async fn merge(
 			)))
 		})?;
 	log::info!("{} merged successfully.", pr.html_url);
-	if repo_name == "substrate" {
-		log::info!("Checking for companion.");
-		if let Some(body) = &pr.body {
-			let _ = check_companion(github_bot, &body).await;
-		} else {
-			log::info!("No PR body found.");
-		}
-	}
-	Ok(())
-}
-
-async fn check_companion(
-	github_bot: &GithubBot,
-	body: &str,
-	//	head: &str,
-) -> Result<()> {
-	// check for link in pr body
-	if let Some((comp_html_url, comp_owner, comp_repo, comp_number)) =
-		companion_parse(&body)
-	{
-		log::info!("Found companion {}", comp_html_url);
-		if let PullRequest {
-			head:
-				Head {
-					ref_field: comp_head_branch,
-					repo:
-						HeadRepo {
-							name: comp_head_repo,
-							owner:
-								Some(User {
-									login: comp_head_owner,
-									..
-								}),
-							..
-						},
-					..
-				},
-			..
-		} = github_bot
-			.pull_request(&comp_owner, &comp_repo, comp_number)
-			.await?
-		{
-			update_companion(
-				github_bot,
-				&comp_html_url,
-				&comp_owner,
-				&comp_repo,
-				comp_number,
-				&comp_head_owner,
-				&comp_head_repo,
-				&comp_head_branch,
-			)
-			.await?;
-		}
-	} else {
-		log::info!("No companion found.");
-	}
-
 	Ok(())
 }
 
 async fn update_companion(
 	github_bot: &GithubBot,
-	comp_html_url: &str,
-	comp_owner: &str,
-	comp_repo: &str,
-	comp_number: i64,
-	comp_head_owner: &str,
-	comp_head_repo: &str,
-	comp_head_branch: &str,
+	repo_name: &str,
+	pr: &PullRequest,
+	db: &DB,
 ) -> Result<()> {
-	log::info!("Updating companion {}", comp_html_url);
-	if let Err(e) = companion_update(
-		github_bot,
-		&comp_head_owner,
-		&comp_head_repo,
-		&comp_head_branch,
-	)
-	.await
-	{
-		log::error!("Error updating companion: {}", e);
-		let _ = github_bot
-			.create_issue_comment(
-				&comp_owner,
-				&comp_repo,
-				comp_number,
-				&format!("Error updating Substrate: {}", e),
-			)
-			.await
-			.map_err(|e| {
-				log::error!("Error posting comment: {}", e);
-			});
-	} else {
-		log::info!("Companion updated; requesting merge for {}", comp_html_url);
-		let _ = github_bot
-			.create_issue_comment(
-				&comp_owner,
-				&comp_repo,
-				comp_number,
-				"bot merge",
-			)
-			.await
-			.map_err(|e| {
-				log::error!("Error posting comment: {}", e);
-			});
+	if repo_name == "substrate" {
+		log::info!("Checking for companion.");
+		if let Some(body) = &pr.body {
+			// check for link in pr body
+			if let Some((comp_html_url, comp_owner, comp_repo, comp_number)) =
+				companion_parse(&body)
+			{
+				log::info!("Found companion {}", comp_html_url);
+				let comp_pr = github_bot
+					.pull_request(&comp_owner, &comp_repo, comp_number)
+					.await?;
+
+				if let PullRequest {
+					head:
+						Head {
+							ref_field: comp_head_branch,
+							repo:
+								HeadRepo {
+									name: comp_head_repo,
+									owner:
+										Some(User {
+											login: comp_head_owner,
+											..
+										}),
+									..
+								},
+							..
+						},
+					..
+				} = comp_pr.clone()
+				{
+					log::info!("Updating companion {}", comp_html_url);
+					companion_update(
+						github_bot,
+						&comp_head_owner,
+						&comp_head_repo,
+						&comp_head_branch,
+					)
+					.await
+					.map_err(|e| {
+						Error::Companion {
+							source: Box::new(e),
+						}
+						.map_issue(Some((
+							comp_owner.to_string(),
+							comp_repo.to_string(),
+							comp_number,
+						)))
+					})?;
+					log::info!(
+						"Companion updated; requesting merge for {}",
+						comp_html_url
+					);
+					if ready_to_merge(
+						github_bot,
+						&comp_owner,
+						&comp_repo,
+						&comp_pr,
+					)
+					.await?
+					{
+						checks_success(
+							github_bot,
+							&comp_owner,
+							&comp_repo,
+							comp_pr.number,
+							&comp_pr.html_url,
+							&format!("parity-processbot[bot]"),
+							&comp_pr,
+							db,
+						)
+						.await?;
+						merge(github_bot, &comp_owner, &comp_repo, &comp_pr)
+							.await?;
+						// clean db
+						let _ =
+							db.delete(comp_pr.head.sha.as_bytes()).map_err(
+								|e| {
+									log::error!("Error deleting merge request from db: {}", e);
+								},
+							);
+					} else {
+						wait_for_checks(
+							github_bot,
+							&comp_owner,
+							&comp_repo,
+							comp_pr.number,
+							&comp_pr.html_url,
+							&format!("parity-processbot[bot]"),
+							&comp_pr.head.sha,
+							db,
+						)
+						.await?;
+					}
+				} else {
+					Err(Error::Companion {
+						source: Box::new(Error::MissingData {
+							backtrace: snafu::Backtrace::generate(),
+						}),
+					}
+					.map_issue(Some((
+						comp_owner.to_string(),
+						comp_repo.to_string(),
+						comp_number,
+					))))?;
+				}
+			} else {
+				log::info!("No companion found.");
+			}
+		} else {
+			log::info!("No PR body found.");
+		}
 	}
+
 	Ok(())
 }
 

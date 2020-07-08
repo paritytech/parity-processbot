@@ -1,15 +1,15 @@
-use anyhow::Context;
 use regex::Regex;
+use snafu::ResultExt;
 use tokio::process::Command;
 
-use crate::github_bot::GithubBot;
+use crate::{error::*, github_bot::GithubBot, Result};
 
 pub async fn companion_update(
 	github_bot: &GithubBot,
 	owner: &str,
 	repo: &str,
 	branch: &str,
-) -> anyhow::Result<()> {
+) -> Result<()> {
 	let token = github_bot.client.auth_key().await?;
 	Command::new("git")
 		.arg("clone")
@@ -21,17 +21,17 @@ pub async fn companion_update(
 			repo = repo,
 		))
 		.spawn()
-		.context("spawn git clone")?
+		.context(Tokio)?
 		.await
-		.context("git clone")?;
+		.context(Tokio)?;
 	Command::new("git")
 		.arg("fetch")
 		.arg("-v")
 		.current_dir(format!("./{}", repo))
 		.spawn()
-		.context("spawn git fetch")?
+		.context(Tokio)?
 		.await
-		.context("git fetch")?;
+		.context(Tokio)?;
 	let checkout = Command::new("git")
 		.arg("checkout")
 		.arg("-b")
@@ -39,26 +39,26 @@ pub async fn companion_update(
 		.arg(format!("origin/{}", branch))
 		.current_dir(format!("./{}", repo))
 		.spawn()
-		.context("spawn git checkout -b")?
+		.context(Tokio)?
 		.await
-		.context("git checkout -b")?;
+		.context(Tokio)?;
 	if checkout.success() {
 		Command::new("git")
 			.arg("pull")
 			.arg("-v")
 			.current_dir(format!("./{}", repo))
 			.spawn()
-			.context("spawn git pull")?
+			.context(Tokio)?
 			.await
-			.context("git pull")?;
+			.context(Tokio)?;
 		let merge_master = Command::new("git")
 			.arg("merge")
 			.arg("origin/master")
 			.current_dir(format!("./{}", repo))
 			.spawn()
-			.context("spawn git merge")?
+			.context(Tokio)?
 			.await
-			.context("git merge")?;
+			.context(Tokio)?;
 		if merge_master.success() {
 			Command::new("cargo")
 				.arg("update")
@@ -66,9 +66,9 @@ pub async fn companion_update(
 				.arg("sp-io")
 				.current_dir(format!("./{}", repo))
 				.spawn()
-				.context("spawn cargo update")?
+				.context(Tokio)?
 				.await
-				.context("cargo update")?;
+				.context(Tokio)?;
 			Command::new("git")
 				.arg("commit")
 				.arg("-a")
@@ -76,35 +76,35 @@ pub async fn companion_update(
 				.arg("'Update substrate'")
 				.current_dir(format!("./{}", repo))
 				.spawn()
-				.context("spawn git commit")?
+				.context(Tokio)?
 				.await
-				.context("git commit")?;
+				.context(Tokio)?;
 			Command::new("git")
 				.arg("push")
 				.arg("-v")
 				.current_dir(format!("./{}", repo))
 				.spawn()
-				.context("spawn git push")?
+				.context(Tokio)?
 				.await
-				.context("git push")?;
+				.context(Tokio)?;
 		}
 		Command::new("git")
 			.arg("checkout")
 			.arg("master")
 			.current_dir(format!("./{}", repo))
 			.spawn()
-			.context("spawn git checkout master")?
+			.context(Tokio)?
 			.await
-			.context("git checkout master")?;
+			.context(Tokio)?;
 		Command::new("git")
 			.arg("branch")
 			.arg("-D")
 			.arg(branch)
 			.current_dir(format!("./{}", repo))
 			.spawn()
-			.context("spawn git branch -D")?
+			.context(Tokio)?
 			.await
-			.context("git branch -D")?;
+			.context(Tokio)?;
 	}
 	Ok(())
 }

@@ -12,6 +12,11 @@ pub enum Error {
 		issue: IssueDetails,
 	},
 
+	#[snafu(display("Error updating companion: {}", source))]
+	Companion {
+		source: Box<Error>,
+	},
+
 	#[snafu(display("Error merging: {}", source))]
 	Merge {
 		source: Box<Error>,
@@ -73,6 +78,12 @@ pub enum Error {
 	Http {
 		source: reqwest::Error,
 		backtrace: Backtrace,
+	},
+
+	/// An error occurred in a Tokio call.
+	#[snafu(display("Source: {}", source))]
+	Tokio {
+		source: tokio::io::Error,
 	},
 
 	/// Data requested was not found or valid.
