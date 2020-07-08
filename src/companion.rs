@@ -13,7 +13,8 @@ pub async fn companion_update(
 	let token = github_bot.client.auth_key().await?;
 	Command::new("git")
 		.arg("clone")
-		.arg("-v")
+		.arg("-vb")
+		.arg(branch)
 		.arg(format!(
 			"https://x-access-token:{token}@github.com/{owner}/{repo}.git",
 			token = token,
@@ -24,88 +25,50 @@ pub async fn companion_update(
 		.context(Tokio)?
 		.await
 		.context(Tokio)?;
-	Command::new("git")
-		.arg("fetch")
-		.arg("-v")
+	let merge_master = Command::new("git")
+		.arg("merge")
+		.arg("origin/master")
 		.current_dir(format!("./{}", repo))
 		.spawn()
 		.context(Tokio)?
 		.await
 		.context(Tokio)?;
-	let checkout = Command::new("git")
-		.arg("checkout")
-		.arg("-b")
-		.arg(branch)
-		.arg(format!("origin/{}", branch))
-		.current_dir(format!("./{}", repo))
-		.spawn()
-		.context(Tokio)?
-		.await
-		.context(Tokio)?;
-	if checkout.success() {
+	if merge_master.success() {
+		Command::new("cargo")
+			.arg("update")
+			.arg("-vp")
+			.arg("sp-io")
+			.current_dir(format!("./{}", repo))
+			.spawn()
+			.context(Tokio)?
+			.await
+			.context(Tokio)?;
 		Command::new("git")
-			.arg("pull")
+			.arg("commit")
+			.arg("-a")
+			.arg("-m")
+			.arg("'Update substrate'")
+			.current_dir(format!("./{}", repo))
+			.spawn()
+			.context(Tokio)?
+			.await
+			.context(Tokio)?;
+		Command::new("git")
+			.arg("push")
 			.arg("-v")
 			.current_dir(format!("./{}", repo))
 			.spawn()
 			.context(Tokio)?
 			.await
 			.context(Tokio)?;
-		let merge_master = Command::new("git")
-			.arg("merge")
-			.arg("origin/master")
-			.current_dir(format!("./{}", repo))
-			.spawn()
-			.context(Tokio)?
-			.await
-			.context(Tokio)?;
-		if merge_master.success() {
-			Command::new("cargo")
-				.arg("update")
-				.arg("-vp")
-				.arg("sp-io")
-				.current_dir(format!("./{}", repo))
-				.spawn()
-				.context(Tokio)?
-				.await
-				.context(Tokio)?;
-			Command::new("git")
-				.arg("commit")
-				.arg("-a")
-				.arg("-m")
-				.arg("'Update substrate'")
-				.current_dir(format!("./{}", repo))
-				.spawn()
-				.context(Tokio)?
-				.await
-				.context(Tokio)?;
-			Command::new("git")
-				.arg("push")
-				.arg("-v")
-				.current_dir(format!("./{}", repo))
-				.spawn()
-				.context(Tokio)?
-				.await
-				.context(Tokio)?;
-		}
-		Command::new("git")
-			.arg("checkout")
-			.arg("master")
-			.current_dir(format!("./{}", repo))
-			.spawn()
-			.context(Tokio)?
-			.await
-			.context(Tokio)?;
-		Command::new("git")
-			.arg("branch")
-			.arg("-D")
-			.arg(branch)
-			.current_dir(format!("./{}", repo))
-			.spawn()
-			.context(Tokio)?
-			.await
-			.context(Tokio)?;
 	}
+	Command::new("rm")
+		.arg("-rf")
+		.arg(repo)
+		.spawn()
+		.context(Tokio)?
+		.await
+		.context(Tokio)?;
 	Ok(())
 }
 
