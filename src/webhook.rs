@@ -1006,6 +1006,13 @@ async fn update_companion(
 						"Companion updated; requesting merge for {}",
 						comp_html_url
 					);
+
+					// Delay after push to allow checks to begin
+					tokio::time::delay_for(std::time::Duration::from_millis(
+						1000,
+					))
+					.await;
+
 					if ready_to_merge(
 						github_bot,
 						&comp_owner,
