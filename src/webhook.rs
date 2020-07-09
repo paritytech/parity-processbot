@@ -1008,10 +1008,8 @@ async fn update_companion(
 					);
 
 					// Delay after push to allow checks to begin
-					tokio::time::delay_for(std::time::Duration::from_millis(
-						1000,
-					))
-					.await;
+					tokio::time::delay_for(std::time::Duration::from_secs(10))
+						.await;
 
 					if ready_to_merge(
 						github_bot,
