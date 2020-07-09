@@ -259,9 +259,8 @@ async fn checks_and_status(
 							})?;
 
 						// update companion if necessary
-						let _ =
-							update_companion(github_bot, &repo_name, &pr, db)
-								.await;
+						update_companion(github_bot, &repo_name, &pr, db)
+							.await?;
 					}
 					CombinedStatus {
 						state: StatusState::Failure,
