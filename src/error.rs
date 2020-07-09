@@ -41,18 +41,13 @@ pub enum Error {
 	#[snafu(display("Error getting process info: {}", source))]
 	ProcessFile {
 		source: Box<Error>,
-		commit_sha: String,
 	},
 
-	#[snafu(display("Missing process info for {}", commit_sha))]
-	ProcessInfo {
-		commit_sha: String,
-	},
+	#[snafu(display("Missing process info."))]
+	ProcessInfo {},
 
-	#[snafu(display("Missing approval for {}", commit_sha))]
-	Approval {
-		commit_sha: String,
-	},
+	#[snafu(display("Missing approval."))]
+	Approval {},
 
 	#[snafu(display("Error: {}", msg))]
 	Message {
@@ -93,10 +88,9 @@ pub enum Error {
 	},
 
 	/// An error occurred while retrieving or setting values in Rocks DB.
-	#[snafu(display("Source: {}\nBacktrace:\n{}", source, backtrace))]
+	#[snafu(display("Source: {}", source))]
 	Db {
 		source: rocksdb::Error,
-		backtrace: Backtrace,
 	},
 
 	/// An error occurred while parsing or serializing JSON.
