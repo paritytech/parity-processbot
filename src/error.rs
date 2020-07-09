@@ -12,10 +12,46 @@ pub enum Error {
 		issue: IssueDetails,
 	},
 
-	#[snafu(display("Error: {}\nBacktrace:\n{}", msg, backtrace))]
+	#[snafu(display("Error updating companion: {}", source))]
+	Companion {
+		source: Box<Error>,
+	},
+
+	#[snafu(display("Error merging: {}", source))]
+	Merge {
+		source: Box<Error>,
+		commit_sha: String,
+	},
+
+	#[snafu(display("Checks failed for {}", commit_sha))]
+	ChecksFailed {
+		commit_sha: String,
+	},
+
+	#[snafu(display("Head SHA changed from {}", commit_sha))]
+	HeadChanged {
+		commit_sha: String,
+	},
+
+	#[snafu(display("Error getting organization membership: {}", source))]
+	OrganizationMembership {
+		source: Box<Error>,
+	},
+
+	#[snafu(display("Error getting process info: {}", source))]
+	ProcessFile {
+		source: Box<Error>,
+	},
+
+	#[snafu(display("Missing process info."))]
+	ProcessInfo {},
+
+	#[snafu(display("Missing approval."))]
+	Approval {},
+
+	#[snafu(display("Error: {}", msg))]
 	Message {
 		msg: String,
-		backtrace: Backtrace,
 	},
 
 	/// An error occurred with an integration service (e.g. GitHub).
@@ -39,6 +75,12 @@ pub enum Error {
 		backtrace: Backtrace,
 	},
 
+	/// An error occurred in a Tokio call.
+	#[snafu(display("Source: {}", source))]
+	Tokio {
+		source: tokio::io::Error,
+	},
+
 	/// Data requested was not found or valid.
 	#[snafu(display("Backtrace:\n{}", backtrace))]
 	MissingData {
@@ -46,10 +88,9 @@ pub enum Error {
 	},
 
 	/// An error occurred while retrieving or setting values in Rocks DB.
-	#[snafu(display("Source: {}\nBacktrace:\n{}", source, backtrace))]
+	#[snafu(display("Source: {}", source))]
 	Db {
 		source: rocksdb::Error,
-		backtrace: Backtrace,
 	},
 
 	/// An error occurred while parsing or serializing JSON.
@@ -89,6 +130,12 @@ pub enum Error {
 
 	Jwt {
 		source: jsonwebtoken::errors::Error,
+	},
+
+	#[snafu(display("Source: {}\nBacktrace:\n{}", source, backtrace))]
+	Bincode {
+		source: bincode::Error,
+		backtrace: Backtrace,
 	},
 }
 

@@ -1,15 +1,15 @@
-use anyhow::Context;
 use regex::Regex;
+use snafu::ResultExt;
 use tokio::process::Command;
 
-use crate::github_bot::GithubBot;
+use crate::{error::*, github_bot::GithubBot, Result};
 
 pub async fn companion_update(
 	github_bot: &GithubBot,
 	owner: &str,
 	repo: &str,
 	branch: &str,
-) -> anyhow::Result<()> {
+) -> Result<()> {
 	let token = github_bot.client.auth_key().await?;
 	Command::new("git")
 		.arg("clone")
@@ -22,17 +22,17 @@ pub async fn companion_update(
 			repo = repo,
 		))
 		.spawn()
-		.context("spawn git clone")?
+		.context(Tokio)?
 		.await
-		.context("git clone")?;
+		.context(Tokio)?;
 	let merge_master = Command::new("git")
 		.arg("merge")
 		.arg("origin/master")
 		.current_dir(format!("./{}", repo))
 		.spawn()
-		.context("spawn git merge")?
+		.context(Tokio)?
 		.await
-		.context("git merge")?;
+		.context(Tokio)?;
 	if merge_master.success() {
 		Command::new("cargo")
 			.arg("update")
@@ -40,34 +40,35 @@ pub async fn companion_update(
 			.arg("sp-io")
 			.current_dir(format!("./{}", repo))
 			.spawn()
-			.context("spawn cargo update")?
+			.context(Tokio)?
 			.await
-			.context("cargo update")?;
+			.context(Tokio)?;
 		Command::new("git")
 			.arg("commit")
-			.arg("-am")
+			.arg("-a")
+			.arg("-m")
 			.arg("'Update substrate'")
 			.current_dir(format!("./{}", repo))
 			.spawn()
-			.context("spawn git commit")?
+			.context(Tokio)?
 			.await
-			.context("git commit")?;
+			.context(Tokio)?;
 		Command::new("git")
 			.arg("push")
 			.arg("-v")
 			.current_dir(format!("./{}", repo))
 			.spawn()
-			.context("spawn git push")?
+			.context(Tokio)?
 			.await
-			.context("git push")?;
+			.context(Tokio)?;
 	}
 	Command::new("rm")
 		.arg("-rf")
 		.arg(repo)
 		.spawn()
-		.context("spawn rm")?
+		.context(Tokio)?
 		.await
-		.context("rm")?;
+		.context(Tokio)?;
 	Ok(())
 }
 
