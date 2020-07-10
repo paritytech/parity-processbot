@@ -9,8 +9,9 @@ pub async fn companion_update(
 	owner: &str,
 	repo: &str,
 	branch: &str,
-) -> Result<()> {
+) -> Result<Option<String>> {
 	let token = github_bot.client.auth_key().await?;
+	let mut updated_sha = None;
 	Command::new("git")
 		.arg("clone")
 		.arg("-vb")
@@ -28,6 +29,7 @@ pub async fn companion_update(
 	let merge_master = Command::new("git")
 		.arg("merge")
 		.arg("origin/master")
+		.arg("--no-edit")
 		.current_dir(format!("./{}", repo))
 		.spawn()
 		.context(Tokio)?
@@ -55,12 +57,25 @@ pub async fn companion_update(
 			.context(Tokio)?;
 		Command::new("git")
 			.arg("push")
-			.arg("-v")
+			.arg("-vn")
 			.current_dir(format!("./{}", repo))
 			.spawn()
 			.context(Tokio)?
 			.await
 			.context(Tokio)?;
+		let output = Command::new("git")
+			.arg("rev-parse")
+			.arg("HEAD")
+			.current_dir(format!("./{}", repo))
+			.output()
+			.await
+			.context(Tokio)?;
+		updated_sha = Some(
+			String::from_utf8(output.stdout)
+				.context(Utf8)?
+				.trim()
+				.to_string(),
+		);
 	}
 	Command::new("rm")
 		.arg("-rf")
@@ -69,7 +84,7 @@ pub async fn companion_update(
 		.context(Tokio)?
 		.await
 		.context(Tokio)?;
-	Ok(())
+	Ok(updated_sha)
 }
 
 pub fn companion_parse(body: &str) -> Option<(String, String, String, i64)> {
