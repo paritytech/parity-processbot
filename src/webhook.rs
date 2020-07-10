@@ -1003,46 +1003,22 @@ async fn update_companion(
 						)))
 					})?;
 					log::info!(
-						"Companion updated; requesting merge for {}",
+						"Companion updated; waiting for checks on {}",
 						comp_html_url
 					);
 
-					// Delay after push to allow checks to begin
-					tokio::time::delay_for(std::time::Duration::from_secs(10))
-						.await;
-
-					if ready_to_merge(
+					// wait for checks on the update commit
+					wait_to_merge(
 						github_bot,
 						&comp_owner,
 						&comp_repo,
-						&comp_pr,
+						comp_pr.number,
+						&comp_pr.html_url,
+						&format!("parity-processbot[bot]"),
+						&comp_pr.head.sha,
+						db,
 					)
-					.await?
-					{
-						prepare_to_merge(
-							github_bot,
-							&comp_owner,
-							&comp_repo,
-							comp_pr.number,
-							&comp_pr.html_url,
-						)
-						.await?;
-
-						merge(github_bot, &comp_owner, &comp_repo, &comp_pr)
-							.await?;
-					} else {
-						wait_to_merge(
-							github_bot,
-							&comp_owner,
-							&comp_repo,
-							comp_pr.number,
-							&comp_pr.html_url,
-							&format!("parity-processbot[bot]"),
-							&comp_pr.head.sha,
-							db,
-						)
-						.await?;
-					}
+					.await?;
 				} else {
 					Err(Error::Companion {
 						source: Box::new(Error::MissingData {
