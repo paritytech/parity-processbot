@@ -4,161 +4,6 @@ use crate::{
 use regex::Regex;
 use snafu::ResultExt;
 
-pub enum ProcessError {
-	ProcessFile,
-}
-
-pub async fn get_process(
-	github_bot: &GithubBot,
-	owner: &str,
-	repo_name: &str,
-	issue_number: i64,
-) -> Result<CombinedProcessInfo> {
-	let process = github_bot
-		.contents(owner, repo_name, PROCESS_FILE_NAME, "master")
-		.await
-		.and_then(process::process_from_contents)?;
-
-	/*
-	// ignore repos with no valid process file
-	if maybe_process.is_none() {
-		log::warn!(
-			"Repository '{repo_name}' has no valid Process.toml file",
-			repo_name = repo_name,
-		);
-		return None;
-	}
-	*/
-
-	// ignore repos with no projects
-	let projects = github_bot.projects(owner, repo_name).await?;
-	/*
-	if projects.is_empty() {
-		log::warn!(
-			"Repository '{repo_name}' contains a Process.toml file but no projects",
-			repo_name = repo_name,
-		);
-		return None;
-	}
-	*/
-
-	// ignore process entries that do not match a project in the repository
-	let (features, process): (Vec<process::ProcessWrapper>, Vec<process::ProcessWrapper>) = process
-				.into_iter()
-				.filter(|proc| {
-                    match proc {
-                        process::ProcessWrapper::Features(_) => true,
-                        process::ProcessWrapper::Project(proc) => {
-                            let keep = projects.iter().any(|proj| proj.name.replace(" ", "-") == proc.project_name);
-                            if !keep {
-                                log::warn!(
-                                    "'{proc_name}' in Process.toml file doesn't match any projects in repository '{repo_name}'",
-                                    proc_name = proc.project_name,
-                                    repo_name = repo_name,
-                                );
-                            }
-                            keep
-                        }
-                    }
-				})
-                .partition(|proc| match proc {
-                    process::ProcessWrapper::Features(_) => true,
-                    process::ProcessWrapper::Project(_) => false,
-                });
-
-	let _features = features
-		.first()
-		.and_then(|f| match f {
-			process::ProcessWrapper::Features(feat) => Some(feat.clone()),
-			_ => panic!(),
-		})
-		.unwrap_or(process::ProcessFeatures::default());
-
-	let process = process
-		.into_iter()
-		.map(|w| match w {
-			process::ProcessWrapper::Project(p) => p,
-			_ => panic!(),
-		})
-		.collect::<Vec<process::ProcessInfo>>();
-
-	/*
-	// ignore repos with no matching process entries
-	if process.is_empty() {
-		log::warn!(
-			"Process.toml file doesn't match any projects in repository '{repo_name}'",
-			repo_name = repo_name,
-		);
-		return None;
-	}
-	*/
-
-	combined_process_info(
-		github_bot,
-		owner,
-		repo_name,
-		issue_number,
-		&projects,
-		&process,
-	)
-	.await
-}
-
-pub async fn combined_process_info(
-	github_bot: &GithubBot,
-	owner: &str,
-	repo_name: &str,
-	number: i64,
-	projects: &[github::Project],
-	processes: &[process::ProcessInfo],
-) -> Result<CombinedProcessInfo> {
-	Ok(CombinedProcessInfo(process_from_projects(
-		&projects_from_project_events(
-			&github_bot
-				.active_project_events(owner, repo_name, number)
-				.await?,
-			projects,
-		),
-		processes,
-	)))
-}
-
-pub fn projects_from_project_events(
-	events: &[github::IssueEvent],
-	projects: &[github::Project],
-) -> Vec<github::Project> {
-	events
-		.iter()
-		.filter_map(|event| event.project_card.clone())
-		.filter_map(|card| {
-			projects
-				.iter()
-				.find(|proj| card.project_id == proj.id)
-				.cloned()
-		})
-		.collect::<_>()
-}
-
-pub fn process_from_projects(
-	projects: &[github::Project],
-	processes: &[ProcessInfo],
-) -> Vec<ProcessInfo> {
-	projects
-		.iter()
-		.filter_map(|proj| process_matching_project(processes, proj))
-		.cloned()
-		.collect::<_>()
-}
-
-pub fn process_matching_project<'a>(
-	processes: &'a [ProcessInfo],
-	project: &github::Project,
-) -> Option<&'a ProcessInfo> {
-	processes
-		.iter()
-		.find(|proc| project.name == proc.project_name)
-}
-
 #[derive(Clone, Debug)]
 pub struct CombinedProcessInfo(Vec<ProcessInfo>);
 
@@ -200,6 +45,131 @@ impl CombinedProcessInfo {
 	pub fn is_special(&self, login: &str) -> bool {
 		self.is_owner(login) || self.is_whitelisted(login)
 	}
+}
+
+pub async fn get_process(
+	github_bot: &GithubBot,
+	owner: &str,
+	repo_name: &str,
+	issue_number: i64,
+) -> Result<CombinedProcessInfo> {
+	// get Process.toml from master
+	let process = github_bot
+		.contents(owner, repo_name, PROCESS_FILE_NAME, "master")
+		.await
+		.and_then(process::process_from_contents)?;
+
+	// repos with no projects can have no valid process info
+	let projects = github_bot.projects(owner, repo_name).await?;
+
+	// ignore process entries that do not match a project in the repository
+	let (features, process): (Vec<process::ProcessWrapper>, Vec<process::ProcessWrapper>) = process
+				.into_iter()
+				.filter(|proc| {
+                    match proc {
+                        process::ProcessWrapper::Features(_) => true,
+                        process::ProcessWrapper::Project(proc) => {
+                            let keep = projects.iter().any(|proj| proj.name.replace(" ", "-") == proc.project_name);
+                            if !keep {
+                                log::warn!(
+                                    "'{proc_name}' in Process.toml file doesn't match any projects in repository '{repo_name}'",
+                                    proc_name = proc.project_name,
+                                    repo_name = repo_name,
+                                );
+                            }
+                            keep
+                        }
+                    }
+				})
+                .partition(|proc| match proc {
+                    process::ProcessWrapper::Features(_) => true,
+                    process::ProcessWrapper::Project(_) => false,
+                });
+
+	let _features = features
+		.first()
+		.and_then(|f| match f {
+			process::ProcessWrapper::Features(feat) => Some(feat.clone()),
+			_ => panic!(),
+		})
+		.unwrap_or(process::ProcessFeatures::default());
+
+	let process = process
+		.into_iter()
+		.map(|w| match w {
+			process::ProcessWrapper::Project(p) => p,
+			_ => panic!(),
+		})
+		.collect::<Vec<process::ProcessInfo>>();
+
+	combined_process_info(
+		github_bot,
+		owner,
+		repo_name,
+		issue_number,
+		&projects,
+		&process,
+	)
+	.await
+}
+
+/// Return a CombinedProcessInfo struct representing together each process entry that matches a
+/// project in the repo.
+pub async fn combined_process_info(
+	github_bot: &GithubBot,
+	owner: &str,
+	repo_name: &str,
+	number: i64,
+	projects: &[github::Project],
+	processes: &[process::ProcessInfo],
+) -> Result<CombinedProcessInfo> {
+	/// Return process entries matching the given projects, in the order of the projects.
+	fn process_matching_projects(
+		processes: &[ProcessInfo],
+		projects: &[github::Project],
+	) -> Vec<ProcessInfo> {
+		/// Return the process entry matching a given project in the repo.
+		fn process_matching_project<'a>(
+			processes: &'a [ProcessInfo],
+			project: &github::Project,
+		) -> Option<&'a ProcessInfo> {
+			processes
+				.iter()
+				.find(|proc| project.name == proc.project_name)
+		}
+
+		projects
+			.iter()
+			.filter_map(|proj| process_matching_project(processes, proj))
+			.cloned()
+			.collect::<_>()
+	}
+
+	fn projects_matching_project_events(
+		events: &[github::IssueEvent],
+		projects: &[github::Project],
+	) -> Vec<github::Project> {
+		events
+			.iter()
+			.filter_map(|event| event.project_card.clone())
+			.filter_map(|card| {
+				projects
+					.iter()
+					.find(|proj| card.project_id == proj.id)
+					.cloned()
+			})
+			.collect::<_>()
+	}
+
+	Ok(CombinedProcessInfo(process_matching_projects(
+		processes,
+		&projects_matching_project_events(
+			&github_bot
+				.active_project_events(owner, repo_name, number)
+				.await?,
+			projects,
+		),
+	)))
 }
 
 pub type ProcessInfoMap = std::collections::HashMap<String, ProcessInfo>;
