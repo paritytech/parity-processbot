@@ -219,6 +219,7 @@ pub enum Event {
 	AddedToProject,
 	Assigned,
 	Closed,
+	CommentDeleted,
 	ConvertedNoteToIssue,
 	Demilestoned,
 	HeadRefDeleted,
