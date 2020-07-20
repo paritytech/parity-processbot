@@ -1,15 +1,23 @@
+use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
-use std::time::{Instant};
+use std::time::Instant;
 use tokio::process::Command;
 
 use crate::{error::*, github_bot::GithubBot, Result};
 
-pub async fn performance_regression(
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+struct BenchResult {
+	name: String,
+	raw_average: i64,
+	average: i64,
+}
+
+pub async fn regression(
 	github_bot: &GithubBot,
 	owner: &str,
 	repo: &str,
 	branch: &str,
-) -> Result<Option<u128>> {
+) -> Result<Option<i64>> {
 	let token = github_bot.client.auth_key().await?;
 	let mut reg = None;
 	Command::new("git")
@@ -36,22 +44,20 @@ pub async fn performance_regression(
 		.await
 		.context(Tokio)?;
 	if merge_master.success() {
-		// cargo run --release -p node-bench -- node::import::wasm::sr25519 --json
-		let now = Instant::now();
-		Command::new("cargo")
+		let res: Vec<BenchResult> = serde_json::from_str(&String::from_utf8_lossy(&Command::new("cargo")
 			.arg("run")
 			.arg("--release")
 			.arg("-p")
 			.arg("node-bench")
 			.arg("--quiet")
-			.arg("node::import::wasm::sr25519")
+			.arg("node::import::wasm::sr25519::transfer_keep_alive::rocksdb::medium")
 			.arg("--json")
 			.current_dir(format!("./{}", repo))
-			.spawn()
-			.context(Tokio)?
+			.output()
 			.await
-			.context(Tokio)?;
-		reg = Some(now.elapsed().as_millis());
+			.context(Tokio)?
+            .stdout)).expect("bench result");
+		dbg!(res);
 	}
 	Command::new("rm")
 		.arg("-rf")
