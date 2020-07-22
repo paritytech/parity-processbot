@@ -232,6 +232,7 @@ pub enum Event {
 	Merged,
 	Milestoned,
 	MovedColumnsInProject,
+	ReadyForReview,
 	Referenced,
 	RemovedFromProject,
 	Renamed,
