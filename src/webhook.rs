@@ -5,7 +5,7 @@ use itertools::Itertools;
 use ring::hmac;
 use rocksdb::DB;
 use serde::{Deserialize, Serialize};
-use snafu::{GenerateBacktrace, OptionExt, ResultExt};
+use snafu::{OptionExt, ResultExt};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -987,6 +987,7 @@ async fn update_companion(
 					log::info!("Updating companion {}", comp_html_url);
 					if let Some(updated_sha) = companion_update(
 						github_bot,
+						&comp_owner,
 						&comp_head_owner,
 						&comp_head_repo,
 						&comp_head_branch,
@@ -1021,12 +1022,12 @@ async fn update_companion(
 						.await?;
 					} else {
 						log::info!(
-							"Failed merging master into companion {}",
+							"Failed updating companion {}",
 							comp_html_url
 						);
 
 						Err(Error::Message {
-							msg: format!("Failed merging master."),
+							msg: format!("Failed updating substrate."),
 						}
 						.map_issue(Some((
 							comp_owner.to_string(),
@@ -1036,8 +1037,10 @@ async fn update_companion(
 					}
 				} else {
 					Err(Error::Companion {
-						source: Box::new(Error::MissingData {
-							backtrace: snafu::Backtrace::generate(),
+						source: Box::new(Error::Message {
+							msg: format!(
+								"Companion PR is missing required fields."
+							),
 						}),
 					}
 					.map_issue(Some((
