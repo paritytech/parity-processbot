@@ -11,7 +11,7 @@ use tokio::sync::Mutex;
 
 use crate::{
 	companion::*, config::BotConfig, constants::*, error::*, github::*,
-	github_bot::GithubBot, matrix_bot::MatrixBot, process, Result,
+	github_bot::GithubBot, matrix_bot::MatrixBot, performance, process, Result,
 };
 
 pub const BAMBOO_DATA_KEY: &str = "BAMBOO_DATA";
@@ -379,36 +379,34 @@ async fn handle_comment(
 			requested_by
 		);
 
-		if requested_by != "parity-processbot[bot]" {
-			// Check the user is a member of the org
-			let member = github_bot
-				.org_member(&owner, &requested_by)
-				.await
-				.map_err(|e| {
-					Error::OrganizationMembership {
-						source: Box::new(e),
-					}
-					.map_issue(Some((
-						owner.to_string(),
-						repo_name.to_string(),
-						number,
-					)))
-				})?;
-			if member != 204 {
-				Err(Error::OrganizationMembership {
-					source: Box::new(Error::Message {
-						msg: format!(
-							"{} is not a member of {}; aborting.",
-							requested_by, owner
-						),
-					}),
+		// Check the user is a member of the org
+		let member = github_bot
+			.org_member(&owner, &requested_by)
+			.await
+			.map_err(|e| {
+				Error::OrganizationMembership {
+					source: Box::new(e),
 				}
 				.map_issue(Some((
 					owner.to_string(),
 					repo_name.to_string(),
 					number,
-				))))?;
+				)))
+			})?;
+		if member != 204 {
+			Err(Error::OrganizationMembership {
+				source: Box::new(Error::Message {
+					msg: format!(
+						"{} is not a member of {}; aborting.",
+						requested_by, owner
+					),
+				}),
 			}
+			.map_issue(Some((
+				owner.to_string(),
+				repo_name.to_string(),
+				number,
+			))))?;
 		}
 
 		//
@@ -423,6 +421,13 @@ async fn handle_comment(
 			&requested_by,
 		)
 		.await?;
+
+		//
+		// performance regression
+		//
+		if repo_name.trim() == "substrate" {
+			performance_regression(github_bot, owner, &repo_name, &pr).await?;
+		}
 
 		//
 		// status and merge
@@ -893,7 +898,6 @@ async fn wait_to_merge(
 		.map_err(|e| {
 			log::error!("Error posting comment: {}", e);
 		});
-
 	Ok(())
 }
 
@@ -912,7 +916,6 @@ async fn prepare_to_merge(
 		.map_err(|e| {
 			log::error!("Error posting comment: {}", e);
 		});
-
 	Ok(())
 }
 
@@ -937,6 +940,86 @@ async fn merge(
 			)))
 		})?;
 	log::info!("{} merged successfully.", pr.html_url);
+	Ok(())
+}
+
+async fn performance_regression(
+	github_bot: &GithubBot,
+	owner: &str,
+	repo_name: &str,
+	pr: &PullRequest,
+) -> Result<()> {
+	let _ = github_bot
+		.create_issue_comment(
+			owner,
+			&repo_name,
+			pr.number,
+			"Running performance regression.",
+		)
+		.await
+		.map_err(|e| {
+			log::error!("Error posting comment: {}", e);
+		});
+	if let PullRequest {
+		head:
+			Head {
+				ref_field: head_branch,
+				repo:
+					HeadRepo {
+						name: head_repo,
+						owner: Some(User {
+							login: head_owner, ..
+						}),
+						..
+					},
+				..
+			},
+		..
+	} = pr.clone()
+	{
+		match performance::regression(
+			github_bot,
+			owner,
+			&repo_name,
+			&head_owner,
+			&head_repo,
+			&head_branch,
+		)
+		.await
+		{
+			Ok(Some(reg)) => {
+				if reg > 2. {
+					log::error!("Performance regression shows factor {} change in benchmark average.", reg);
+					Err(Error::Message {
+							msg: format!("Performance regression shows greater than 2x increase in benchmark average; aborting merge."),
+						}
+						.map_issue(Some((
+							owner.to_string(),
+							repo_name.to_string(),
+							pr.number,
+						))))?;
+				}
+			}
+			Ok(None) => {
+				log::error!("Failed to complete performance regression.");
+				let _ = github_bot
+                    .create_issue_comment(owner, &repo_name, pr.number, "Failed to complete performance regression; see logs; continuing merge.")
+                    .await
+                    .map_err(|e| {
+                        log::error!("Error posting comment: {}", e);
+                    });
+			}
+			Err(e) => {
+				log::error!("Error running performance regression: {}", e);
+				let _ = github_bot
+                    .create_issue_comment(owner, &repo_name, pr.number, "Error running performance regression; see logs; continuing merge.")
+                    .await
+                    .map_err(|e| {
+                        log::error!("Error posting comment: {}", e);
+                    });
+			}
+		}
+	}
 	Ok(())
 }
 
@@ -988,6 +1071,7 @@ async fn update_companion(
 					if let Some(updated_sha) = companion_update(
 						github_bot,
 						&comp_owner,
+						&comp_repo,
 						&comp_head_owner,
 						&comp_head_repo,
 						&comp_head_branch,

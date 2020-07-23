@@ -7,12 +7,13 @@ use crate::{error::*, github_bot::GithubBot, Result};
 pub async fn companion_update(
 	github_bot: &GithubBot,
 	base_owner: &str,
+	base_repo: &str,
 	head_owner: &str,
-	repo: &str,
+	head_repo: &str,
 	branch: &str,
 ) -> Result<Option<String>> {
 	let res = companion_update_inner(
-		github_bot, base_owner, head_owner, repo, branch,
+		github_bot, base_owner, base_repo, head_owner, head_repo, branch,
 	)
 	.await;
 	// checkout origin master
@@ -20,7 +21,7 @@ pub async fn companion_update(
 	Command::new("git")
 		.arg("checkout")
 		.arg("master")
-		.current_dir(format!("./{}", repo))
+		.current_dir(format!("./{}", base_repo))
 		.spawn()
 		.context(Tokio)?
 		.await
@@ -31,7 +32,7 @@ pub async fn companion_update(
 		.arg("branch")
 		.arg("-D")
 		.arg("temp-branch")
-		.current_dir(format!("./{}", repo))
+		.current_dir(format!("./{}", base_repo))
 		.spawn()
 		.context(Tokio)?
 		.await
@@ -42,7 +43,7 @@ pub async fn companion_update(
 		.arg("remote")
 		.arg("remove")
 		.arg("temp")
-		.current_dir(format!("./{}", repo))
+		.current_dir(format!("./{}", base_repo))
 		.spawn()
 		.context(Tokio)?
 		.await
@@ -53,8 +54,9 @@ pub async fn companion_update(
 async fn companion_update_inner(
 	github_bot: &GithubBot,
 	base_owner: &str,
+	base_repo: &str,
 	head_owner: &str,
-	repo: &str,
+	head_repo: &str,
 	branch: &str,
 ) -> Result<Option<String>> {
 	let token = github_bot.client.auth_key().await?;
@@ -68,7 +70,7 @@ async fn companion_update_inner(
 			"https://x-access-token:{token}@github.com/{owner}/{repo}.git",
 			token = token,
 			owner = base_owner,
-			repo = repo,
+			repo = base_repo,
 		))
 		.spawn()
 		.context(Tokio)?
@@ -79,7 +81,7 @@ async fn companion_update_inner(
 	Command::new("git")
 		.arg("checkout")
 		.arg("master")
-		.current_dir(format!("./{}", repo))
+		.current_dir(format!("./{}", base_repo))
 		.spawn()
 		.context(Tokio)?
 		.await
@@ -89,7 +91,7 @@ async fn companion_update_inner(
 	Command::new("git")
 		.arg("pull")
 		.arg("-v")
-		.current_dir(format!("./{}", repo))
+		.current_dir(format!("./{}", base_repo))
 		.spawn()
 		.context(Tokio)?
 		.await
@@ -104,9 +106,9 @@ async fn companion_update_inner(
 			"https://x-access-token:{token}@github.com/{owner}/{repo}.git",
 			token = token,
 			owner = head_owner,
-			repo = repo,
+			repo = head_repo,
 		))
-		.current_dir(format!("./{}", repo))
+		.current_dir(format!("./{}", base_repo))
 		.spawn()
 		.context(Tokio)?
 		.await
@@ -117,7 +119,7 @@ async fn companion_update_inner(
 		.arg("fetch")
 		.arg("-v")
 		.arg("temp")
-		.current_dir(format!("./{}", repo))
+		.current_dir(format!("./{}", base_repo))
 		.spawn()
 		.context(Tokio)?
 		.await
@@ -129,7 +131,7 @@ async fn companion_update_inner(
 		.arg("-b")
 		.arg("temp-branch")
 		.arg(format!("temp/{}", branch))
-		.current_dir(format!("./{}", repo))
+		.current_dir(format!("./{}", base_repo))
 		.spawn()
 		.context(Tokio)?
 		.await
@@ -141,7 +143,7 @@ async fn companion_update_inner(
 			.arg("merge")
 			.arg("origin/master")
 			.arg("--no-edit")
-			.current_dir(format!("./{}", repo))
+			.current_dir(format!("./{}", base_repo))
 			.spawn()
 			.context(Tokio)?
 			.await
@@ -153,7 +155,7 @@ async fn companion_update_inner(
 				.arg("update")
 				.arg("-vp")
 				.arg("sp-io")
-				.current_dir(format!("./{}", repo))
+				.current_dir(format!("./{}", base_repo))
 				.spawn()
 				.context(Tokio)?
 				.await
@@ -165,7 +167,7 @@ async fn companion_update_inner(
 				.arg("-a")
 				.arg("-m")
 				.arg("'Update substrate'")
-				.current_dir(format!("./{}", repo))
+				.current_dir(format!("./{}", base_repo))
 				.spawn()
 				.context(Tokio)?
 				.await
@@ -177,7 +179,7 @@ async fn companion_update_inner(
 				.arg("-v")
 				.arg("temp")
 				.arg(format!("temp-branch:{}", branch))
-				.current_dir(format!("./{}", repo))
+				.current_dir(format!("./{}", base_repo))
 				.spawn()
 				.context(Tokio)?
 				.await
@@ -187,7 +189,7 @@ async fn companion_update_inner(
 			let output = Command::new("git")
 				.arg("rev-parse")
 				.arg("HEAD")
-				.current_dir(format!("./{}", repo))
+				.current_dir(format!("./{}", base_repo))
 				.output()
 				.await
 				.context(Tokio)?;
