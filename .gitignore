@@ -6,3 +6,4 @@ engineers.csv
 *.pem
 db/
 polkadot/
+substrate/
