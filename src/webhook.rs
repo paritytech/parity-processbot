@@ -426,7 +426,7 @@ async fn handle_comment(
 		// performance regression
 		//
 		if repo_name.trim() == "substrate" {
-			performance_regression(github_bot, owner, &repo_name, &pr).await?;
+			//			performance_regression(github_bot, owner, &repo_name, &pr).await?;
 		}
 
 		//

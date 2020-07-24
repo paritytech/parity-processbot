@@ -110,10 +110,11 @@ async fn regression_inner(
 		.await
 		.context(Tokio)?;
 	// bench origin master
+	log::info!("Running bench.");
 	let bench = Command::new("cargo")
 		.arg("run")
 		.arg("--release")
-		.arg("-p")
+		.arg("-vp")
 		.arg("node-bench")
 		.arg("--quiet")
 		.arg(
