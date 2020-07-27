@@ -45,11 +45,12 @@ impl CombinedProcessInfo {
 	}
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 pub struct ProcessInfo {
 	pub project_name: String,
 	pub owner: String,
 	pub delegated_reviewer: Option<String>,
+	#[serde(default)]
 	pub whitelist: Vec<String>,
 	pub matrix_room_id: String,
 	pub backlog: Option<String>,
@@ -206,4 +207,23 @@ async fn combined_process_info(
 #[cfg(test)]
 mod tests {
 	use super::*;
+
+	#[test]
+	fn test_process_json() {
+		let proc = serde_json::from_str::<Vec<ProcessInfo>>(include_str!(
+			"../Process.json"
+		))
+		.expect("parse json");
+		assert_eq!(
+			proc,
+			vec![ProcessInfo {
+				project_name: format!("parity-processbot"),
+				owner: format!("sjeohp"),
+				delegated_reviewer: None,
+				whitelist: vec![],
+				matrix_room_id: format!("!VDLSjvBpNqqgyMDIBO:matrix.parity.io"),
+				backlog: None,
+			},]
+		);
+	}
 }
