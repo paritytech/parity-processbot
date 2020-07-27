@@ -1,7 +1,5 @@
-use crate::{
-	constants::*, error, github, github_bot::GithubBot, process, Result,
-};
-use regex::Regex;
+use crate::{error, github, github_bot::GithubBot, process, Result};
+use serde::Deserialize;
 use snafu::ResultExt;
 
 #[derive(Clone, Debug)]
@@ -47,15 +45,63 @@ impl CombinedProcessInfo {
 	}
 }
 
+#[derive(Clone, Debug, Deserialize)]
+pub struct ProcessInfo {
+	pub project_name: String,
+	pub owner: String,
+	pub delegated_reviewer: Option<String>,
+	pub whitelist: Vec<String>,
+	pub matrix_room_id: String,
+	pub backlog: Option<String>,
+}
+
+impl ProcessInfo {
+	pub fn owner_or_delegate(&self) -> &String {
+		self.delegated_reviewer.as_ref().unwrap_or(&self.owner)
+	}
+
+	/// Checks if the owner of the project matches the login given.
+	pub fn is_owner_or_delegate(&self, login: &str) -> bool {
+		&self.owner == login
+			|| self
+				.delegated_reviewer
+				.as_ref()
+				.map_or(false, |delegate| delegate == login)
+	}
+
+	/// Checks if the owner of the project matches the login given.
+	pub fn is_owner(&self, login: &str) -> bool {
+		&self.owner == login
+	}
+
+	/// Checks if the delegated reviewer matches the login given.
+	pub fn is_delegated_reviewer(&self, login: &str) -> bool {
+		self.delegated_reviewer
+			.as_deref()
+			.map_or(false, |reviewer| reviewer == login)
+	}
+
+	/// Checks that the login is contained within the whitelist.
+	pub fn is_whitelisted(&self, login: &str) -> bool {
+		self.whitelist.iter().any(|user| user == login)
+	}
+
+	pub fn is_special(&self, login: &str) -> bool {
+		self.is_owner(login)
+			|| self.is_delegated_reviewer(login)
+			|| self.is_whitelisted(login)
+	}
+}
+
 pub async fn get_process(
 	github_bot: &GithubBot,
 	owner: &str,
 	repo_name: &str,
 	issue_number: i64,
 ) -> Result<CombinedProcessInfo> {
-	// get Process.toml from master
+	// get Process file from master
 	let process = github_bot
-		.contents(owner, repo_name, PROCESS_FILE_NAME, "master")
+		.contents(owner, repo_name, "Process.json", "master")
 		.await
 		.and_then(process::process_from_contents)?;
 
@@ -63,44 +109,20 @@ pub async fn get_process(
 	let projects = github_bot.projects(owner, repo_name).await?;
 
 	// ignore process entries that do not match a project in the repository
-	let (features, process): (Vec<process::ProcessWrapper>, Vec<process::ProcessWrapper>) = process
-				.into_iter()
-				.filter(|proc| {
-                    match proc {
-                        process::ProcessWrapper::Features(_) => true,
-                        process::ProcessWrapper::Project(proc) => {
-                            let keep = projects.iter().any(|proj| proj.name.replace(" ", "-") == proc.project_name);
-                            if !keep {
-                                log::warn!(
-                                    "'{proc_name}' in Process.toml file doesn't match any projects in repository '{repo_name}'",
-                                    proc_name = proc.project_name,
-                                    repo_name = repo_name,
-                                );
-                            }
-                            keep
-                        }
-                    }
-				})
-                .partition(|proc| match proc {
-                    process::ProcessWrapper::Features(_) => true,
-                    process::ProcessWrapper::Project(_) => false,
-                });
-
-	let _features = features
-		.first()
-		.and_then(|f| match f {
-			process::ProcessWrapper::Features(feat) => Some(feat.clone()),
-			_ => panic!(),
-		})
-		.unwrap_or(process::ProcessFeatures::default());
-
 	let process = process
-		.into_iter()
-		.map(|w| match w {
-			process::ProcessWrapper::Project(p) => p,
-			_ => panic!(),
-		})
-		.collect::<Vec<process::ProcessInfo>>();
+        .into_iter()
+        .filter(|proc| {
+            let keep = projects.iter().any(|proj| proj.name == proc.project_name);
+            if !keep {
+                log::warn!(
+                    "'{proc_name}' doesn not match any projects in repository '{repo_name}'",
+                    proc_name = proc.project_name,
+                    repo_name = repo_name,
+                );
+            }
+            keep
+        })
+        .collect::<Vec<ProcessInfo>>();
 
 	combined_process_info(
 		github_bot,
@@ -113,9 +135,18 @@ pub async fn get_process(
 	.await
 }
 
+fn process_from_contents(c: github::Contents) -> Result<Vec<ProcessInfo>> {
+	base64::decode(&c.content.replace("\n", ""))
+		.context(error::Base64)
+		.and_then(|b| {
+			let s = String::from_utf8(b).context(error::Utf8)?;
+			serde_json::from_str(&s).context(error::Json)
+		})
+}
+
 /// Return a CombinedProcessInfo struct representing together each process entry that matches a
 /// project in the repo.
-pub async fn combined_process_info(
+async fn combined_process_info(
 	github_bot: &GithubBot,
 	owner: &str,
 	repo_name: &str,
@@ -172,201 +203,7 @@ pub async fn combined_process_info(
 	)))
 }
 
-pub type ProcessInfoMap = std::collections::HashMap<String, ProcessInfo>;
-
-#[derive(serde::Deserialize, serde::Serialize)]
-struct ProcessInfoTemp {
-	project_name: String,
-	owner: Option<String>,
-	delegated_reviewer: Option<String>,
-	whitelist: Option<Vec<String>>,
-	matrix_room_id: Option<String>,
-	backlog: Option<String>,
-}
-
-#[derive(Clone, Debug)]
-pub struct ProcessFeatures {
-	pub auto_merge: bool,
-	pub issue_project: bool,
-	pub issue_addressed: bool,
-	pub issue_assigned: bool,
-	pub review_requests: bool,
-	pub status_notifications: bool,
-}
-
-impl Default for ProcessFeatures {
-	fn default() -> Self {
-		ProcessFeatures {
-			auto_merge: true,
-			issue_project: false,
-			issue_addressed: false,
-			issue_assigned: false,
-			review_requests: false,
-			status_notifications: false,
-		}
-	}
-}
-
-#[derive(Clone, Debug)]
-pub enum ProcessWrapper {
-	Features(ProcessFeatures),
-	Project(ProcessInfo),
-}
-
-#[derive(Clone, Debug)]
-pub struct ProcessInfo {
-	pub project_name: String,
-	pub owner: String,
-	pub delegated_reviewer: Option<String>,
-	pub whitelist: Vec<String>,
-	pub matrix_room_id: String,
-	pub backlog: Option<String>,
-}
-
-impl ProcessInfo {
-	pub fn owner_or_delegate(&self) -> &String {
-		self.delegated_reviewer.as_ref().unwrap_or(&self.owner)
-	}
-
-	/// Checks if the owner of the project matches the login given.
-	pub fn is_owner_or_delegate(&self, login: &str) -> bool {
-		&self.owner == login
-			|| self
-				.delegated_reviewer
-				.as_ref()
-				.map_or(false, |delegate| delegate == login)
-	}
-
-	/// Checks if the owner of the project matches the login given.
-	pub fn is_owner(&self, login: &str) -> bool {
-		&self.owner == login
-	}
-
-	/// Checks if the delegated reviewer matches the login given.
-	pub fn is_delegated_reviewer(&self, login: &str) -> bool {
-		self.delegated_reviewer
-			.as_deref()
-			.map_or(false, |reviewer| reviewer == login)
-	}
-
-	/// Checks that the login is contained within the whitelist.
-	pub fn is_whitelisted(&self, login: &str) -> bool {
-		self.whitelist.iter().any(|user| user == login)
-	}
-
-	pub fn is_special(&self, login: &str) -> bool {
-		self.is_owner(login)
-			|| self.is_delegated_reviewer(login)
-			|| self.is_whitelisted(login)
-	}
-}
-
-pub fn remove_spaces_from_project_keys(mut s: String) -> String {
-	let re = Regex::new(r"(?m)^\[((?:[[:word:]]|[[:punct:]])*)[[:blank:]]")
-		.expect("compile regex");
-	while re.is_match(&s) {
-		s = re.replace_all(&s, "[$1-").to_string();
-	}
-	s
-}
-
-pub fn process_from_contents(
-	c: github::Contents,
-) -> Result<Vec<ProcessWrapper>> {
-	base64::decode(&c.content.replace("\n", ""))
-		.context(error::Base64)
-		.and_then(|b| {
-			let s = remove_spaces_from_project_keys(
-				String::from_utf8(b).context(error::Utf8)?,
-			);
-			toml::from_slice::<toml::value::Table>(s.as_bytes())
-				.context(error::Toml)
-		})
-		.map(process_from_table)
-}
-
-pub fn process_from_table(tab: toml::value::Table) -> Vec<ProcessWrapper> {
-	tab.into_iter()
-		.filter_map(|(key, val)| {
-			if key == FEATURES_KEY {
-				match val {
-					toml::value::Value::Table(ref tab) => {
-						Some(ProcessWrapper::Features(ProcessFeatures {
-							auto_merge: tab
-								.get("auto_merge")
-								.and_then(toml::value::Value::as_bool)
-								.unwrap_or(true),
-							issue_project: tab
-								.get("issue_project")
-								.and_then(toml::value::Value::as_bool)
-								.unwrap_or(false),
-							issue_addressed: tab
-								.get("issue_addressed")
-								.and_then(toml::value::Value::as_bool)
-								.unwrap_or(false),
-							issue_assigned: tab
-								.get("issue_assigned")
-								.and_then(toml::value::Value::as_bool)
-								.unwrap_or(false),
-							review_requests: tab
-								.get("review_requests")
-								.and_then(toml::value::Value::as_bool)
-								.unwrap_or(false),
-							status_notifications: tab
-								.get("status_notifications")
-								.and_then(toml::value::Value::as_bool)
-								.unwrap_or(false),
-						}))
-					}
-					_ => None,
-				}
-			} else {
-				match val {
-					toml::value::Value::Table(ref tab) => {
-						if tab.get("owner").is_none()
-							|| tab.get("whitelist").is_none()
-							|| tab.get("matrix_room_id").is_none()
-						{
-							None
-						} else {
-							Some(ProcessWrapper::Project(ProcessInfo {
-								project_name: key,
-								owner: tab
-									.get("owner")
-									.and_then(toml::value::Value::as_str)
-									.map(str::to_owned)
-									.unwrap(),
-								delegated_reviewer: tab
-									.get("delegated_reviewer")
-									.and_then(toml::value::Value::as_str)
-									.map(str::to_owned),
-								whitelist: tab
-									.get("whitelist")
-									.and_then(toml::value::Value::as_array)
-									.map(|a| {
-										a.iter()
-											.filter_map(
-												toml::value::Value::as_str,
-											)
-											.map(str::to_owned)
-											.collect::<Vec<String>>()
-									})
-									.unwrap_or(vec![]),
-								matrix_room_id: tab
-									.get("matrix_room_id")
-									.and_then(toml::value::Value::as_str)
-									.map(str::to_owned)
-									.unwrap(),
-								backlog: tab
-									.get("backlog")
-									.and_then(toml::value::Value::as_str)
-									.map(str::to_owned),
-							}))
-						}
-					}
-					_ => None,
-				}
-			}
-		})
-		.collect::<_>()
+#[cfg(test)]
+mod tests {
+	use super::*;
 }
