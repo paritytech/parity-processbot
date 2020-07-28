@@ -1,9 +1,5 @@
 # 👾 Processbot
 
-[![Processbot build status](https://circleci.com/gh/paritytech/parity-processbot.svg?style=svg)](https://app.circleci.com/github/paritytech/parity-processbot/pipelines)
-
-A GitHub bot to automate common tasks and processes at Parity.
-
 ### Available Commands (post as a comment in the relevant PR thread) 
 - `bot merge` to automatically merge it once checks pass (if approvals have been
   given)
