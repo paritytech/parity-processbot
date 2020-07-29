@@ -221,6 +221,7 @@ pub enum Event {
 	Closed,
 	CommentDeleted,
 	ConvertedNoteToIssue,
+	ConvertToDraft,
 	Demilestoned,
 	HeadRefDeleted,
 	HeadRefForcePushed,
