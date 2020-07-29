@@ -1,3 +1,51 @@
+/*
+Processbot looks for configuration variables in `.env` in the root directory. Eg. `MATRIX_USER=annoying_bot@parity.io`.
+
+`PRIVATE_KEY_PATH`: Path to the private key associated with the installed Processbot app.
+
+`GITHUB_APP_ID`: App ID associated with the installed Processbot app.
+
+`DB_PATH`: Path to an existing `rocksdb` database or that path at which a database will be created.
+
+`MAIN_TICK_SECS`: Seconds between cycles of the main bot loop.
+
+`BAMBOO_TOKEN`: API Key used to access the BambooHR API.
+
+`BAMBOO_TICK_SECS`: Seconds between updating data pulled from the BambooHR API. This can take some time and is likely to change only infrequently, so the value should be larger than `MAIN_TICK_SECS`.
+
+`MATRIX_SILENT`: If `true`, do not send Matrix notifications.
+
+`MATRIX_HOMESERVER`: Matrix homeserver.
+
+`MATRIX_ACCESS_TOKEN`: Matrix access token.
+
+`MATRIX_DEFAULT_CHANNEL_ID`: ID of a channel the bot should use when specific project details are unavailable.
+
+`STATUS_FAILURE_PING`: Seconds between notifications that a pull request has failed checks, sent privately to the pull request author, via Matrix.
+
+`ISSUE_NOT_ASSIGNED_TO_PR_AUTHOR_PING`: Seconds between notifications that the issue relevant to a pull request has not been assigned to the author of the pull
+request, sent privately to the issue assignee and project owner, then publicly to the project room, via Matrix.
+
+`NO_PROJECT_AUTHOR_IS_CORE_PING`: Seconds between notifications that a pull request opened by a core developer has no project attached, sent privately to the
+pull request author or publicly to the default channel if the author's Matrix handle cannot be found.
+
+`NO_PROJECT_AUTHOR_IS_CORE_CLOSE_PR`: Seconds before closing a pull request opened by a core developer that has no project attached.
+
+`NO_PROJECT_AUTHOR_UNKNOWN_CLOSE_PR`: Seconds before closing a pull request opened by an external developer that has no project attached.
+
+`PROJECT_CONFIRMATION_TIMEOUT`: Seconds before reverting an unconfirmed change of project by a non-whitelisted developer (currently unimplemented).
+
+`MIN_REVIEWERS`: Minimum number of reviewers needed before a pull request can be accepted.
+
+`REVIEW_REQUEST_PING`: Seconds between notifications requesting reviews on a pull request, sent publicly to the relevant project room, via Matrix.
+
+`PRIVATE_REVIEW_REMINDER_PING`: Seconds between notifications reminding a reviewer to review a pull request, sent privately to the reviewer, via Matrix.
+
+`PUBLIC_REVIEW_REMINDER_PING`: Seconds between notifications reminding a reviewer to review a pull request, sent publicly to the relevant project room, via Matrix.
+
+`TEST_REPO_NAME`: Name of a Github repository to be used for testing.
+*/
+
 #[derive(Debug, Clone)]
 pub struct MainConfig {
 	pub environment: String,
