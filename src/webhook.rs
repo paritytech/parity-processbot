@@ -943,6 +943,7 @@ async fn merge(
 	Ok(())
 }
 
+#[allow(dead_code)]
 async fn performance_regression(
 	github_bot: &GithubBot,
 	owner: &str,
