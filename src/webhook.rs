@@ -1198,7 +1198,20 @@ async fn handle_error(e: Error, state: &AppState) {
 					}
 				}
 				Error::ProcessFile { source } => {
-					format!("Error getting process info:\n\n{}", *source)
+                    match *source {
+                        Error::Response {
+                            body: serde_json::Value::Object(m),
+                            ..
+                        } => format!("Error getting Process.json: `{}`", m["message"]),
+						Error::Http { source, .. } => format!(
+							"Network error getting Process.json:\n\n{}",
+							source
+						),
+						e => format!(
+							"Unexpected error getting Process.json:\n\n{}",
+							e
+						),
+                    }
 				}
 				Error::ProcessInfo { } => {
 					format!("Missing process info; check that the PR belongs to a project column.")
