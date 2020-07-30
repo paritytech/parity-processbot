@@ -65,6 +65,10 @@ pub async fn regression(
 	res
 }
 
+/// Perform the regression benchmarks.
+///
+/// The project must have been cloned and built already.
+///
 async fn regression_inner(
 	github_bot: &GithubBot,
 	base_owner: &str,
@@ -74,11 +78,12 @@ async fn regression_inner(
 	branch: &str,
 ) -> Result<Option<f64>> {
 	let token = github_bot.client.auth_key().await?;
-	// clone in case the local clone doesn't exist
-	log::info!("Cloning repo.");
+	// set remote url with valid token
+	log::info!("Setting remote origin.");
 	Command::new("git")
-		.arg("clone")
-		.arg("-v")
+		.arg("remote")
+		.arg("set-url")
+		.arg("origin")
 		.arg(format!(
 			"https://x-access-token:{token}@github.com/{owner}/{repo}.git",
 			token = token,
@@ -103,7 +108,7 @@ async fn regression_inner(
 	log::info!("Pulling master.");
 	Command::new("git")
 		.arg("pull")
-		.arg("-v")
+		.arg("--quiet")
 		.current_dir(format!("./{}", base_repo))
 		.spawn()
 		.context(Tokio)?
@@ -114,7 +119,7 @@ async fn regression_inner(
 	let bench = Command::new("cargo")
 		.arg("run")
 		.arg("--release")
-		.arg("-vp")
+		.arg("-p")
 		.arg("node-bench")
 		.arg("--quiet")
 		.arg(

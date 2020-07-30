@@ -24,6 +24,7 @@ pub struct AppState {
 	pub bot_config: BotConfig,
 	pub webhook_secret: String,
 	pub environment: String,
+	pub build_lock: Arc<Mutex<()>>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -345,6 +346,7 @@ async fn handle_comment(
 	let db = &state.db;
 	let github_bot = &state.github_bot;
 	let bot_config = &state.bot_config;
+	let build_lock = &state.build_lock;
 
 	let owner = GithubBot::owner_from_html_url(&html_url).context(Message {
 		msg: format!("Failed parsing owner in url: {}", html_url),
@@ -425,8 +427,10 @@ async fn handle_comment(
 		//
 		// performance regression
 		//
-		if repo_name.trim() == "substrate" {
-			//			performance_regression(github_bot, owner, &repo_name, &pr).await?;
+		// only run if the build is complete - do not wait for it.
+		//
+		if repo_name.trim() == "substrate" && build_lock.try_lock().is_ok() {
+			performance_regression(github_bot, owner, &repo_name, &pr).await?;
 		}
 
 		//
