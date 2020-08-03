@@ -61,11 +61,27 @@ async fn companion_update_inner(
 ) -> Result<Option<String>> {
 	let token = github_bot.client.auth_key().await?;
 	let mut updated_sha = None;
-	// clone in case the local clone doesn't exist
+	// clone in case the local doesn't exist
 	log::info!("Cloning repo.");
 	Command::new("git")
 		.arg("clone")
 		.arg("-v")
+		.arg(format!(
+			"https://x-access-token:{token}@github.com/{owner}/{repo}.git",
+			token = token,
+			owner = base_owner,
+			repo = base_repo,
+		))
+		.spawn()
+		.context(Tokio)?
+		.await
+		.context(Tokio)?;
+	// set remote url with valid token
+	log::info!("Setting remote origin.");
+	Command::new("git")
+		.arg("remote")
+		.arg("set-url")
+		.arg("origin")
 		.arg(format!(
 			"https://x-access-token:{token}@github.com/{owner}/{repo}.git",
 			token = token,

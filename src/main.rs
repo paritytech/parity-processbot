@@ -4,6 +4,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use parity_processbot::{
+	cargo_build::*,
 	config::{BotConfig, MainConfig},
 	github_bot, matrix_bot,
 	server::*,
@@ -85,6 +86,9 @@ async fn run() -> anyhow::Result<()> {
 	});
 	*/
 
+	let build_lock = Arc::new(Mutex::new(()));
+	let token = github_bot.client.auth_key().await?;
+
 	let app_state = Arc::new(Mutex::new(AppState {
 		db: db,
 		github_bot: github_bot,
@@ -92,7 +96,15 @@ async fn run() -> anyhow::Result<()> {
 		bot_config: BotConfig::from_env(),
 		webhook_secret: config.webhook_secret,
 		environment: config.environment,
+		build_lock: Arc::clone(&build_lock),
 	}));
+
+	tokio::spawn(async move {
+		let _lock = build_lock.lock().await;
+		log::info!("Building Substrate.");
+		let _ = clone_build(&token, "paritytech", "substrate").await;
+		log::info!("Substrate build complete.");
+	});
 
 	let socket = SocketAddr::new(
 		IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
