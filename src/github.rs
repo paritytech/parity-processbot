@@ -247,6 +247,7 @@ pub enum Event {
 	Unlabeled,
 	Unlocked,
 	UnmarkedAsDuplicate,
+    Unsubscribed,
 	UserBlocked,
 }
 
