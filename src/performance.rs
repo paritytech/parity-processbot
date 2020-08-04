@@ -41,11 +41,11 @@ pub async fn regression(
 		.await
 		.context(Tokio)?;
 	// delete temp branch
-	log::info!("Deleting temp branch.");
+	log::info!("Deleting head branch.");
 	Command::new("git")
 		.arg("branch")
 		.arg("-D")
-		.arg("temp-branch")
+		.arg(format!("{}", head_branch))
 		.current_dir(format!("./{}", base_repo))
 		.spawn()
 		.context(Tokio)?
@@ -156,7 +156,6 @@ async fn regression_inner(
 	log::info!("Fetching temp.");
 	Command::new("git")
 		.arg("fetch")
-		.arg("-v")
 		.arg("temp")
 		.current_dir(format!("./{}", base_repo))
 		.spawn()
@@ -168,7 +167,7 @@ async fn regression_inner(
 	let checkout = Command::new("git")
 		.arg("checkout")
 		.arg("-b")
-		.arg("temp-branch")
+		.arg(format!("{}", branch))
 		.arg(format!("temp/{}", branch))
 		.current_dir(format!("./{}", base_repo))
 		.spawn()
@@ -203,6 +202,17 @@ async fn regression_inner(
                 .context(Tokio)?
                 .stdout)).context(Json)?;
 			head_reg = head_res.first().map(|r| r.average);
+		} else {
+			// abort merge
+			log::info!("Aborting merge.");
+			Command::new("git")
+				.arg("merge")
+				.arg("--abort")
+				.current_dir(format!("./{}", base_repo))
+				.spawn()
+				.context(Tokio)?
+				.await
+				.context(Tokio)?;
 		}
 	}
 	// calculate regression
