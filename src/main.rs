@@ -89,15 +89,15 @@ async fn run() -> anyhow::Result<()> {
 	let build_lock = Arc::new(Mutex::new(()));
 	let token = github_bot.client.auth_key().await?;
 
-	let app_state = Arc::new(Mutex::new(AppState {
-		db: db,
+	let app_state = Arc::new(AppState {
+		db: Mutex::new(db),
 		github_bot: github_bot,
 		matrix_bot: matrix_bot,
 		bot_config: BotConfig::from_env(),
 		webhook_secret: config.webhook_secret,
 		environment: config.environment,
 		build_lock: Arc::clone(&build_lock),
-	}));
+	});
 
 	tokio::spawn(async move {
 		let _lock = build_lock.lock().await;
