@@ -76,25 +76,6 @@ async fn companion_update_inner(
 		.context(Tokio)?
 		.await
 		.context(Tokio)?;
-	// checkout origin master
-	log::info!("Checking out master.");
-	Command::new("git")
-		.arg("checkout")
-		.arg("master")
-		.current_dir(format!("./{}", base_repo))
-		.spawn()
-		.context(Tokio)?
-		.await
-		.context(Tokio)?;
-	// pull origin master
-	log::info!("Pulling master.");
-	Command::new("git")
-		.arg("pull")
-		.current_dir(format!("./{}", base_repo))
-		.spawn()
-		.context(Tokio)?
-		.await
-		.context(Tokio)?;
 	// add temp remote
 	log::info!("Adding temp remote.");
 	Command::new("git")
@@ -140,6 +121,7 @@ async fn companion_update_inner(
 		let merge_master = Command::new("git")
 			.arg("merge")
 			.arg("origin/master")
+			.arg("--no-ff")
 			.arg("--no-edit")
 			.current_dir(format!("./{}", base_repo))
 			.spawn()

@@ -10,6 +10,7 @@ pub const AUTO_MERGE_INVALIDATED: &str =
 	"Something has changed since auto-merge was requested; cancelling.";
 
 pub const COMPARE_RELEASE_REQUEST: &str = "bot compare substrate";
+pub const REBASE: &str = "bot rebase";
 
 pub const FEATURES_KEY: &str = "features";
 

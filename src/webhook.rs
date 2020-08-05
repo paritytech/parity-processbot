@@ -11,7 +11,8 @@ use tokio::sync::Mutex;
 
 use crate::{
 	companion::*, config::BotConfig, constants::*, error::*, github::*,
-	github_bot::GithubBot, matrix_bot::MatrixBot, performance, process, Result,
+	github_bot::GithubBot, matrix_bot::MatrixBot, performance, process,
+	rebase::*, Result,
 };
 
 pub const BAMBOO_DATA_KEY: &str = "BAMBOO_DATA";
@@ -583,6 +584,58 @@ async fn handle_comment(
 					number,
 				))))?;
 			}
+		}
+	} else if body.to_lowercase().trim() == REBASE.to_lowercase().trim() {
+		log::info!("Rebase {} requested by {}", html_url, requested_by);
+		// Fetch the pr to get all fields (eg. mergeable).
+		let pr = github_bot
+			.pull_request(owner, &repo_name, number)
+			.await
+			.map_err(|e| {
+				e.map_issue(Some((
+					owner.to_string(),
+					repo_name.to_string(),
+					number,
+				)))
+			})?;
+		if let PullRequest {
+			head:
+				Head {
+					ref_field: head_branch,
+					repo:
+						HeadRepo {
+							name: head_repo,
+							owner:
+								Some(User {
+									login: head_owner, ..
+								}),
+							..
+						},
+					..
+				},
+			..
+		} = pr.clone()
+		{
+			rebase(
+				github_bot,
+				owner,
+				&repo_name,
+				&head_owner,
+				&head_repo,
+				&head_branch,
+			)
+			.await?;
+		} else {
+			Err(Error::Message {
+				msg: format!(
+					"PR response is missing required fields; rebase aborted."
+				),
+			}
+			.map_issue(Some((
+				owner.to_string(),
+				repo_name.to_string(),
+				number,
+			))))?;
 		}
 	}
 

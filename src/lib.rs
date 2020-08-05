@@ -1,6 +1,7 @@
 pub mod bamboo;
 pub mod companion;
 pub mod performance;
+pub mod rebase;
 pub mod server;
 //pub mod bots;
 pub mod config;
