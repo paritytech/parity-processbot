@@ -1,4 +1,5 @@
 pub mod bamboo;
+pub mod cargo_build;
 pub mod companion;
 pub mod performance;
 pub mod server;

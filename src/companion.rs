@@ -27,11 +27,11 @@ pub async fn companion_update(
 		.await
 		.context(Tokio)?;
 	// delete temp branch
-	log::info!("Deleting temp branch.");
+	log::info!("Deleting head branch.");
 	Command::new("git")
 		.arg("branch")
 		.arg("-D")
-		.arg("temp-branch")
+		.arg(format!("{}", branch))
 		.current_dir(format!("./{}", base_repo))
 		.spawn()
 		.context(Tokio)?
@@ -61,11 +61,27 @@ async fn companion_update_inner(
 ) -> Result<Option<String>> {
 	let token = github_bot.client.auth_key().await?;
 	let mut updated_sha = None;
-	// clone in case the local clone doesn't exist
+	// clone in case the local doesn't exist
 	log::info!("Cloning repo.");
 	Command::new("git")
 		.arg("clone")
 		.arg("-v")
+		.arg(format!(
+			"https://x-access-token:{token}@github.com/{owner}/{repo}.git",
+			token = token,
+			owner = base_owner,
+			repo = base_repo,
+		))
+		.spawn()
+		.context(Tokio)?
+		.await
+		.context(Tokio)?;
+	// set remote url with valid token
+	log::info!("Setting remote origin.");
+	Command::new("git")
+		.arg("remote")
+		.arg("set-url")
+		.arg("origin")
 		.arg(format!(
 			"https://x-access-token:{token}@github.com/{owner}/{repo}.git",
 			token = token,
@@ -90,7 +106,6 @@ async fn companion_update_inner(
 	log::info!("Pulling master.");
 	Command::new("git")
 		.arg("pull")
-		.arg("-v")
 		.current_dir(format!("./{}", base_repo))
 		.spawn()
 		.context(Tokio)?
@@ -117,7 +132,6 @@ async fn companion_update_inner(
 	log::info!("Fetching temp.");
 	Command::new("git")
 		.arg("fetch")
-		.arg("-v")
 		.arg("temp")
 		.current_dir(format!("./{}", base_repo))
 		.spawn()
@@ -129,7 +143,7 @@ async fn companion_update_inner(
 	let checkout = Command::new("git")
 		.arg("checkout")
 		.arg("-b")
-		.arg("temp-branch")
+		.arg(format!("{}", branch))
 		.arg(format!("temp/{}", branch))
 		.current_dir(format!("./{}", base_repo))
 		.spawn()
@@ -164,9 +178,8 @@ async fn companion_update_inner(
 			log::info!("Committing changes.");
 			Command::new("git")
 				.arg("commit")
-				.arg("-a")
-				.arg("-m")
-				.arg("'Update substrate'")
+				.arg("-am")
+				.arg("\"Update Substrate\"")
 				.current_dir(format!("./{}", base_repo))
 				.spawn()
 				.context(Tokio)?
@@ -176,9 +189,8 @@ async fn companion_update_inner(
 			log::info!("Pushing changes.");
 			Command::new("git")
 				.arg("push")
-				.arg("-v")
 				.arg("temp")
-				.arg(format!("temp-branch:{}", branch))
+				.arg(format!("{}", branch))
 				.current_dir(format!("./{}", base_repo))
 				.spawn()
 				.context(Tokio)?
@@ -199,6 +211,17 @@ async fn companion_update_inner(
 					.trim()
 					.to_string(),
 			);
+		} else {
+			// abort merge
+			log::info!("Aborting merge.");
+			Command::new("git")
+				.arg("merge")
+				.arg("--abort")
+				.current_dir(format!("./{}", base_repo))
+				.spawn()
+				.context(Tokio)?
+				.await
+				.context(Tokio)?;
 		}
 	}
 	Ok(updated_sha)
