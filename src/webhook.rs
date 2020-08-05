@@ -616,6 +616,12 @@ async fn handle_comment(
 			..
 		} = pr.clone()
 		{
+			let _ = github_bot
+				.create_issue_comment(owner, &repo_name, pr.number, "Rebasing.")
+				.await
+				.map_err(|e| {
+					log::error!("Error posting comment: {}", e);
+				});
 			rebase(
 				github_bot,
 				owner,
