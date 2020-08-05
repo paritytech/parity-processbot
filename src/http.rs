@@ -1,13 +1,13 @@
+use std::borrow::Cow;
+use std::time::SystemTime;
+
+use crate::{error, github, Result};
+
 use chrono::{DateTime, Duration, Utc};
 use hyperx::header::TypedHeaders;
 use reqwest::{header, IntoUrl, Method, RequestBuilder, Response};
 use serde::Serialize;
 use snafu::{OptionExt, ResultExt};
-use std::borrow::Cow;
-use std::time::SystemTime;
-use tokio::sync::Mutex;
-
-use crate::{error, github, Result};
 
 #[derive(Default)]
 pub struct Client {
@@ -118,19 +118,19 @@ impl Client {
 	pub async fn auth_key(&self) -> Result<String> {
 		log::debug!("auth_key");
 		lazy_static::lazy_static! {
-			static ref TOKEN_CACHE: Mutex<Option<(DateTime<Utc>, String)>> = {
-				Mutex::new(None)
+			static ref TOKEN_CACHE: parking_lot::Mutex<Option<(DateTime<Utc>, String)>> = {
+				parking_lot::Mutex::new(None)
 			};
 		}
 
-		let mut token_cache = TOKEN_CACHE.lock().await;
-
-		let token = token_cache
-			.as_ref()
-			// Ensure token is not expired if set.
-			.filter(|(time, _)| time > &Utc::now())
-			.map(|(_, token)| token.clone())
-			.clone();
+		let token = {
+			TOKEN_CACHE
+				.lock()
+				.as_ref()
+				// Ensure token is not expired if set.
+				.filter(|(time, _)| time > &Utc::now())
+				.map(|(_, token)| token.clone())
+		};
 
 		if let Some(token) = token {
 			return Ok(token);
@@ -165,7 +165,9 @@ impl Client {
 			.map_or(default_exp, |t| t.parse().unwrap_or(default_exp));
 		let token = install_token.token;
 
-		*token_cache = Some((expiry.clone(), token.clone()));
+		{
+			*TOKEN_CACHE.lock() = Some((expiry.clone(), token.clone()))
+		};
 
 		Ok(token)
 	}

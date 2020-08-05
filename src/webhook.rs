@@ -14,14 +14,16 @@ use crate::{
 	github_bot::GithubBot, matrix_bot::MatrixBot, performance, process, Result,
 };
 
+pub const BAMBOO_DATA_KEY: &str = "BAMBOO_DATA";
+pub const CORE_DEVS_KEY: &str = "CORE_DEVS";
+
 pub struct AppState {
-	pub db: Mutex<DB>,
+	pub db: DB,
 	pub github_bot: GithubBot,
 	pub matrix_bot: MatrixBot,
 	pub bot_config: BotConfig,
 	pub webhook_secret: String,
 	pub environment: String,
-	pub build_lock: Arc<Mutex<()>>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -45,10 +47,10 @@ fn verify(
 
 pub async fn webhook(
 	req: Request<Body>,
-	state: Arc<AppState>,
+	state: Arc<Mutex<AppState>>,
 ) -> Result<Response<Body>> {
 	if req.uri().path() == "/webhook" {
-		//		let state = &*state.lock().await;
+		let state = &*state.lock().await;
 		let sig = req
 			.headers()
 			.get("x-hub-signature")
@@ -61,13 +63,11 @@ pub async fn webhook(
 				msg: format!("Error parsing x-hub-signature"),
 			})?
 			.to_string();
-		//		log::info!("Lock acquired for {:?}", sig);
-		log::info!("Received webhook for {:?}", sig);
-		if let Err(e) = webhook_inner(req, &*state).await {
-			handle_error(e, &*state).await;
+		log::info!("Lock acquired for {:?}", sig);
+		if let Err(e) = webhook_inner(req, state).await {
+			handle_error(e, state).await;
 		}
-		//		log::info!("Will release lock for {:?}", sig);
-		log::info!("Handled webhook for {:?}", sig);
+		log::info!("Will release lock for {:?}", sig);
 		Response::builder()
 			.status(StatusCode::OK)
 			.body(Body::from(""))
@@ -198,13 +198,9 @@ async fn handle_status(
 async fn checks_and_status(
 	github_bot: &GithubBot,
 	commit_sha: &str,
-	db: &Mutex<DB>,
+	db: &DB,
 ) -> Result<()> {
-	let bytes = {
-		let db = db.lock().await;
-		db.get(commit_sha.trim().as_bytes()).context(Db)?
-	};
-	if let Some(b) = bytes {
+	if let Some(b) = db.get(commit_sha.trim().as_bytes()).context(Db)? {
 		let m = bincode::deserialize(&b).context(Bincode)?;
 		log::info!("Deserialized merge request: {:?}", m);
 		let MergeRequest {
@@ -252,18 +248,15 @@ async fn checks_and_status(
 						merge(github_bot, &owner, &repo_name, &pr).await?;
 
 						// clean db
-						{
-							let db = db.lock().await;
-							db.delete(pr.head.sha.trim().as_bytes())
-								.context(Db)
-								.map_err(|e| {
-									e.map_issue(Some((
-										owner.to_string(),
-										repo_name.to_string(),
-										pr.number,
-									)))
-								})?;
-						}
+						db.delete(pr.head.sha.trim().as_bytes())
+							.context(Db)
+							.map_err(|e| {
+								e.map_issue(Some((
+									owner.to_string(),
+									repo_name.to_string(),
+									pr.number,
+								)))
+							})?;
 
 						// update companion if necessary
 						update_companion(github_bot, &repo_name, &pr, db)
@@ -352,7 +345,6 @@ async fn handle_comment(
 	let db = &state.db;
 	let github_bot = &state.github_bot;
 	let bot_config = &state.bot_config;
-	let build_lock = &state.build_lock;
 
 	let owner = GithubBot::owner_from_html_url(&html_url).context(Message {
 		msg: format!("Failed parsing owner in url: {}", html_url),
@@ -365,11 +357,7 @@ async fn handle_comment(
 			},
 		)?;
 
-	let auto_merge =
-		body.to_lowercase().trim() == AUTO_MERGE_REQUEST.to_lowercase().trim();
-	let bench_merge =
-		body.to_lowercase().trim() == BENCH_MERGE_REQUEST.to_lowercase().trim();
-	if auto_merge || bench_merge {
+	if body.to_lowercase().trim() == AUTO_MERGE_REQUEST.to_lowercase().trim() {
 		// Fetch the pr to get all fields (eg. mergeable).
 		let pr = github_bot
 			.pull_request(owner, &repo_name, number)
@@ -437,31 +425,8 @@ async fn handle_comment(
 		//
 		// performance regression
 		//
-		// only run if the build is complete - do not wait for it.
-		//
-		if bench_merge {
-			if repo_name.trim() == "substrate" {
-				if build_lock.try_lock().is_ok() {
-					performance_regression(github_bot, owner, &repo_name, &pr)
-						.await?;
-				} else {
-					Err(Error::Message {
-                    msg: format!("Substrate is busy compiling for the first time since deployment.  This may take several hours.  Try again later or use `bot merge`."),
-                }.map_issue(Some((
-					owner.to_string(),
-					repo_name.to_string(),
-					number,
-				))))?;
-				}
-			} else {
-				Err(Error::Message {
-                    msg: format!("`bot bench-merge` is currently only available in the Substrate repo.  Feel free to open an [issue](https://github.com/paritytech/parity-processbot/issues) or use `bot merge`."),
-                }.map_issue(Some((
-					owner.to_string(),
-					repo_name.to_string(),
-					number,
-				))))?;
-			}
+		if repo_name.trim() == "substrate" {
+			//			performance_regression(github_bot, owner, &repo_name, &pr).await?;
 		}
 
 		//
@@ -516,18 +481,15 @@ async fn handle_comment(
 			requested_by
 		);
 		log::info!("Deleting merge request for {}", &html_url);
-		{
-			let db = db.lock().await;
-			db.delete(pr.head.sha.trim().as_bytes())
-				.context(Db)
-				.map_err(|e| {
-					e.map_issue(Some((
-						owner.to_string(),
-						repo_name.to_string(),
-						number,
-					)))
-				})?;
-		}
+		db.delete(pr.head.sha.trim().as_bytes())
+			.context(Db)
+			.map_err(|e| {
+				e.map_issue(Some((
+					owner.to_string(),
+					repo_name.to_string(),
+					number,
+				)))
+			})?;
 		let _ = github_bot
 			.create_issue_comment(
 				owner,
@@ -875,7 +837,7 @@ async fn create_merge_request(
 	html_url: &str,
 	requested_by: &str,
 	commit_sha: &str,
-	db: &Mutex<DB>,
+	db: &DB,
 ) -> Result<()> {
 	let m = MergeRequest {
 		owner: owner.to_string(),
@@ -889,7 +851,6 @@ async fn create_merge_request(
 		e.map_issue(Some((owner.to_string(), repo_name.to_string(), number)))
 	})?;
 	log::info!("Writing merge request to db (head sha: {})", commit_sha);
-	let db = db.lock().await;
 	db.put(commit_sha.trim().as_bytes(), bytes)
 		.context(Db)
 		.map_err(|e| {
@@ -912,7 +873,7 @@ async fn wait_to_merge(
 	html_url: &str,
 	requested_by: &str,
 	commit_sha: &str,
-	db: &Mutex<DB>,
+	db: &DB,
 ) -> Result<()> {
 	log::info!("{} checks incomplete.", html_url);
 	create_merge_request(
@@ -1067,7 +1028,7 @@ async fn update_companion(
 	github_bot: &GithubBot,
 	repo_name: &str,
 	pr: &PullRequest,
-	db: &Mutex<DB>,
+	db: &DB,
 ) -> Result<()> {
 	if repo_name == "substrate" {
 		log::info!("Checking for companion.");
@@ -1210,9 +1171,8 @@ async fn handle_error(e: Error, state: &AppState) {
 				}
 				Error::Merge { source, commit_sha } => {
 					// clean db
-                    let db = state.db.lock().await;
 					let _ =
-						db.delete(commit_sha.as_bytes()).map_err(|e| {
+						state.db.delete(commit_sha.as_bytes()).map_err(|e| {
 							log::error!(
 								"Error deleting merge request from db: {}",
 								e
@@ -1257,9 +1217,8 @@ async fn handle_error(e: Error, state: &AppState) {
 				}
 				Error::HeadChanged { commit_sha } => {
 					// clean db
-                    let db = state.db.lock().await;
 					let _ =
-						db.delete(commit_sha.as_bytes()).map_err(|e| {
+						state.db.delete(commit_sha.as_bytes()).map_err(|e| {
 							log::error!(
 								"Error deleting merge request from db: {}",
 								e
@@ -1269,9 +1228,8 @@ async fn handle_error(e: Error, state: &AppState) {
 				}
 				Error::ChecksFailed { commit_sha } => {
 					// clean db
-                    let db = state.db.lock().await;
 					let _ =
-						db.delete(commit_sha.as_bytes()).map_err(|e| {
+						state.db.delete(commit_sha.as_bytes()).map_err(|e| {
 							log::error!(
 								"Error deleting merge request from db: {}",
 								e

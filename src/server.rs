@@ -13,6 +13,7 @@ use hyper::{
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::task::Poll;
+use tokio::sync::Mutex;
 
 pub struct Incoming<'a>(pub async_std::net::Incoming<'a>);
 
@@ -98,7 +99,7 @@ impl std::error::Error for Error {
 /// to serve metrics.
 pub async fn init_server(
 	addr: SocketAddr,
-	state: Arc<AppState>,
+	state: Arc<Mutex<AppState>>,
 ) -> anyhow::Result<()> {
 	let listener = async_std::net::TcpListener::bind(&addr)
 		.await

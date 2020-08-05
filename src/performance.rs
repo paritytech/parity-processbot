@@ -41,11 +41,11 @@ pub async fn regression(
 		.await
 		.context(Tokio)?;
 	// delete temp branch
-	log::info!("Deleting head branch.");
+	log::info!("Deleting temp branch.");
 	Command::new("git")
 		.arg("branch")
 		.arg("-D")
-		.arg(format!("{}", head_branch))
+		.arg("temp-branch")
 		.current_dir(format!("./{}", base_repo))
 		.spawn()
 		.context(Tokio)?
@@ -65,10 +65,6 @@ pub async fn regression(
 	res
 }
 
-/// Perform the regression benchmarks.
-///
-/// The project must have been cloned and built already.
-///
 async fn regression_inner(
 	github_bot: &GithubBot,
 	base_owner: &str,
@@ -78,12 +74,11 @@ async fn regression_inner(
 	branch: &str,
 ) -> Result<Option<f64>> {
 	let token = github_bot.client.auth_key().await?;
-	// set remote url with valid token
-	log::info!("Setting remote origin.");
+	// clone in case the local clone doesn't exist
+	log::info!("Cloning repo.");
 	Command::new("git")
-		.arg("remote")
-		.arg("set-url")
-		.arg("origin")
+		.arg("clone")
+		.arg("-v")
 		.arg(format!(
 			"https://x-access-token:{token}@github.com/{owner}/{repo}.git",
 			token = token,
@@ -108,7 +103,7 @@ async fn regression_inner(
 	log::info!("Pulling master.");
 	Command::new("git")
 		.arg("pull")
-		.arg("--quiet")
+		.arg("-v")
 		.current_dir(format!("./{}", base_repo))
 		.spawn()
 		.context(Tokio)?
@@ -119,7 +114,7 @@ async fn regression_inner(
 	let bench = Command::new("cargo")
 		.arg("run")
 		.arg("--release")
-		.arg("-p")
+		.arg("-vp")
 		.arg("node-bench")
 		.arg("--quiet")
 		.arg(
@@ -156,6 +151,7 @@ async fn regression_inner(
 	log::info!("Fetching temp.");
 	Command::new("git")
 		.arg("fetch")
+		.arg("-v")
 		.arg("temp")
 		.current_dir(format!("./{}", base_repo))
 		.spawn()
@@ -167,7 +163,7 @@ async fn regression_inner(
 	let checkout = Command::new("git")
 		.arg("checkout")
 		.arg("-b")
-		.arg(format!("{}", branch))
+		.arg("temp-branch")
 		.arg(format!("temp/{}", branch))
 		.current_dir(format!("./{}", base_repo))
 		.spawn()
@@ -202,17 +198,6 @@ async fn regression_inner(
                 .context(Tokio)?
                 .stdout)).context(Json)?;
 			head_reg = head_res.first().map(|r| r.average);
-		} else {
-			// abort merge
-			log::info!("Aborting merge.");
-			Command::new("git")
-				.arg("merge")
-				.arg("--abort")
-				.current_dir(format!("./{}", base_repo))
-				.spawn()
-				.context(Tokio)?
-				.await
-				.context(Tokio)?;
 		}
 	}
 	// calculate regression
