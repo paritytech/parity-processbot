@@ -15,9 +15,6 @@ use crate::{
 	rebase::*, Result,
 };
 
-pub const BAMBOO_DATA_KEY: &str = "BAMBOO_DATA";
-pub const CORE_DEVS_KEY: &str = "CORE_DEVS";
-
 pub struct AppState {
 	pub db: DB,
 	pub github_bot: GithubBot,
@@ -714,11 +711,18 @@ async fn merge_allowed(
 						&& r.state == Some(ReviewState::Approved)
 				})
 				.count() >= min_reviewers;
-			if core_approved {
+			let lead_approved = reviews
+				.iter()
+				.filter(|r| {
+					team_leads.iter().any(|u| u.login == r.user.login)
+						&& r.state == Some(ReviewState::Approved)
+				})
+				.count() >= 1;
+			if core_approved || lead_approved {
 				//
 				// MERGE ALLOWED
 				//
-				log::info!("{} has core approval.", pr.html_url);
+				log::info!("{} has core or team lead approval.", pr.html_url);
 			} else {
 				// get process info
 				let process = process::get_process(
@@ -1216,6 +1220,8 @@ fn status_failure_allowed(ci: &str, context: &str) -> bool {
 	}
 }
 
+const TROUBLESHOOT_MSG: &str = "Merge can be attempted if:\n- The PR has approval from two core-devs (or one if the PR is labelled insubstantial).\n- The PR is attached to a project column and has approval from the project owner.\n- The PR has approval from a member of `substrateteamleads`.";
+
 async fn handle_error(e: Error, state: &AppState) {
 	log::error!("{}", e);
 	match e {
@@ -1269,10 +1275,10 @@ async fn handle_error(e: Error, state: &AppState) {
                     }
 				}
 				Error::ProcessInfo { } => {
-					format!("Missing process info; check that the PR belongs to a project column.")
+					format!("Missing process info; check that the PR belongs to a project column.\n\n{}", TROUBLESHOOT_MSG)
 				}
 				Error::Approval { } => {
-					format!("Missing approval from the project owner or a minimum of core developers.")
+					format!("Missing approval from the project owner or a minimum of core developers.\n\n{}", TROUBLESHOOT_MSG)
 				}
 				Error::HeadChanged { commit_sha } => {
 					// clean db
