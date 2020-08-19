@@ -421,13 +421,6 @@ async fn handle_comment(
 		.await?;
 
 		//
-		// performance regression
-		//
-		if repo_name.trim() == "substrate" {
-			//			performance_regression(github_bot, owner, &repo_name, &pr).await?;
-		}
-
-		//
 		// status and merge
 		//
 		if ready_to_merge(github_bot, owner, &repo_name, &pr).await? {
@@ -455,6 +448,86 @@ async fn handle_comment(
 			)
 			.await?;
 		}
+	} else if body.to_lowercase().trim()
+		== AUTO_MERGE_FORCE.to_lowercase().trim()
+	{
+		// Fetch the pr to get all fields (eg. mergeable).
+		let pr = github_bot
+			.pull_request(owner, &repo_name, number)
+			.await
+			.map_err(|e| {
+				e.map_issue(Some((
+					owner.to_string(),
+					repo_name.to_string(),
+					number,
+				)))
+			})?;
+
+		//
+		// MERGE
+		//
+		log::info!(
+			"Received merge request for PR {} from user {}",
+			html_url,
+			requested_by
+		);
+
+		// Check the user is a member of the org
+		let member = github_bot
+			.org_member(&owner, &requested_by)
+			.await
+			.map_err(|e| {
+				Error::OrganizationMembership {
+					source: Box::new(e),
+				}
+				.map_issue(Some((
+					owner.to_string(),
+					repo_name.to_string(),
+					number,
+				)))
+			})?;
+		if member != 204 {
+			Err(Error::OrganizationMembership {
+				source: Box::new(Error::Message {
+					msg: format!(
+						"{} is not a member of {}; aborting.",
+						requested_by, owner
+					),
+				}),
+			}
+			.map_issue(Some((
+				owner.to_string(),
+				repo_name.to_string(),
+				number,
+			))))?;
+		}
+
+		//
+		// merge allowed
+		//
+		merge_allowed(
+			github_bot,
+			owner,
+			&repo_name,
+			&pr,
+			&bot_config,
+			&requested_by,
+		)
+		.await?;
+
+		//
+		// attempt merge without wait for checks
+		//
+		prepare_to_merge(
+			github_bot,
+			owner,
+			&repo_name,
+			pr.number,
+			&pr.html_url,
+		)
+		.await?;
+		merge(github_bot, owner, &repo_name, &pr).await?;
+		update_companion(github_bot, &repo_name, &pr, db).await?;
 	} else if body.to_lowercase().trim()
 		== AUTO_MERGE_CANCEL.to_lowercase().trim()
 	{
