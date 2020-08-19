@@ -3,6 +3,8 @@
 ### Available Commands (post as a comment in the relevant PR thread) 
 - `bot merge` to automatically merge it once checks pass (if approvals have been
   given)
+- `bot merge force` to attempt merge without waiting for checks (if approvals
+  have been given)
 - `bot merge cancel` to cancel a pending `bot merge`
 - `bot compare substrate` to see a diff between current branch's Substrate
   version and the latest Polkadot release substrate.
