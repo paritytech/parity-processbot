@@ -1293,7 +1293,7 @@ fn status_failure_allowed(ci: &str, context: &str) -> bool {
 	}
 }
 
-const TROUBLESHOOT_MSG: &str = "Merge can be attempted if:\n- The PR has approval from two core-devs (or one if the PR is labelled insubstantial).\n- The PR is attached to a project column and has approval from the project owner.\n- The PR has approval from a member of `substrateteamleads`.";
+const TROUBLESHOOT_MSG: &str = "Merge can be attempted if:\n- The PR has approval from two core-devs (or one if the PR is labelled insubstantial).\n- The PR has approval from a member of `substrateteamleads`.\n- The PR is attached to a project column and has approval from the project owner.\n\nSee https://github.com/paritytech/parity-processbot#faq";
 
 async fn handle_error(e: Error, state: &AppState) {
 	log::error!("{}", e);
