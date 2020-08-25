@@ -15,15 +15,16 @@ use crate::{
 	rebase::*, Result,
 };
 
+/// This data gets passed along with each webhook to the webhook handler.
 pub struct AppState {
 	pub db: DB,
 	pub github_bot: GithubBot,
 	pub matrix_bot: MatrixBot,
 	pub bot_config: BotConfig,
 	pub webhook_secret: String,
-	pub environment: String,
 }
 
+/// This stores information about a pull request while we wait for checks to complete.
 #[derive(Debug, Serialize, Deserialize)]
 #[repr(C)]
 pub struct MergeRequest {
@@ -34,6 +35,7 @@ pub struct MergeRequest {
 	requested_by: String,
 }
 
+/// Check the SHA1 signature on a webhook payload.
 fn verify(
 	secret: &[u8],
 	msg: &[u8],
@@ -43,11 +45,14 @@ fn verify(
 	hmac::verify(&key, msg, signature)
 }
 
+/// Receive a webhook and state object, acquire lock on state object.
 pub async fn webhook(
 	req: Request<Body>,
 	state: Arc<Mutex<AppState>>,
 ) -> Result<Response<Body>> {
 	if req.uri().path() == "/webhook" {
+		// lock here to prevent double merge requests being sent (which often happens when checks
+		// complete because we receive redundant status hooks).
 		let state = &*state.lock().await;
 		let sig = req
 			.headers()
@@ -84,6 +89,7 @@ pub async fn webhook(
 	}
 }
 
+/// Parse webhook body and verify.
 pub async fn webhook_inner(
 	mut req: Request<Body>,
 	state: &AppState,
@@ -130,6 +136,7 @@ pub async fn webhook_inner(
 	handle_payload(payload, state).await
 }
 
+/// Match different kinds of payload.
 async fn handle_payload(payload: Payload, state: &AppState) -> Result<()> {
 	match payload {
 		Payload::IssueComment {
@@ -164,6 +171,7 @@ async fn handle_payload(payload: Payload, state: &AppState) -> Result<()> {
 	}
 }
 
+/// If a check completes, query if all statuses and checks are complete.
 async fn handle_check(
 	status: String,
 	commit_sha: String,
@@ -179,6 +187,7 @@ async fn handle_check(
 	Ok(())
 }
 
+/// If we receive a status other than `Pending`, query if all statuses and checks are complete.
 async fn handle_status(
 	commit_sha: String,
 	status: StatusState,
@@ -193,6 +202,8 @@ async fn handle_status(
 	Ok(())
 }
 
+/// Check that no commit has been pushed since the merge request was received.  Query checks and
+/// statuses and if they are green, attempt merge.
 async fn checks_and_status(
 	github_bot: &GithubBot,
 	commit_sha: &str,
@@ -332,6 +343,14 @@ async fn checks_and_status(
 	Ok(())
 }
 
+/// Parse bot commands in pull request comments.  Possible commands include:
+/// `bot merge`
+/// `bot merge force`
+/// `bot merge cancel`
+/// `bot compare substrate`
+/// `bot rebase`
+///
+/// See also README.md.
 async fn handle_comment(
 	body: String,
 	requested_by: String,
@@ -718,6 +737,7 @@ async fn handle_comment(
 	Ok(())
 }
 
+/// Check if the pull request is mergeable and approved.
 async fn merge_allowed(
 	github_bot: &GithubBot,
 	owner: &str,
@@ -848,6 +868,10 @@ async fn merge_allowed(
 	Ok(())
 }
 
+/// Query checks and statuses.
+///
+/// This function is used when a merge request is first received, to decide whether to store the
+/// request and wait for checks -- if so they will later be handled by `checks_and_status`.
 async fn ready_to_merge(
 	github_bot: &GithubBot,
 	owner: &str,
@@ -965,7 +989,9 @@ async fn ready_to_merge(
 	}
 }
 
-/// After calling this, error handling must remove the db entry.
+/// Create a merge request object.
+///
+/// If this has been called, error handling must remove the db entry.
 async fn create_merge_request(
 	owner: &str,
 	repo_name: &str,
@@ -999,8 +1025,8 @@ async fn create_merge_request(
 	Ok(())
 }
 
-/// Create a merge request and add it to the database.
-/// Post a comment stating the merge is pending.
+/// Create a merge request, add it to the database, and post a comment stating the merge is
+/// pending.
 async fn wait_to_merge(
 	github_bot: &GithubBot,
 	owner: &str,
@@ -1055,6 +1081,7 @@ async fn prepare_to_merge(
 	Ok(())
 }
 
+/// Send a merge request.
 async fn merge(
 	github_bot: &GithubBot,
 	owner: &str,
@@ -1160,6 +1187,7 @@ async fn performance_regression(
 	Ok(())
 }
 
+/// Check for a Polkadot companion and update it if found.
 async fn update_companion(
 	github_bot: &GithubBot,
 	repo_name: &str,
@@ -1281,6 +1309,7 @@ async fn update_companion(
 	Ok(())
 }
 
+/// Distinguish required statuses.
 #[allow(dead_code)]
 fn status_failure_allowed(ci: &str, context: &str) -> bool {
 	let d: serde_yaml::Result<serde_yaml::Value> = serde_yaml::from_str(ci);

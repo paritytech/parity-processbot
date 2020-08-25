@@ -7,7 +7,8 @@
   have been given)
 - `bot merge cancel` to cancel a pending `bot merge`
 - `bot compare substrate` to see a diff between current branch's Substrate
-  version and the latest Polkadot release substrate.
+  version and the latest Polkadot release's Substrate version.
+- `bot rebase` to merge origin/master.
 
 ### FAQ
 - Who are `core-devs`? 

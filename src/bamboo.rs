@@ -30,6 +30,7 @@ pub struct EmployeeResponse {
 
 const BASE_URL: &str = "https://api.bamboohr.com/api/gateway.php/parity/v1";
 
+/// Return data for all employees.
 fn get_employees_directory(
 	access_token: &str,
 ) -> Result<EmployeesDirectoryResponse> {
@@ -67,6 +68,7 @@ fn get_employees_directory(
 		.and_then(|s| serde_json::from_str(&s).context(error::Json))
 }
 
+/// Return private data for a single employee.
 fn get_employee(
 	access_token: &str,
 	employee_id: &str,
@@ -110,6 +112,8 @@ fn get_employee(
 		.context(error::Json)
 }
 
+/// Serially fetch and return data for each employee.  This takes a long time as it must send an
+/// individual request for each employee.
 pub fn github_to_matrix(access_token: &str) -> Result<HashMap<String, String>> {
 	get_employees_directory(&access_token).map(|response| {
 		response

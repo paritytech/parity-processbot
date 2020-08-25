@@ -91,7 +91,6 @@ async fn run() -> anyhow::Result<()> {
 		matrix_bot: matrix_bot,
 		bot_config: BotConfig::from_env(),
 		webhook_secret: config.webhook_secret,
-		environment: config.environment,
 	}));
 
 	let socket = SocketAddr::new(
