@@ -175,4 +175,16 @@ impl MatrixBot {
 		};
 		self.send_to_room(&self.default_channel_id, msg)
 	}
+
+	pub fn send_html_to_default(&self, msg: &str) -> Result<()> {
+		if self.silent {
+			return Ok(());
+		};
+		matrix::send_html_message(
+			&self.homeserver,
+			&self.access_token,
+			&self.default_channel_id,
+			msg,
+		)
+	}
 }

@@ -5,6 +5,7 @@ pub mod constants;
 pub mod error;
 pub mod github;
 pub mod github_bot;
+pub mod gitlab_bot;
 pub mod http;
 pub mod matrix;
 pub mod matrix_bot;

@@ -5,7 +5,7 @@ use tokio::sync::Mutex;
 
 use parity_processbot::{
 	config::{BotConfig, MainConfig},
-	github_bot, matrix_bot,
+	github_bot, gitlab_bot, matrix_bot,
 	server::*,
 	webhook::*,
 };
@@ -42,6 +42,14 @@ async fn run() -> anyhow::Result<()> {
 		&config.installation_login,
 	)
 	.await?;
+
+	log::info!("Connecting to Gitlab https://{}", config.gitlab_hostname);
+	let gitlab_bot = gitlab_bot::GitlabBot::new_with_token(
+		config.gitlab_hostname.to_owned(),
+		config.gitlab_project.to_owned(),
+		config.gitlab_job_name.to_owned(),
+		config.gitlab_private_token.to_owned(),
+	)?;
 
 	// the bamboo queries can take a long time so only wait for it
 	// on launch. subsequently update in the background.
@@ -89,6 +97,7 @@ async fn run() -> anyhow::Result<()> {
 		db: db,
 		github_bot: github_bot,
 		matrix_bot: matrix_bot,
+		gitlab_bot: gitlab_bot,
 		bot_config: BotConfig::from_env(),
 		webhook_secret: config.webhook_secret,
 	}));
