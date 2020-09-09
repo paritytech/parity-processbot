@@ -66,3 +66,10 @@ In the repository's root directory. Eg:
 	"matrix_room_id": "!yBKstWVBkwzUkPslsp:matrix.parity.io"
 }]
 ```
+
+## CI/CD
+
+ - Deployment via gitlab is done by tagging any commit with `/^pre-v[0-9]+\.[0-9]+.*$/` for staging or `/^v[0-9]+\.[0-9]+.*$/` for production. The latter should only be done on `master`, but that is currently not enforced.
+ - The environment variables for both staging and production live in the helm `kubernetes/processbot/values*.yml` files. If you add one, it also needs to be added in `templates/processbot.yaml`.
+ - If any secrets need to be changed, contact the devops team.
+
