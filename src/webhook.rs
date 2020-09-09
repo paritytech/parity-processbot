@@ -748,7 +748,7 @@ async fn handle_burnin_request(
 		|url| format!("<a href=\"{}\">CI job for burn-in deployment</a>", url);
 
 	let unexpected_error_msg = "Starting CI job for burn-in deployment failed with an unexpected error; see logs.".to_string();
-	let mut matrix_msg = String::from("");
+	let mut matrix_msg: Option<String> = None;
 
 	let msg = match gitlab_bot.build_artifact(&pr.head.sha) {
 		Ok(job) => {
@@ -781,10 +781,10 @@ async fn handle_burnin_request(
 				Error::StartingGitlabJobFailed { url, status, body } => {
 					let ci_job_link = make_job_link(url);
 
-					matrix_msg = format!(
+					matrix_msg = Some(format!(
 						"Starting {} failed with HTTP status {} and body: {}",
 						ci_job_link, status, body,
-					);
+					));
 
 					format!(
 						"Starting {} failed with HTTP status {}",
@@ -797,10 +797,10 @@ async fn handle_burnin_request(
 					status,
 					body,
 				} => {
-					matrix_msg = format!(
+					matrix_msg = Some(format!(
 						"Request {} {} failed with reponse status {} and body: {}",
 						method, url, status, body,
-					);
+					));
 
 					unexpected_error_msg
 				}
@@ -809,28 +809,20 @@ async fn handle_burnin_request(
 		}
 	};
 
-	let _ = github_bot
+	if let Err(e) = github_bot
 		.create_issue_comment(owner, &repo_name, pr.number, &msg)
-		.await
-		.map_err(|e| {
+		.await {
 			log::error!("Error posting GitHub comment: {}", e);
-		});
+	}
 
-	let m = if matrix_msg.len() > 0 {
-		matrix_msg
-	} else {
-		msg
-	};
 	let full_matrix_msg = format!(
 		"Received burn-in request for <a href=\"{}\">{}#{}</a> from {}<br />\n{}",
-		pr.html_url, repo_name, pr.number, requested_by, m,
+		pr.html_url, repo_name, pr.number, requested_by, matrix_msg.unwrap_or(msg),
 	);
 
-	let _ = matrix_bot
-		.send_html_to_default(&full_matrix_msg)
-		.map_err(|e| {
-			log::error!("Error sending Matrix message: {}", e);
-		});
+	if let Err(e) = matrix_bot.send_html_to_default(&full_matrix_msg) {
+		log::error!("Error sending Matrix message: {}", e);
+	}
 }
 
 /// Check if the pull request is mergeable and approved.

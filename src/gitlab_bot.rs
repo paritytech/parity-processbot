@@ -104,7 +104,7 @@ impl GitlabBot {
 		let pipelines: Vec<Pipeline> =
 			serde_json::from_str(&response.body).context(Json)?;
 
-		if pipelines.len() < 1 {
+		if pipelines.is_empty() {
 			return Err(Error::GitlabJobNotFound {
 				commit_sha: commit_sha.to_string(),
 			});
