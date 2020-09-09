@@ -1,3 +1,4 @@
+mod auth;
 pub mod bamboo;
 pub mod companion;
 pub mod config;

@@ -10,9 +10,9 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::{
-	companion::*, config::BotConfig, constants::*, error::*, github::*,
-	github_bot::GithubBot, gitlab_bot::*, matrix_bot::MatrixBot, performance,
-	process, rebase::*, Result,
+	auth::GithubUserAuthenticator, companion::*, config::BotConfig,
+	constants::*, error::*, github::*, github_bot::GithubBot, gitlab_bot::*,
+	matrix_bot::MatrixBot, performance, process, rebase::*, Result,
 };
 
 /// This data gets passed along with each webhook to the webhook handler.
@@ -389,6 +389,9 @@ async fn handle_comment(
 			)))
 		})?;
 
+	let auth =
+		GithubUserAuthenticator::new(&requested_by, owner, &repo_name, number);
+
 	if body.to_lowercase().trim() == AUTO_MERGE_REQUEST.to_lowercase().trim() {
 		//
 		// MERGE
@@ -399,35 +402,7 @@ async fn handle_comment(
 			requested_by
 		);
 
-		// Check the user is a member of the org
-		let member = github_bot
-			.org_member(&owner, &requested_by)
-			.await
-			.map_err(|e| {
-				Error::OrganizationMembership {
-					source: Box::new(e),
-				}
-				.map_issue(Some((
-					owner.to_string(),
-					repo_name.to_string(),
-					number,
-				)))
-			})?;
-		if member != 204 {
-			Err(Error::OrganizationMembership {
-				source: Box::new(Error::Message {
-					msg: format!(
-						"{} is not a member of {}; aborting.",
-						requested_by, owner
-					),
-				}),
-			}
-			.map_issue(Some((
-				owner.to_string(),
-				repo_name.to_string(),
-				number,
-			))))?;
-		}
+		auth.check_org_membership(&github_bot).await?;
 
 		//
 		// merge allowed
@@ -482,35 +457,7 @@ async fn handle_comment(
 			requested_by
 		);
 
-		// Check the user is a member of the org
-		let member = github_bot
-			.org_member(&owner, &requested_by)
-			.await
-			.map_err(|e| {
-				Error::OrganizationMembership {
-					source: Box::new(e),
-				}
-				.map_issue(Some((
-					owner.to_string(),
-					repo_name.to_string(),
-					number,
-				)))
-			})?;
-		if member != 204 {
-			Err(Error::OrganizationMembership {
-				source: Box::new(Error::Message {
-					msg: format!(
-						"{} is not a member of {}; aborting.",
-						requested_by, owner
-					),
-				}),
-			}
-			.map_issue(Some((
-				owner.to_string(),
-				repo_name.to_string(),
-				number,
-			))))?;
-		}
+		auth.check_org_membership(&github_bot).await?;
 
 		//
 		// merge allowed
@@ -690,35 +637,7 @@ async fn handle_comment(
 		}
 	} else if body.to_lowercase().trim() == BURNIN_REQUEST.to_lowercase().trim()
 	{
-		// Check the user is a member of the org
-		let member = github_bot
-			.org_member(&owner, &requested_by)
-			.await
-			.map_err(|e| {
-				Error::OrganizationMembership {
-					source: Box::new(e),
-				}
-				.map_issue(Some((
-					owner.to_string(),
-					repo_name.to_string(),
-					number,
-				)))
-			})?;
-		if member != 204 {
-			Err(Error::OrganizationMembership {
-				source: Box::new(Error::Message {
-					msg: format!(
-						"{} is not a member of {}; aborting.",
-						requested_by, owner
-					),
-				}),
-			}
-			.map_issue(Some((
-				owner.to_string(),
-				repo_name.to_string(),
-				number,
-			))))?;
-		}
+		auth.check_org_membership(github_bot).await?;
 
 		handle_burnin_request(
 			github_bot,
@@ -811,8 +730,9 @@ async fn handle_burnin_request(
 
 	if let Err(e) = github_bot
 		.create_issue_comment(owner, &repo_name, pr.number, &msg)
-		.await {
-			log::error!("Error posting GitHub comment: {}", e);
+		.await
+	{
+		log::error!("Error posting GitHub comment: {}", e);
 	}
 
 	let full_matrix_msg = format!(

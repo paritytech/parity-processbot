@@ -118,14 +118,15 @@ impl GithubBot {
 	}
 
 	/// Returns true if the user is a member of the org.
-	pub async fn org_member(&self, org: &str, username: &str) -> Result<u16> {
+	pub async fn org_member(&self, org: &str, username: &str) -> Result<bool> {
 		let url = &format!(
 			"{base_url}/orgs/{org}/members/{username}",
 			base_url = Self::BASE_URL,
 			org = org,
 			username = username,
 		);
-		self.client.get_status(url).await
+		let status = self.client.get_status(url).await?;
+		Ok(status == 204) // Github API returns HTTP 204 (No Content) if the user is a member
 	}
 }
 
