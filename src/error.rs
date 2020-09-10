@@ -155,6 +155,16 @@ pub enum Error {
 		status: u32,
 		body: String,
 	},
+
+	#[snafu(display("Failed parsing URL: {}", source))]
+	ParseUrl {
+		source: url::ParseError,
+	},
+
+	#[snafu(display("URL {} cannot be base", url))]
+	UrlCannotBeBase {
+		url: String,
+	},
 }
 
 impl Error {
