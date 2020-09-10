@@ -38,18 +38,18 @@ struct Pipeline {
 
 impl GitlabBot {
 	pub fn new_with_token(
-		hostname: String,
-		project: String,
-		ci_job_name: String,
-		private_token: String,
+		hostname: &str,
+		project: &str,
+		ci_job_name: &str,
+		private_token: &str,
 	) -> Result<Self> {
-		let base_url = build_base_url(&hostname, &project)?;
+		let base_url = build_base_url(hostname, project)?;
 
 		// This request is just for checking that Gitlab is available and the token is valid.
 		get(&base_url, &private_token)?;
 
 		Ok(Self {
-			base_url: base_url.to_owned(),
+			base_url,
 			ci_job_name: ci_job_name.to_owned(),
 			private_token: private_token.to_owned(),
 		})

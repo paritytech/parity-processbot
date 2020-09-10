@@ -45,10 +45,10 @@ async fn run() -> anyhow::Result<()> {
 
 	log::info!("Connecting to Gitlab https://{}", config.gitlab_hostname);
 	let gitlab_bot = gitlab_bot::GitlabBot::new_with_token(
-		config.gitlab_hostname.to_owned(),
-		config.gitlab_project.to_owned(),
-		config.gitlab_job_name.to_owned(),
-		config.gitlab_private_token.to_owned(),
+		&config.gitlab_hostname,
+		&config.gitlab_project,
+		&config.gitlab_job_name,
+		&config.gitlab_private_token,
 	)?;
 
 	// the bamboo queries can take a long time so only wait for it
