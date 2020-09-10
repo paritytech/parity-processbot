@@ -4,7 +4,7 @@ use serde::Deserialize;
 use url::Url;
 
 pub struct GitlabBot {
-	base_url: Url,
+	urls: UrlBuilder,
 	ci_job_name: String,
 	private_token: String,
 }
@@ -43,13 +43,14 @@ impl GitlabBot {
 		ci_job_name: &str,
 		private_token: &str,
 	) -> Result<Self> {
-		let base_url = build_base_url(hostname, project)?;
+		let urls = UrlBuilder::new(hostname, project)?;
 
 		// This request is just for checking that Gitlab is available and the token is valid.
-		get(&base_url, &private_token)?;
+		let project_url = urls.project_url()?;
+		get(&project_url, &private_token)?;
 
 		Ok(Self {
-			base_url,
+			urls,
 			ci_job_name: ci_job_name.to_owned(),
 			private_token: private_token.to_owned(),
 		})
@@ -69,7 +70,7 @@ impl GitlabBot {
 		};
 
 		if status == JobStatus::Started {
-			let play_job_url = self.build_play_job_url(job.id)?;
+			let play_job_url = self.urls.play_job_url(job.id)?;
 			let response = post(&play_job_url, &self.private_token)?;
 
 			if response.status > 299 {
@@ -107,7 +108,7 @@ impl GitlabBot {
 		&self,
 		pipeline_id: i64,
 	) -> Result<Vec<GitlabJob>> {
-		let jobs_url = self.build_jobs_url_for_pipeline(pipeline_id)?;
+		let jobs_url = self.urls.jobs_url_for_pipeline(pipeline_id)?;
 		let response = get(&jobs_url, &self.private_token)?;
 
 		let jobs: Vec<GitlabJob> = serde_json::from_str(&response.body)
@@ -117,7 +118,7 @@ impl GitlabBot {
 	}
 
 	fn fetch_pipeline_for_commit(&self, commit_sha: &str) -> Result<Pipeline> {
-		let pipelines_url = self.build_pipelines_url_for_commit(commit_sha)?;
+		let pipelines_url = self.urls.pipelines_url_for_commit(commit_sha)?;
 		let response = get(&pipelines_url, &self.private_token)?;
 
 		let pipelines: Vec<Pipeline> = serde_json::from_str(&response.body)
@@ -130,63 +131,6 @@ impl GitlabBot {
 		}
 
 		Ok(pipelines[0].clone())
-	}
-
-	fn build_pipelines_url_for_commit(&self, commit_sha: &str) -> Result<Url> {
-		let mut pipelines_url = self
-			.base_url
-			.join("pipelines")
-			.or_else(|e| Err(Error::ParseUrl { source: e }))?;
-
-		// If there are multiple pipelines for the same commit, assume the most recently updated
-		// one contains the job we want to trigger.
-		pipelines_url
-			.query_pairs_mut()
-			.clear()
-			.append_pair("sha", commit_sha)
-			.append_pair("order_by", "updated_at")
-			.append_pair("per_page", "1");
-
-		Ok(pipelines_url)
-	}
-
-	fn build_jobs_url_for_pipeline(&self, pipeline_id: i64) -> Result<Url> {
-		let mut jobs_url = self
-			.base_url
-			.join("pipelines")
-			.or_else(|e| Err(Error::ParseUrl { source: e }))?;
-
-		{
-			let mut path_segments =
-				jobs_url.path_segments_mut().or_else(|()| {
-					Err(Error::UrlCannotBeBase {
-						url: self.base_url.to_string(),
-					})
-				})?;
-
-			path_segments.extend(&[&pipeline_id.to_string(), "jobs"]);
-		}
-
-		Ok(jobs_url)
-	}
-
-	fn build_play_job_url(&self, job_id: i64) -> Result<Url> {
-		let mut play_job_url = self
-			.base_url
-			.join("jobs")
-			.or_else(|e| Err(Error::ParseUrl { source: e }))?;
-
-		{
-			let mut path_segments =
-				play_job_url.path_segments_mut().or_else(|()| {
-					Err(Error::UrlCannotBeBase {
-						url: self.base_url.to_string(),
-					})
-				})?;
-			path_segments.extend(&[&job_id.to_string(), "play"]);
-		}
-
-		Ok(play_job_url)
 	}
 }
 
@@ -255,18 +199,165 @@ fn read_response(handle: &mut Easy) -> Result<HttpResponse> {
 	Ok(HttpResponse { status, body })
 }
 
-fn build_base_url(hostname: &str, project: &str) -> Result<Url> {
-	let base_url_str = format!("https://{}", hostname);
+struct UrlBuilder {
+	base_url: Url,
+	base_path: Vec<String>,
+}
 
-	let mut base_url = Url::parse(&base_url_str)
-		.or_else(|e| Err(Error::ParseUrl { source: e }))?;
+impl UrlBuilder {
+	pub fn new(hostname: &str, project: &str) -> Result<Self> {
+		let base_url_str = format!("https://{}", hostname);
 
-	{
-		let mut path_segments = base_url
-			.path_segments_mut()
-			.or_else(|()| Err(Error::UrlCannotBeBase { url: base_url_str }))?;
-		path_segments.extend(&["api", "v4", "projects", &project]);
+		let base_url = Url::parse(&base_url_str)
+			.or_else(|e| Err(Error::ParseUrl { source: e }))?;
+
+		let base_path = vec!["api", "v4", "projects", &project]
+			.into_iter()
+			.map(|s| s.to_string())
+			.collect();
+
+		Ok(Self {
+			base_url,
+			base_path,
+		})
 	}
 
-	Ok(base_url)
+	pub fn project_url(&self) -> Result<Url> {
+		let mut project_url = self.base_url.clone();
+
+		{
+			let mut path_segments =
+				project_url.path_segments_mut().or_else(|()| {
+					Err(Error::UrlCannotBeBase {
+						url: self.base_url.to_string(),
+					})
+				})?;
+			path_segments.extend(&self.base_path);
+		}
+
+		Ok(project_url)
+	}
+
+	pub fn pipelines_url_for_commit(&self, commit_sha: &str) -> Result<Url> {
+		let mut pipelines_url = self.base_url.clone();
+
+		{
+			let mut path_segments =
+				pipelines_url.path_segments_mut().or_else(|()| {
+					Err(Error::UrlCannotBeBase {
+						url: self.base_url.to_string(),
+					})
+				})?;
+			path_segments.extend(&self.base_path);
+			path_segments.push("pipelines");
+		}
+
+		// If there are multiple pipelines for the same commit, assume the most recently updated
+		// one contains the job we want to trigger.
+		pipelines_url
+			.query_pairs_mut()
+			.clear()
+			.append_pair("sha", commit_sha)
+			.append_pair("order_by", "updated_at")
+			.append_pair("per_page", "1");
+
+		Ok(pipelines_url)
+	}
+
+	pub fn jobs_url_for_pipeline(&self, pipeline_id: i64) -> Result<Url> {
+		let mut jobs_url = self.base_url.clone();
+
+		{
+			let mut path_segments =
+				jobs_url.path_segments_mut().or_else(|()| {
+					Err(Error::UrlCannotBeBase {
+						url: self.base_url.to_string(),
+					})
+				})?;
+
+			path_segments.extend(&self.base_path);
+			path_segments.extend(&[
+				"pipelines",
+				&pipeline_id.to_string(),
+				"jobs",
+			]);
+		}
+
+		Ok(jobs_url)
+	}
+
+	pub fn play_job_url(&self, job_id: i64) -> Result<Url> {
+		let mut play_job_url = self.base_url.clone();
+
+		{
+			let mut path_segments =
+				play_job_url.path_segments_mut().or_else(|()| {
+					Err(Error::UrlCannotBeBase {
+						url: self.base_url.to_string(),
+					})
+				})?;
+
+			path_segments.extend(&self.base_path);
+			path_segments.extend(&["jobs", &job_id.to_string(), "play"]);
+		}
+
+		Ok(play_job_url)
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	fn builder() -> UrlBuilder {
+		UrlBuilder::new("gitlab.parity.io", "parity/processbot-test-repo")
+			.unwrap()
+	}
+
+	fn assert_url(url: Result<Url>, expected: &str) {
+		assert!(url.is_ok());
+		assert_eq!(&url.unwrap().to_string(), expected);
+	}
+
+	#[test]
+	fn test_project_url() {
+		let project_url = builder().project_url();
+
+		assert_url(
+			project_url,
+			"https://gitlab.parity.io/api/v4/projects/parity%2Fprocessbot-test-repo"
+		);
+	}
+
+	#[test]
+	fn test_pipelines_url_for_commit() {
+		let pipelines_url = builder().pipelines_url_for_commit(
+			"3194e877da3bb6e28df5c0a0d27abcf31b11ba60",
+		);
+
+		assert_url(
+			pipelines_url,
+			"https://gitlab.parity.io/api/v4/projects/parity%2Fprocessbot-test-repo/pipelines?sha=3194e877da3bb6e28df5c0a0d27abcf31b11ba60&order_by=updated_at&per_page=1"
+		);
+	}
+
+	#[test]
+	fn test_jobs_url_for_pipeline() {
+		let jobs_url = builder().jobs_url_for_pipeline(42);
+
+		assert_url(
+			jobs_url,
+			"https://gitlab.parity.io/api/v4/projects/parity%2Fprocessbot-test-repo/pipelines/42/jobs"
+		);
+	}
+
+	#[test]
+	fn test_play_jobs_url() {
+		let jobs_url = builder().play_job_url(23);
+
+		assert_url(
+			jobs_url,
+			"https://gitlab.parity.io/api/v4/projects/parity%2Fprocessbot-test-repo/jobs/23/play"
+		);
+	}
 }
