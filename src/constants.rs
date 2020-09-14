@@ -11,6 +11,7 @@ pub const AUTO_MERGE_INVALIDATED: &str =
 
 pub const COMPARE_RELEASE_REQUEST: &str = "bot compare substrate";
 pub const REBASE: &str = "bot rebase";
+pub const BURNIN_REQUEST: &str = "bot burnin";
 
 pub const FEATURES_KEY: &str = "features";
 

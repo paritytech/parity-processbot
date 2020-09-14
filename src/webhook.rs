@@ -10,9 +10,9 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::{
-	companion::*, config::BotConfig, constants::*, error::*, github::*,
-	github_bot::GithubBot, matrix_bot::MatrixBot, performance, process,
-	rebase::*, Result,
+	auth::GithubUserAuthenticator, companion::*, config::BotConfig,
+	constants::*, error::*, github::*, github_bot::GithubBot, gitlab_bot::*,
+	matrix_bot::MatrixBot, performance, process, rebase::*, Result,
 };
 
 /// This data gets passed along with each webhook to the webhook handler.
@@ -20,6 +20,8 @@ pub struct AppState {
 	pub db: DB,
 	pub github_bot: GithubBot,
 	pub matrix_bot: MatrixBot,
+	pub gitlab_bot: GitlabBot,
+
 	pub bot_config: BotConfig,
 	pub webhook_secret: String,
 }
@@ -349,6 +351,7 @@ async fn checks_and_status(
 /// `bot merge cancel`
 /// `bot compare substrate`
 /// `bot rebase`
+/// `bot burnin`
 ///
 /// See also README.md.
 async fn handle_comment(
@@ -374,19 +377,22 @@ async fn handle_comment(
 			},
 		)?;
 
-	if body.to_lowercase().trim() == AUTO_MERGE_REQUEST.to_lowercase().trim() {
-		// Fetch the pr to get all fields (eg. mergeable).
-		let pr = github_bot
-			.pull_request(owner, &repo_name, number)
-			.await
-			.map_err(|e| {
-				e.map_issue(Some((
-					owner.to_string(),
-					repo_name.to_string(),
-					number,
-				)))
-			})?;
+	// Fetch the pr to get all fields (eg. mergeable).
+	let pr = github_bot
+		.pull_request(owner, &repo_name, number)
+		.await
+		.map_err(|e| {
+			e.map_issue(Some((
+				owner.to_string(),
+				repo_name.to_string(),
+				number,
+			)))
+		})?;
 
+	let auth =
+		GithubUserAuthenticator::new(&requested_by, owner, &repo_name, number);
+
+	if body.to_lowercase().trim() == AUTO_MERGE_REQUEST.to_lowercase().trim() {
 		//
 		// MERGE
 		//
@@ -396,35 +402,7 @@ async fn handle_comment(
 			requested_by
 		);
 
-		// Check the user is a member of the org
-		let member = github_bot
-			.org_member(&owner, &requested_by)
-			.await
-			.map_err(|e| {
-				Error::OrganizationMembership {
-					source: Box::new(e),
-				}
-				.map_issue(Some((
-					owner.to_string(),
-					repo_name.to_string(),
-					number,
-				)))
-			})?;
-		if member != 204 {
-			Err(Error::OrganizationMembership {
-				source: Box::new(Error::Message {
-					msg: format!(
-						"{} is not a member of {}; aborting.",
-						requested_by, owner
-					),
-				}),
-			}
-			.map_issue(Some((
-				owner.to_string(),
-				repo_name.to_string(),
-				number,
-			))))?;
-		}
+		auth.check_org_membership(&github_bot).await?;
 
 		//
 		// merge allowed
@@ -470,18 +448,6 @@ async fn handle_comment(
 	} else if body.to_lowercase().trim()
 		== AUTO_MERGE_FORCE.to_lowercase().trim()
 	{
-		// Fetch the pr to get all fields (eg. mergeable).
-		let pr = github_bot
-			.pull_request(owner, &repo_name, number)
-			.await
-			.map_err(|e| {
-				e.map_issue(Some((
-					owner.to_string(),
-					repo_name.to_string(),
-					number,
-				)))
-			})?;
-
 		//
 		// MERGE
 		//
@@ -491,35 +457,7 @@ async fn handle_comment(
 			requested_by
 		);
 
-		// Check the user is a member of the org
-		let member = github_bot
-			.org_member(&owner, &requested_by)
-			.await
-			.map_err(|e| {
-				Error::OrganizationMembership {
-					source: Box::new(e),
-				}
-				.map_issue(Some((
-					owner.to_string(),
-					repo_name.to_string(),
-					number,
-				)))
-			})?;
-		if member != 204 {
-			Err(Error::OrganizationMembership {
-				source: Box::new(Error::Message {
-					msg: format!(
-						"{} is not a member of {}; aborting.",
-						requested_by, owner
-					),
-				}),
-			}
-			.map_issue(Some((
-				owner.to_string(),
-				repo_name.to_string(),
-				number,
-			))))?;
-		}
+		auth.check_org_membership(&github_bot).await?;
 
 		//
 		// merge allowed
@@ -550,18 +488,6 @@ async fn handle_comment(
 	} else if body.to_lowercase().trim()
 		== AUTO_MERGE_CANCEL.to_lowercase().trim()
 	{
-		// Fetch the pr to get all fields (eg. mergeable).
-		let pr = github_bot
-			.pull_request(owner, &repo_name, number)
-			.await
-			.map_err(|e| {
-				e.map_issue(Some((
-					owner.to_string(),
-					repo_name.to_string(),
-					number,
-				)))
-			})?;
-
 		//
 		// CANCEL MERGE
 		//
@@ -595,18 +521,6 @@ async fn handle_comment(
 		&& body.to_lowercase().trim()
 			== COMPARE_RELEASE_REQUEST.to_lowercase().trim()
 	{
-		// Fetch the pr to get all fields (eg. mergeable).
-		let pr = github_bot
-			.pull_request(owner, &repo_name, number)
-			.await
-			.map_err(|e| {
-				e.map_issue(Some((
-					owner.to_string(),
-					repo_name.to_string(),
-					number,
-				)))
-			})?;
-
 		//
 		// DIFF
 		//
@@ -676,17 +590,6 @@ async fn handle_comment(
 		}
 	} else if body.to_lowercase().trim() == REBASE.to_lowercase().trim() {
 		log::info!("Rebase {} requested by {}", html_url, requested_by);
-		// Fetch the pr to get all fields (eg. mergeable).
-		let pr = github_bot
-			.pull_request(owner, &repo_name, number)
-			.await
-			.map_err(|e| {
-				e.map_issue(Some((
-					owner.to_string(),
-					repo_name.to_string(),
-					number,
-				)))
-			})?;
 		if let PullRequest {
 			head:
 				Head {
@@ -732,9 +635,114 @@ async fn handle_comment(
 				number,
 			))))?;
 		}
+	} else if body.to_lowercase().trim() == BURNIN_REQUEST.to_lowercase().trim()
+	{
+		auth.check_org_membership(github_bot).await?;
+
+		handle_burnin_request(
+			github_bot,
+			&state.gitlab_bot,
+			&state.matrix_bot,
+			owner,
+			&requested_by,
+			&repo_name,
+			&pr,
+		)
+		.await;
 	}
 
 	Ok(())
+}
+
+async fn handle_burnin_request(
+	github_bot: &GithubBot,
+	gitlab_bot: &GitlabBot,
+	matrix_bot: &MatrixBot,
+	owner: &str,
+	requested_by: &str,
+	repo_name: &str,
+	pr: &PullRequest,
+) {
+	let make_job_link =
+		|url| format!("<a href=\"{}\">CI job for burn-in deployment</a>", url);
+
+	let unexpected_error_msg = "Starting CI job for burn-in deployment failed with an unexpected error; see logs.".to_string();
+	let mut matrix_msg: Option<String> = None;
+
+	let msg = match gitlab_bot.build_artifact(&pr.head.sha) {
+		Ok(job) => {
+			let ci_job_link = make_job_link(job.url);
+
+			match job.status {
+				JobStatus::Started => {
+					format!("{} was started successfully.", ci_job_link)
+				}
+				JobStatus::AlreadyRunning => {
+					format!("{} is already running.", ci_job_link)
+				}
+				JobStatus::Finished => format!(
+					"{} already ran and finished with status `{}`.",
+					ci_job_link, job.status_raw,
+				),
+				JobStatus::Unknown => format!(
+					"{} has unexpected status `{}`.",
+					ci_job_link, job.status_raw,
+				),
+			}
+		}
+		Err(e) => {
+			log::error!("handle_burnin_request: {}", e);
+			match e {
+				Error::GitlabJobNotFound { commit_sha } => format!(
+					"No matching CI job was found for commit `{}`",
+					commit_sha
+				),
+				Error::StartingGitlabJobFailed { url, status, body } => {
+					let ci_job_link = make_job_link(url);
+
+					matrix_msg = Some(format!(
+						"Starting {} failed with HTTP status {} and body: {}",
+						ci_job_link, status, body,
+					));
+
+					format!(
+						"Starting {} failed with HTTP status {}",
+						ci_job_link, status,
+					)
+				}
+				Error::GitlabApi {
+					method,
+					url,
+					status,
+					body,
+				} => {
+					matrix_msg = Some(format!(
+						"Request {} {} failed with reponse status {} and body: {}",
+						method, url, status, body,
+					));
+
+					unexpected_error_msg
+				}
+				_ => unexpected_error_msg,
+			}
+		}
+	};
+
+	if let Err(e) = github_bot
+		.create_issue_comment(owner, &repo_name, pr.number, &msg)
+		.await
+	{
+		log::error!("Error posting GitHub comment: {}", e);
+	}
+
+	let full_matrix_msg = format!(
+		"Received burn-in request for <a href=\"{}\">{}#{}</a> from {}<br />\n{}",
+		pr.html_url, repo_name, pr.number, requested_by, matrix_msg.unwrap_or(msg),
+	);
+
+	if let Err(e) = matrix_bot.send_html_to_default(&full_matrix_msg) {
+		log::error!("Error sending Matrix message: {}", e);
+	}
 }
 
 /// Check if the pull request is mergeable and approved.

@@ -70,6 +70,11 @@ spec:
                   secretKeyRef:
                       name: env-secrets
                       key: WEBHOOK_SECRET
+            - name: GITLAB_PRIVATE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: env-secrets
+                  key: GITLAB_PRIVATE_TOKEN
             - name: RUST_BACKTRACE
               value: full
             - name: RUST_LOG
@@ -128,6 +133,14 @@ spec:
               value: sjeohp-test-org
             - name: ENVIRONMENT
               value: {{ .Values.environment }}
+            - name: GITLAB_HOSTNAME
+              value: gitlab.parity.io
+            - name: GITLAB_PROJECT
+              value: parity/polkadot
+            - name: GITLAB_JOB_NAME
+              value: build-linux-release-pr
+
+
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim

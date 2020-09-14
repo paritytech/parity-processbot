@@ -161,6 +161,39 @@ pub fn send_message(
 	handle.perform().or_else(error::map_curl_error)
 }
 
+pub fn send_html_message(
+	homeserver: &str,
+	access_token: &str,
+	room_id: &str,
+	body: &str,
+) -> Result<()> {
+	let mut handle = Easy::new();
+	handle
+		.url(
+			format!(
+				"{}/_matrix/client/r0/rooms/{}/send/m.room.message?access_token={}",
+				homeserver, room_id, access_token
+			)
+			.as_ref(),
+		)
+		.or_else(error::map_curl_error)?;
+	handle
+		.post_fields_copy(
+			serde_json::json!(
+				{
+					"msgtype": "m.text",
+					"format": "org.matrix.custom.html",
+					"body": "",
+					"formatted_body": body
+				}
+			)
+			.to_string()
+			.as_bytes(),
+		)
+		.or_else(error::map_curl_error)?;
+	handle.perform().or_else(error::map_curl_error)
+}
+
 /// If the pattern is recognised, return the full matrix id.
 /// Otherwise, return None.
 pub fn parse_id(matrix_id: &str) -> Option<String> {

@@ -9,6 +9,7 @@
 - `bot compare substrate` to see a diff between current branch's Substrate
   version and the latest Polkadot release's Substrate version.
 - `bot rebase` to merge origin/master.
+- `bot burnin` to build and deploy the PR for a burn-in test.
 
 ### FAQ
 - Who are `core-devs`? 

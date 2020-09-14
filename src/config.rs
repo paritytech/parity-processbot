@@ -44,6 +44,12 @@ pull request author or publicly to the default channel if the author's Matrix ha
 `PUBLIC_REVIEW_REMINDER_PING`: Seconds between notifications reminding a reviewer to review a pull request, sent publicly to the relevant project room, via Matrix.
 
 `TEST_REPO_NAME`: Name of a Github repository to be used for testing.
+
+`GITLAB_HOSTNAME`: Hostname of the Gitlab server used for burn-in deployment related CI jobs.
+
+`GITLAB_PROJECT`: Name of the project in Gitlab where CI jobs for burn-in deployments can be found.
+
+`GITLAB_PRIVATE_TOKEN`: Authentication token for the Gitlab server at GITLAB_HOSTNAME.
 */
 
 #[derive(Debug, Clone)]
@@ -63,6 +69,10 @@ pub struct MainConfig {
 	pub bamboo_tick_secs: u64,
 	/// if true then matrix notifications will not be sent
 	pub matrix_silent: bool,
+	pub gitlab_hostname: String,
+	pub gitlab_project: String,
+	pub gitlab_job_name: String,
+	pub gitlab_private_token: String,
 }
 
 impl MainConfig {
@@ -103,6 +113,15 @@ impl MainConfig {
 		let private_key = std::fs::read(&private_key_path)
 			.expect("Couldn't find private key.");
 
+		let gitlab_hostname =
+			dotenv::var("GITLAB_HOSTNAME").expect("GITLAB_HOSTNAME");
+		let gitlab_project =
+			dotenv::var("GITLAB_PROJECT").expect("GITLAB_PROJECT");
+		let gitlab_job_name =
+			dotenv::var("GITLAB_JOB_NAME").expect("GITLAB_JOB_NAME");
+		let gitlab_private_token =
+			dotenv::var("GITLAB_PRIVATE_TOKEN").expect("GITLAB_PRIVATE_TOKEN");
+
 		Self {
 			environment,
 			test_repo,
@@ -118,6 +137,10 @@ impl MainConfig {
 			main_tick_secs,
 			bamboo_tick_secs,
 			matrix_silent,
+			gitlab_hostname,
+			gitlab_project,
+			gitlab_job_name,
+			gitlab_private_token,
 		}
 	}
 }

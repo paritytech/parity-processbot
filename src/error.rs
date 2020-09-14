@@ -123,6 +123,48 @@ pub enum Error {
 	Bincode {
 		source: bincode::Error,
 	},
+
+	GitlabJobNotFound {
+		commit_sha: String,
+	},
+
+	// Gitlab API responded with an HTTP status >299 to POST /jobs/<id>/play
+	#[snafu(display(
+		"Starting CI job {} failed with HTTP status {} and body: {}",
+		url,
+		status,
+		body
+	))]
+	StartingGitlabJobFailed {
+		url: String,
+		status: u32,
+		body: String,
+	},
+
+	// Gitlab API responded with an HTTP status >299 to requests other than POST /jobs/<id>/play
+	#[snafu(display(
+		"{} {} failed with HTTP status {} and body: {}",
+		method,
+		url,
+		status,
+		body
+	))]
+	GitlabApi {
+		method: String,
+		url: String,
+		status: u32,
+		body: String,
+	},
+
+	#[snafu(display("Failed parsing URL: {}", source))]
+	ParseUrl {
+		source: url::ParseError,
+	},
+
+	#[snafu(display("URL {} cannot be base", url))]
+	UrlCannotBeBase {
+		url: String,
+	},
 }
 
 impl Error {
