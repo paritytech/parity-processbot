@@ -103,6 +103,7 @@ dockerize-processbot:
       --set processbot.secret.BAMBOO_TOKEN=${BAMBOO_TOKEN}
       --set processbot.secret.MATRIX_ACCESS_TOKEN=${MATRIX_ACCESS_TOKEN}
       --set processbot.secret.WEBHOOK_SECRET=${WEBHOOK_SECRET}
+      --set processbot.secret.GITLAB_PRIVATE_TOKEN=${GITLAB_PRIVATE_TOKEN}
 
 deploy-staging:
   stage:                           deploy-staging
