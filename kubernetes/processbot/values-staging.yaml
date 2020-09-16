@@ -1,2 +1,5 @@
 environment: staging
 ingressDomain: processbot.test-installations.parity.io
+processbot:
+  config:
+    GITHUB_APP_ID: 81160
