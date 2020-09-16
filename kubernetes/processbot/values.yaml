@@ -1,3 +1,4 @@
+orgName: paritytech
 dockerTag: from-gitlab-vars
 processbot:
   config:
