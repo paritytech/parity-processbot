@@ -3,3 +3,4 @@ ingressDomain: processbot.parity.io
 processbot:
   config:
     GITHUB_APP_ID: 51719
+    GITLAB_PROJECT: parity/polkadot

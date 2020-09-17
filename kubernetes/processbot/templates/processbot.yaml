@@ -136,7 +136,7 @@ spec:
             - name: GITLAB_HOSTNAME
               value: gitlab.parity.io
             - name: GITLAB_PROJECT
-              value: parity/polkadot
+              value: {{ .Values.processbot.config.GITLAB_PROJECT }}
             - name: GITLAB_JOB_NAME
               value: build-linux-release-pr
 
