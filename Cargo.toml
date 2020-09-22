@@ -1,6 +1,5 @@
 [package]
 name = "parity-processbot"
-version = "0.1.0"
 authors = ["Joseph Mark <sjeohp@gmail.com>"]
 edition = "2018"
 
