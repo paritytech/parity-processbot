@@ -86,7 +86,7 @@ spec:
             - name: WEBHOOK_PORT
               value: {{ quote .Values.processbot.config.WEBHOOK_PORT }}
             - name: GITHUB_APP_ID
-              value: "51719"
+              value: {{ quote .Values.processbot.config.GITHUB_APP_ID }}
             - name: DB_PATH
               value: /usr/local/share/db
             - name: BAMBOO_TICK_SECS
@@ -94,7 +94,7 @@ spec:
             - name: MATRIX_SILENT
               value: "false"
             - name: MATRIX_DEFAULT_CHANNEL_ID
-              value: "!ZXvnxSiXstTeRmkMGk:matrix.parity.io" 
+              value: "!ZXvnxSiXstTeRmkMGk:matrix.parity.io"
             - name: MAIN_TICK_SECS
               value: "300"
             - name: MATRIX_HOMESERVER
@@ -126,7 +126,7 @@ spec:
             - name: MIN_REVIEWERS
               value: "2"
             - name: LOGS_ROOM_ID
-              value: "!ZXvnxSiXstTeRmkMGk:matrix.parity.io" 
+              value: "!ZXvnxSiXstTeRmkMGk:matrix.parity.io"
             - name: TEST_REPO_NAME
               value: test-repo
             - name: TEST_INSTALLATION_LOGIN
@@ -136,7 +136,7 @@ spec:
             - name: GITLAB_HOSTNAME
               value: gitlab.parity.io
             - name: GITLAB_PROJECT
-              value: parity/polkadot
+              value: {{ .Values.processbot.config.GITLAB_PROJECT }}
             - name: GITLAB_JOB_NAME
               value: build-linux-release-pr
 
