@@ -73,3 +73,10 @@ In the repository's root directory. Eg:
  - The environment variables for both staging and production live in the helm `kubernetes/processbot/values*.yml` files. If you add one, it also needs to be added in `templates/processbot.yaml`.
  - If any secrets need to be changed, contact the devops team.
 
+## Staging Environment
+
+The staging environment is deployed in the Kubernetes cluster `parity-stg` (GCP project
+`parity-stg`). There is a separate Github App for it and
+[a (private) repository that contains the Polkadot code](https://github.com/paritytech/polkadot-for-processbot-staging),
+which has this app installed. This repo is connected to [a (private) project on Gitlab](https://gitlab.parity.io/parity/polkadot-for-processbot-staging).
+
