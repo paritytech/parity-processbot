@@ -15,6 +15,7 @@ pub enum JobStatus {
 	AlreadyRunning,
 	Finished,
 	Unknown,
+    Created,
 }
 
 pub struct Job {
@@ -61,6 +62,7 @@ impl GitlabBot {
 
 		// JobStatus is used by the caller to decide what message to post on Github/Matrix.
 		let status = match job.status.to_lowercase().trim() {
+            "created" => JobStatus::Created,
 			"manual" => JobStatus::Started,
 			"running" => JobStatus::AlreadyRunning,
 			"success" => JobStatus::Finished,
@@ -69,7 +71,19 @@ impl GitlabBot {
 			_ => JobStatus::Unknown,
 		};
 
-		if status == JobStatus::Started {
+        if status == JobStatus::Created {
+            let response_message = "CI job for burn-in deployment is not available yet. \
+                                    Please try again when previous jobs in the pipeline have succeeded.";
+            let response = post(&response_message, &self.private_token)?;
+
+			if response.status > 299 {
+				return Err(Error::StartingGitlabJobFailed {
+					status: response.status,
+					url: job.web_url,
+					body: response.body,
+				});
+			}
+        } else if status == JobStatus::Started {
 			let play_job_url = self.urls.play_job_url(job.id)?;
 			let response = post(&play_job_url, &self.private_token)?;
 
