@@ -113,7 +113,8 @@ pub async fn get_process(
 	let process = process
 		.into_iter()
 		.filter(|proc| {
-			let keep = projects.iter().any(|proj| proj.name == proc.project_name);
+			let keep =
+				projects.iter().any(|proj| proj.name == proc.project_name);
 			if !keep {
 				log::warn!(
 					"'{proc_name}' doesn not match any projects in repository '{repo_name}'",
