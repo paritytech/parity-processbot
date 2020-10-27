@@ -26,12 +26,12 @@ pub fn login(
 		.url(format!("{}/_matrix/client/r0/login", homeserver).as_ref())
 		.or_else(error::map_curl_error)?;
 	handle
-                .post_fields_copy(
-                        serde_json::json!({ "type": "m.login.password", "identifier": { "type": "m.id.thirdparty", "medium": "email", "address": username }, "password": password })
-                                .to_string()
-                                .as_bytes(),
-                )
-                .or_else(error::map_curl_error)?;
+		.post_fields_copy(
+			serde_json::json!({ "type": "m.login.password", "identifier": { "type": "m.id.thirdparty", "medium": "email", "address": username }, "password": password })
+				.to_string()
+				.as_bytes(),
+		)
+		.or_else(error::map_curl_error)?;
 	{
 		let mut transfer = handle.transfer();
 		transfer

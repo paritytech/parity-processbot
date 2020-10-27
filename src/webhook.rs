@@ -1175,20 +1175,20 @@ async fn performance_regression(
 			Ok(None) => {
 				log::error!("Failed to complete performance regression.");
 				let _ = github_bot
-                    .create_issue_comment(owner, &repo_name, pr.number, "Failed to complete performance regression; see logs; continuing merge.")
-                    .await
-                    .map_err(|e| {
-                        log::error!("Error posting comment: {}", e);
-                    });
+					.create_issue_comment(owner, &repo_name, pr.number, "Failed to complete performance regression; see logs; continuing merge.")
+					.await
+					.map_err(|e| {
+						log::error!("Error posting comment: {}", e);
+					});
 			}
 			Err(e) => {
 				log::error!("Error running performance regression: {}", e);
 				let _ = github_bot
-                    .create_issue_comment(owner, &repo_name, pr.number, "Error running performance regression; see logs; continuing merge.")
-                    .await
-                    .map_err(|e| {
-                        log::error!("Error posting comment: {}", e);
-                    });
+					.create_issue_comment(owner, &repo_name, pr.number, "Error running performance regression; see logs; continuing merge.")
+					.await
+					.map_err(|e| {
+						log::error!("Error posting comment: {}", e);
+					});
 			}
 		}
 	}
@@ -1369,11 +1369,11 @@ async fn handle_error(e: Error, state: &AppState) {
 					}
 				}
 				Error::ProcessFile { source } => {
-                    match *source {
-                        Error::Response {
-                            body: serde_json::Value::Object(m),
-                            ..
-                        } => format!("Error getting Process.json: `{}`", m["message"]),
+					match *source {
+						Error::Response {
+							body: serde_json::Value::Object(m),
+							..
+						} => format!("Error getting Process.json: `{}`", m["message"]),
 						Error::Http { source, .. } => format!(
 							"Network error getting Process.json:\n\n{}",
 							source
@@ -1382,7 +1382,7 @@ async fn handle_error(e: Error, state: &AppState) {
 							"Unexpected error getting Process.json:\n\n{}",
 							e
 						),
-                    }
+					}
 				}
 				Error::ProcessInfo { } => {
 					format!("Missing process info; check that the PR belongs to a project column.\n\n{}", TROUBLESHOOT_MSG)

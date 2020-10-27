@@ -111,19 +111,19 @@ pub async fn get_process(
 
 	// ignore process entries that do not match a project in the repository
 	let process = process
-        .into_iter()
-        .filter(|proc| {
-            let keep = projects.iter().any(|proj| proj.name == proc.project_name);
-            if !keep {
-                log::warn!(
-                    "'{proc_name}' doesn not match any projects in repository '{repo_name}'",
-                    proc_name = proc.project_name,
-                    repo_name = repo_name,
-                );
-            }
-            keep
-        })
-        .collect::<Vec<ProcessInfo>>();
+		.into_iter()
+		.filter(|proc| {
+			let keep = projects.iter().any(|proj| proj.name == proc.project_name);
+			if !keep {
+				log::warn!(
+					"'{proc_name}' doesn not match any projects in repository '{repo_name}'",
+					proc_name = proc.project_name,
+					repo_name = repo_name,
+				);
+			}
+			keep
+		})
+		.collect::<Vec<ProcessInfo>>();
 
 	combined_process_info(
 		github_bot,

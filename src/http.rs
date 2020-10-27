@@ -17,54 +17,54 @@ pub struct Client {
 }
 
 macro_rules! impl_methods_with_body {
-    ($($method:ident : $method_response_fn:ident),*) => {
-        $(
-            pub async fn $method<'b, I, B, T>(&self, url: I, body: &B) -> Result<T>
-            where
-                I: Into<Cow<'b, str>> + Clone,
-                B: Serialize + Clone,
-                T: serde::de::DeserializeOwned,
-            {
-                self.$method_response_fn(url, body)
-                    .await?
-                    .json::<T>()
-                    .await
-                    .context(error::Http)
+	($($method:ident : $method_response_fn:ident),*) => {
+		$(
+			pub async fn $method<'b, I, B, T>(&self, url: I, body: &B) -> Result<T>
+			where
+				I: Into<Cow<'b, str>> + Clone,
+				B: Serialize + Clone,
+				T: serde::de::DeserializeOwned,
+			{
+				self.$method_response_fn(url, body)
+					.await?
+					.json::<T>()
+					.await
+					.context(error::Http)
 
-            }
+			}
 
-            pub async fn $method_response_fn<'b, I, B>(
-                &self,
-                url: I,
-                body: &B,
-            ) -> Result<Response>
-            where
-                I: Into<Cow<'b, str>> + Clone,
-                B: Serialize + Clone,
-            {
-                // retry up to 5 times if request times out
-                let mut retries = 0;
-                'retry: loop {
-                    let res = self.execute(
-                        self.client
-                        .$method(&*url.clone().into())
-                        .json(&body.clone()),
-                    )
-                    .await;
-                    // retry if timeout
-                    if let Err(error::Error::Http { source: e, .. }) = res.as_ref() {
-                        if e.is_timeout() && retries < 5 {
-                            log::debug!("Request timed out; retrying");
-                            retries += 1;
-                            continue 'retry;
-                        }
-                    }
-                    return res;
-                }
-            }
+			pub async fn $method_response_fn<'b, I, B>(
+				&self,
+				url: I,
+				body: &B,
+			) -> Result<Response>
+			where
+				I: Into<Cow<'b, str>> + Clone,
+				B: Serialize + Clone,
+			{
+				// retry up to 5 times if request times out
+				let mut retries = 0;
+				'retry: loop {
+					let res = self.execute(
+						self.client
+						.$method(&*url.clone().into())
+						.json(&body.clone()),
+					)
+					.await;
+					// retry if timeout
+					if let Err(error::Error::Http { source: e, .. }) = res.as_ref() {
+						if e.is_timeout() && retries < 5 {
+							log::debug!("Request timed out; retrying");
+							retries += 1;
+							continue 'retry;
+						}
+					}
+					return res;
+				}
+			}
 
-        )*
-    }
+		)*
+	}
 }
 
 /// Checks the response's status and maps into an `Err` branch if

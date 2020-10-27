@@ -68,9 +68,9 @@ impl MatrixBot {
 			self.send_private_message(db, &matrix_id, msg)
 		} else {
 			log::error!(
-                "Couldn't send a message to {}; either their Github or Matrix handle is not set in Bamboo",
-                github_login
-            );
+				"Couldn't send a message to {}; either their Github or Matrix handle is not set in Bamboo",
+				github_login
+			);
 			Ok(())
 		}
 	}
@@ -92,9 +92,9 @@ impl MatrixBot {
 			self.send_private_message(db, &matrix_id, msg)
 		} else {
 			log::error!(
-                "Couldn't send a message to {}; either their Github or Matrix handle is not set in Bamboo",
-                github_login
-            );
+				"Couldn't send a message to {}; either their Github or Matrix handle is not set in Bamboo",
+				github_login
+			);
 			self.send_to_default(msg)
 		}
 	}
