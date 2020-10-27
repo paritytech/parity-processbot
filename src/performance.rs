@@ -184,18 +184,18 @@ async fn regression_inner(
 		if merge_master.success() {
 			// bench temp branch
 			let head_res: Vec<BenchResult> = serde_json::from_str(&String::from_utf8_lossy(&Command::new("cargo")
-                .arg("run")
-                .arg("--release")
-                .arg("-p")
-                .arg("node-bench")
-                .arg("--quiet")
-                .arg("node::import::wasm::sr25519::transfer_keep_alive::rocksdb::medium")
-                .arg("--json")
-                .current_dir(format!("./{}", base_repo))
-                .output()
-                .await
-                .context(Tokio)?
-                .stdout)).context(Json)?;
+				.arg("run")
+				.arg("--release")
+				.arg("-p")
+				.arg("node-bench")
+				.arg("--quiet")
+				.arg("node::import::wasm::sr25519::transfer_keep_alive::rocksdb::medium")
+				.arg("--json")
+				.current_dir(format!("./{}", base_repo))
+				.output()
+				.await
+				.context(Tokio)?
+				.stdout)).context(Json)?;
 			head_reg = head_res.first().map(|r| r.average);
 		} else {
 			// abort merge

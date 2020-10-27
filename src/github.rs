@@ -218,6 +218,7 @@ pub struct Contents {
 pub enum Event {
 	AddedToProject,
 	Assigned,
+	AutomaticBaseChangeSucceeded,
 	Closed,
 	CommentDeleted,
 	ConvertedNoteToIssue,
