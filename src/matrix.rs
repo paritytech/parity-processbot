@@ -22,25 +22,20 @@ pub fn login(
 ) -> Result<LoginResponse> {
 	let mut dst = Vec::new();
 	let mut handle = Easy::new();
-	handle
-		.url(format!("{}/_matrix/client/r0/login", homeserver).as_ref())
-		.or_else(error::map_curl_error)?;
+	handle.url(format!("{}/_matrix/client/r0/login", homeserver).as_ref())?;
 	handle
 		.post_fields_copy(
 			serde_json::json!({ "type": "m.login.password", "identifier": { "type": "m.id.thirdparty", "medium": "email", "address": username }, "password": password })
 				.to_string()
 				.as_bytes(),
-		)
-		.or_else(error::map_curl_error)?;
+		)?;
 	{
 		let mut transfer = handle.transfer();
-		transfer
-			.write_function(|data| {
-				dst.extend_from_slice(data);
-				Ok(data.len())
-			})
-			.or_else(error::map_curl_error)?;
-		transfer.perform().or_else(error::map_curl_error)?;
+		transfer.write_function(|data| {
+			dst.extend_from_slice(data);
+			Ok(data.len())
+		})?;
+		transfer.perform()?;
 	}
 	dbg!(String::from_utf8(dst)
 		.context(error::Utf8)
@@ -50,25 +45,21 @@ pub fn login(
 pub fn sync(homeserver: &str, access_token: &str) -> Result<String> {
 	let mut dst = Vec::new();
 	let mut handle = Easy::new();
-	handle
-		.url(
-			format!(
-				"{}/_matrix/client/r0/sync?access_token={}",
-				homeserver, access_token
-			)
-			.as_ref(),
+	handle.url(
+		format!(
+			"{}/_matrix/client/r0/sync?access_token={}",
+			homeserver, access_token
 		)
-		.or_else(error::map_curl_error)?;
-	handle.get(false).or_else(error::map_curl_error)?;
+		.as_ref(),
+	)?;
+	handle.get(false)?;
 	{
 		let mut transfer = handle.transfer();
-		transfer
-			.write_function(|data| {
-				dst.extend_from_slice(data);
-				Ok(data.len())
-			})
-			.or_else(error::map_curl_error)?;
-		transfer.perform().or_else(error::map_curl_error)?;
+		transfer.write_function(|data| {
+			dst.extend_from_slice(data);
+			Ok(data.len())
+		})?;
+		transfer.perform()?;
 	}
 	String::from_utf8(dst).context(error::Utf8)
 }
@@ -79,31 +70,25 @@ pub fn create_room(
 ) -> Result<CreateRoomResponse> {
 	let mut dst = Vec::new();
 	let mut handle = Easy::new();
-	handle
-		.url(
-			format!(
-				"{}/_matrix/client/r0/createRoom?access_token={}",
-				homeserver, access_token
-			)
-			.as_ref(),
+	handle.url(
+		format!(
+			"{}/_matrix/client/r0/createRoom?access_token={}",
+			homeserver, access_token
 		)
-		.or_else(error::map_curl_error)?;
-	handle
-		.post_fields_copy(
-			serde_json::json!({ "room_alias": "" })
-				.to_string()
-				.as_bytes(),
-		)
-		.or_else(error::map_curl_error)?;
+		.as_ref(),
+	)?;
+	handle.post_fields_copy(
+		serde_json::json!({ "room_alias": "" })
+			.to_string()
+			.as_bytes(),
+	)?;
 	{
 		let mut transfer = handle.transfer();
-		transfer
-			.write_function(|data| {
-				dst.extend_from_slice(data);
-				Ok(data.len())
-			})
-			.or_else(error::map_curl_error)?;
-		transfer.perform().or_else(error::map_curl_error)?;
+		transfer.write_function(|data| {
+			dst.extend_from_slice(data);
+			Ok(data.len())
+		})?;
+		transfer.perform()?;
 	}
 	serde_json::from_str(String::from_utf8(dst).as_ref().unwrap())
 		.context(error::Json)
@@ -116,23 +101,19 @@ pub fn invite(
 	user_id: &str,
 ) -> Result<()> {
 	let mut handle = Easy::new();
-	handle
-		.url(
-			format!(
-				"{}/_matrix/client/r0/rooms/{}/invite?access_token={}",
-				homeserver, room_id, access_token
-			)
-			.as_ref(),
+	handle.url(
+		format!(
+			"{}/_matrix/client/r0/rooms/{}/invite?access_token={}",
+			homeserver, room_id, access_token
 		)
-		.or_else(error::map_curl_error)?;
-	handle
-		.post_fields_copy(
-			serde_json::json!({ "user_id": user_id })
-				.to_string()
-				.as_bytes(),
-		)
-		.or_else(error::map_curl_error)?;
-	handle.perform().or_else(error::map_curl_error)
+		.as_ref(),
+	)?;
+	handle.post_fields_copy(
+		serde_json::json!({ "user_id": user_id })
+			.to_string()
+			.as_bytes(),
+	)?;
+	handle.perform().map_err(From::from)
 }
 
 pub fn send_message(
@@ -142,23 +123,19 @@ pub fn send_message(
 	body: &str,
 ) -> Result<()> {
 	let mut handle = Easy::new();
-	handle
-		.url(
-			format!(
-				"{}/_matrix/client/r0/rooms/{}/send/m.room.message?access_token={}",
-				homeserver, room_id, access_token
-			)
-			.as_ref(),
+	handle.url(
+		format!(
+			"{}/_matrix/client/r0/rooms/{}/send/m.room.message?access_token={}",
+			homeserver, room_id, access_token
 		)
-		.or_else(error::map_curl_error)?;
-	handle
-		.post_fields_copy(
-			serde_json::json!({ "msgtype": "m.text", "body": body })
-				.to_string()
-				.as_bytes(),
-		)
-		.or_else(error::map_curl_error)?;
-	handle.perform().or_else(error::map_curl_error)
+		.as_ref(),
+	)?;
+	handle.post_fields_copy(
+		serde_json::json!({ "msgtype": "m.text", "body": body })
+			.to_string()
+			.as_bytes(),
+	)?;
+	handle.perform().map_err(From::from)
 }
 
 pub fn send_html_message(
@@ -168,30 +145,26 @@ pub fn send_html_message(
 	body: &str,
 ) -> Result<()> {
 	let mut handle = Easy::new();
-	handle
-		.url(
-			format!(
-				"{}/_matrix/client/r0/rooms/{}/send/m.room.message?access_token={}",
-				homeserver, room_id, access_token
-			)
-			.as_ref(),
+	handle.url(
+		format!(
+			"{}/_matrix/client/r0/rooms/{}/send/m.room.message?access_token={}",
+			homeserver, room_id, access_token
 		)
-		.or_else(error::map_curl_error)?;
-	handle
-		.post_fields_copy(
-			serde_json::json!(
-				{
-					"msgtype": "m.text",
-					"format": "org.matrix.custom.html",
-					"body": "",
-					"formatted_body": body
-				}
-			)
-			.to_string()
-			.as_bytes(),
+		.as_ref(),
+	)?;
+	handle.post_fields_copy(
+		serde_json::json!(
+			{
+				"msgtype": "m.text",
+				"format": "org.matrix.custom.html",
+				"body": "",
+				"formatted_body": body
+			}
 		)
-		.or_else(error::map_curl_error)?;
-	handle.perform().or_else(error::map_curl_error)
+		.to_string()
+		.as_bytes(),
+	)?;
+	handle.perform().map_err(From::from)
 }
 
 /// If the pattern is recognised, return the full matrix id.

@@ -145,7 +145,7 @@ struct HttpResponse {
 // (aka web_url).
 fn get(url: &Url, private_token: &str) -> Result<HttpResponse> {
 	let mut handle = prepare_handle(url, private_token)?;
-	handle.get(false).or_else(map_curl_error)?;
+	handle.get(false)?;
 
 	let response = read_response(&mut handle)?;
 	if response.status > 299 {
@@ -161,21 +161,19 @@ fn get(url: &Url, private_token: &str) -> Result<HttpResponse> {
 
 fn post(url: &Url, private_token: &str) -> Result<HttpResponse> {
 	let mut handle = prepare_handle(url, private_token)?;
-	handle.post(true).or_else(map_curl_error)?;
+	handle.post(true)?;
 	read_response(&mut handle)
 }
 
 fn prepare_handle(url: &Url, private_token: &str) -> Result<Easy> {
 	let mut headers = curl::easy::List::new();
-	headers
-		.append(&format!("Private-Token: {}", private_token))
-		.or_else(map_curl_error)?;
+	headers.append(&format!("Private-Token: {}", private_token))?;
 
 	let mut handle = Easy::new();
-	handle.http_headers(headers).or_else(map_curl_error)?;
-	handle.follow_location(true).or_else(map_curl_error)?;
-	handle.max_redirections(2).or_else(map_curl_error)?;
-	handle.url(&url.to_string()).or_else(map_curl_error)?;
+	handle.http_headers(headers)?;
+	handle.follow_location(true)?;
+	handle.max_redirections(2)?;
+	handle.url(&url.to_string())?;
 	Ok(handle)
 }
 
@@ -183,16 +181,14 @@ fn read_response(handle: &mut Easy) -> Result<HttpResponse> {
 	let mut dst = Vec::new();
 	{
 		let mut transfer = handle.transfer();
-		transfer
-			.write_function(|data| {
-				dst.extend_from_slice(data);
-				Ok(data.len())
-			})
-			.or_else(map_curl_error)?;
-		transfer.perform().or_else(map_curl_error)?;
+		transfer.write_function(|data| {
+			dst.extend_from_slice(data);
+			Ok(data.len())
+		})?;
+		transfer.perform()?;
 	}
 
-	let status = handle.response_code().or_else(map_curl_error)?;
+	let status = handle.response_code()?;
 	let body =
 		String::from_utf8(dst).or_else(|e| Err(Error::Utf8 { source: e }))?;
 
