@@ -42,7 +42,7 @@ fn verify(
 	secret: &[u8],
 	msg: &[u8],
 	signature: &[u8],
-) -> std::result::Result<(), ring::error::Unspecified> {
+) -> Result<(), ring::error::Unspecified> {
 	let key = hmac::Key::new(hmac::HMAC_SHA1_FOR_LEGACY_USE_ONLY, secret);
 	hmac::verify(&key, msg, signature)
 }
