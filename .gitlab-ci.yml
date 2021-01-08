@@ -13,7 +13,7 @@ stages:
   - deploy
 
 .docker-env:                       &docker-env
-  image:                           paritytech/ci-linux:production
+  image:                           paritytech/ink-ci-linux:production
   before_script:
     - rustup show
     - cargo --version
@@ -35,7 +35,6 @@ check:
   stage:                           check
   <<:                              *docker-env
   script:
-    - rustup component add rustfmt
     - cargo fmt --all -- --check
 
 #### stage:                        test
@@ -82,8 +81,6 @@ dockerize-processbot:
   needs:
     - job:                         test-build
       artifacts:                   true
-  environment:
-    name:                          parity-build
   only:
     - tags
 

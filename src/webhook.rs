@@ -1368,26 +1368,27 @@ async fn handle_error(e: Error, state: &AppState) {
 						),
 					}
 				}
-				Error::ProcessFile { source } => {
-					match *source {
-						Error::Response {
-							body: serde_json::Value::Object(m),
-							..
-						} => format!("Error getting Process.json: `{}`", m["message"]),
-						Error::Http { source, .. } => format!(
-							"Network error getting Process.json:\n\n{}",
-							source
-						),
-						e => format!(
-							"Unexpected error getting Process.json:\n\n{}",
-							e
-						),
-					}
-				}
-				Error::ProcessInfo { } => {
+				Error::ProcessFile { source } => match *source {
+					Error::Response {
+						body: serde_json::Value::Object(m),
+						..
+					} => format!(
+						"Error getting Process.json: `{}`",
+						m["message"]
+					),
+					Error::Http { source, .. } => format!(
+						"Network error getting Process.json:\n\n{}",
+						source
+					),
+					e => format!(
+						"Unexpected error getting Process.json:\n\n{}",
+						e
+					),
+				},
+				Error::ProcessInfo {} => {
 					format!("Missing process info; check that the PR belongs to a project column.\n\n{}", TROUBLESHOOT_MSG)
 				}
-				Error::Approval { } => {
+				Error::Approval {} => {
 					format!("Missing approval from the project owner or a minimum of core developers.\n\n{}", TROUBLESHOOT_MSG)
 				}
 				Error::HeadChanged { commit_sha } => {
