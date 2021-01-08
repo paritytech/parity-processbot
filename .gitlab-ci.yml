@@ -13,7 +13,7 @@ stages:
   - deploy
 
 .docker-env:                       &docker-env
-  image:                           paritytech/ink-ci-linux:production
+  image:                           paritytech/ci-linux:production
   before_script:
     - rustup show
     - cargo --version
@@ -35,6 +35,7 @@ check:
   stage:                           check
   <<:                              *docker-env
   script:
+    - rustup component add rustfmt
     - cargo fmt --all -- --check
 
 #### stage:                        test
