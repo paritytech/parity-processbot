@@ -68,7 +68,6 @@ test-build:
   script:
     - cd ./artifacts
     - buildah bud 
-      --squash
       --format=docker
       --tag "$DOCKER_IMAGE:$CI_COMMIT_REF_NAME" .
     - echo "$Docker_Hub_Pass_Parity" |
@@ -83,8 +82,6 @@ dockerize-processbot:
   needs:
     - job:                         test-build
       artifacts:                   true
-  environment:
-    name:                          parity-build
   only:
     - tags
 
