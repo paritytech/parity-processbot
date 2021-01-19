@@ -299,6 +299,24 @@ impl UrlBuilder {
 
 		Ok(play_job_url)
 	}
+
+	pub fn create_file_url(&self, path: &str) -> Result<Url> {
+		let mut create_file_url = self.base_url.clone();
+
+		{
+			let mut path_segments =
+				create_file_url.path_segments_mut().or_else(|()| {
+					Err(Error::UrlCannotBeBase {
+						url: self.base_url.to_string(),
+					})
+				})?;
+
+			path_segments.extend(&self.base_path);
+			path_segments.extend(&["repository", "files", &path.to_string()]);
+		}
+
+		Ok(create_file_url)
+	}
 }
 
 #[cfg(test)]
@@ -354,6 +372,17 @@ mod tests {
 		assert_url(
 			jobs_url,
 			"https://gitlab.parity.io/api/v4/projects/parity%2Fprocessbot-test-repo/jobs/23/play"
+		);
+	}
+
+	#[test]
+	fn test_create_file_url() {
+		let cf_url =
+			builder().create_file_url("requests/request-1610469388.toml");
+
+		assert_url(
+			cf_url,
+			"https://gitlab.parity.io/api/v4/projects/parity%2Fprocessbot-test-repo/repository/files/requests%2Frequest-1610469388.toml"
 		);
 	}
 }
