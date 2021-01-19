@@ -68,6 +68,25 @@ impl GitlabBot {
 		})
 	}
 
+	pub async fn create_file(
+		&self,
+		path: &str,
+		branch: &str,
+		commit_msg: &str,
+		content: &str,
+	) -> Result<()> {
+		let body = serde_json::json!({
+			"author_name": "processbot",
+			"branch": branch,
+			"commit_message": commit_msg,
+			"content": content
+		});
+
+		let url = self.urls.create_file_url(path)?;
+		self.client.post(url).json(&body).send().await?;
+		Ok(())
+	}
+
 	pub async fn build_artifact(&self, commit_sha: &str) -> Result<Job> {
 		let job = self.fetch_job(commit_sha).await?;
 
