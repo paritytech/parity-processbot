@@ -669,7 +669,7 @@ async fn handle_burnin_request(
 	let unexpected_error_msg = "Starting CI job for burn-in deployment failed with an unexpected error; see logs.".to_string();
 	let mut matrix_msg: Option<String> = None;
 
-	let msg = match gitlab_bot.build_artifact(&pr.head.sha) {
+	let msg = match gitlab_bot.build_artifact(&pr.head.sha).await {
 		Ok(job) => {
 			let ci_job_link = make_job_link(job.url);
 

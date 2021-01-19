@@ -49,7 +49,8 @@ async fn run() -> anyhow::Result<()> {
 		&config.gitlab_project,
 		&config.gitlab_job_name,
 		&config.gitlab_private_token,
-	)?;
+	)
+	.await?;
 
 	// the bamboo queries can take a long time so only wait for it
 	// on launch. subsequently update in the background.

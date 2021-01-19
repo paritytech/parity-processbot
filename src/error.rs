@@ -140,7 +140,7 @@ pub enum Error {
 		body: String,
 	},
 
-	// Gitlab API responded with an HTTP status >299 to requests other than POST /jobs/<id>/play
+	// generic error for Gitlab API requests
 	#[snafu(display(
 		"{} {} failed with HTTP status {} and body: {}",
 		method,
@@ -187,5 +187,19 @@ impl From<curl::Error> for Error {
 impl From<serde_json::Error> for Error {
 	fn from(value: serde_json::Error) -> Self {
 		Error::Json { source: value }
+	}
+}
+
+impl From<reqwest::Error> for Error {
+	fn from(value: reqwest::Error) -> Self {
+		Error::Http { source: value }
+	}
+}
+
+impl From<reqwest::header::InvalidHeaderValue> for Error {
+	fn from(_: reqwest::header::InvalidHeaderValue) -> Self {
+		Error::Message {
+			msg: String::from("invalid header value"),
+		}
 	}
 }

@@ -1,12 +1,12 @@
 use crate::{error::*, Result};
-use curl::easy::Easy;
+use reqwest::{header, Client};
 use serde::Deserialize;
 use url::Url;
 
 pub struct GitlabBot {
 	urls: UrlBuilder,
 	ci_job_name: String,
-	private_token: String,
+	client: Client,
 }
 
 #[derive(PartialEq)]
@@ -37,7 +37,7 @@ struct Pipeline {
 }
 
 impl GitlabBot {
-	pub fn new_with_token(
+	pub async fn new_with_token(
 		hostname: &str,
 		project: &str,
 		ci_job_name: &str,
@@ -45,19 +45,31 @@ impl GitlabBot {
 	) -> Result<Self> {
 		let urls = UrlBuilder::new(hostname, project)?;
 
+		let mut headers = header::HeaderMap::new();
+		let bearer = format!("Bearer {}", private_token);
+		headers.insert(
+			header::AUTHORIZATION,
+			header::HeaderValue::from_str(&bearer)?,
+		);
+
+		let client = Client::builder()
+			.default_headers(headers)
+			.timeout(std::time::Duration::from_secs(30))
+			.build()?;
+
 		// This request is just for checking that Gitlab is available and the token is valid.
 		let project_url = urls.project_url()?;
-		get(&project_url, &private_token)?;
+		client.get(project_url).send().await?;
 
 		Ok(Self {
 			urls,
 			ci_job_name: ci_job_name.to_owned(),
-			private_token: private_token.to_owned(),
+			client: client.to_owned(),
 		})
 	}
 
-	pub fn build_artifact(&self, commit_sha: &str) -> Result<Job> {
-		let job = self.fetch_job(commit_sha)?;
+	pub async fn build_artifact(&self, commit_sha: &str) -> Result<Job> {
+		let job = self.fetch_job(commit_sha).await?;
 
 		// JobStatus is used by the caller to decide what message to post on Github/Matrix.
 		let status = match job.status.to_lowercase().trim() {
@@ -71,13 +83,14 @@ impl GitlabBot {
 
 		if status == JobStatus::Started {
 			let play_job_url = self.urls.play_job_url(job.id)?;
-			let response = post(&play_job_url, &self.private_token)?;
+			let response = self.client.post(play_job_url).send().await?;
+			let status: u32 = response.status().as_u16() as u32;
 
-			if response.status > 299 {
+			if status > 299 {
 				return Err(Error::StartingGitlabJobFailed {
-					status: response.status,
+					status,
 					url: job.web_url,
-					body: response.body,
+					body: response.text().await?,
 				});
 			}
 		}
@@ -89,9 +102,9 @@ impl GitlabBot {
 		})
 	}
 
-	fn fetch_job(&self, commit_sha: &str) -> Result<GitlabJob> {
-		let pipeline = self.fetch_pipeline_for_commit(commit_sha)?;
-		let jobs = self.fetch_jobs_for_pipeline(pipeline.id)?;
+	async fn fetch_job(&self, commit_sha: &str) -> Result<GitlabJob> {
+		let pipeline = self.fetch_pipeline_for_commit(commit_sha).await?;
+		let jobs = self.fetch_jobs_for_pipeline(pipeline.id).await?;
 
 		for job in jobs {
 			if job.name == self.ci_job_name {
@@ -104,25 +117,36 @@ impl GitlabBot {
 		})
 	}
 
-	fn fetch_jobs_for_pipeline(
+	async fn fetch_jobs_for_pipeline(
 		&self,
 		pipeline_id: i64,
 	) -> Result<Vec<GitlabJob>> {
 		let jobs_url = self.urls.jobs_url_for_pipeline(pipeline_id)?;
-		let response = get(&jobs_url, &self.private_token)?;
 
-		let jobs: Vec<GitlabJob> = serde_json::from_str(&response.body)
-			.or_else(|e| Err(Error::Json { source: e }))?;
+		let jobs: Vec<GitlabJob> = self
+			.client
+			.get(jobs_url)
+			.send()
+			.await?
+			.json::<Vec<GitlabJob>>()
+			.await?;
 
 		Ok(jobs)
 	}
 
-	fn fetch_pipeline_for_commit(&self, commit_sha: &str) -> Result<Pipeline> {
+	async fn fetch_pipeline_for_commit(
+		&self,
+		commit_sha: &str,
+	) -> Result<Pipeline> {
 		let pipelines_url = self.urls.pipelines_url_for_commit(commit_sha)?;
-		let response = get(&pipelines_url, &self.private_token)?;
 
-		let pipelines: Vec<Pipeline> = serde_json::from_str(&response.body)
-			.or_else(|e| Err(Error::Json { source: e }))?;
+		let pipelines: Vec<Pipeline> = self
+			.client
+			.get(pipelines_url)
+			.send()
+			.await?
+			.json::<Vec<Pipeline>>()
+			.await?;
 
 		if pipelines.is_empty() {
 			return Err(Error::GitlabJobNotFound {
@@ -132,67 +156,6 @@ impl GitlabBot {
 
 		Ok(pipelines[0].clone())
 	}
-}
-
-struct HttpResponse {
-	status: u32,
-	body: String,
-}
-
-// Unlike post(), this returns an Error::GitlabApi for HTTP responses with status code > 299.
-// This is because we only want special treatment of these responses for POST jobs/<id>/play,
-// where the error returned by the caller should contain the URL to the job on Gitlab
-// (aka web_url).
-fn get(url: &Url, private_token: &str) -> Result<HttpResponse> {
-	let mut handle = prepare_handle(url, private_token)?;
-	handle.get(false)?;
-
-	let response = read_response(&mut handle)?;
-	if response.status > 299 {
-		return Err(Error::GitlabApi {
-			method: "GET".to_string(),
-			url: url.to_string(),
-			status: response.status,
-			body: response.body,
-		});
-	}
-	Ok(response)
-}
-
-fn post(url: &Url, private_token: &str) -> Result<HttpResponse> {
-	let mut handle = prepare_handle(url, private_token)?;
-	handle.post(true)?;
-	read_response(&mut handle)
-}
-
-fn prepare_handle(url: &Url, private_token: &str) -> Result<Easy> {
-	let mut headers = curl::easy::List::new();
-	headers.append(&format!("Private-Token: {}", private_token))?;
-
-	let mut handle = Easy::new();
-	handle.http_headers(headers)?;
-	handle.follow_location(true)?;
-	handle.max_redirections(2)?;
-	handle.url(&url.to_string())?;
-	Ok(handle)
-}
-
-fn read_response(handle: &mut Easy) -> Result<HttpResponse> {
-	let mut dst = Vec::new();
-	{
-		let mut transfer = handle.transfer();
-		transfer.write_function(|data| {
-			dst.extend_from_slice(data);
-			Ok(data.len())
-		})?;
-		transfer.perform()?;
-	}
-
-	let status = handle.response_code()?;
-	let body =
-		String::from_utf8(dst).or_else(|e| Err(Error::Utf8 { source: e }))?;
-
-	Ok(HttpResponse { status, body })
 }
 
 struct UrlBuilder {
