@@ -183,3 +183,9 @@ impl From<curl::Error> for Error {
 		}
 	}
 }
+
+impl From<serde_json::Error> for Error {
+	fn from(value: serde_json::Error) -> Self {
+		Error::Json { source: value }
+	}
+}
