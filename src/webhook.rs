@@ -1,3 +1,4 @@
+use chrono::Utc;
 use futures::StreamExt;
 use futures_util::future::TryFutureExt;
 use hyper::{http::StatusCode, Body, Request, Response};
@@ -169,6 +170,33 @@ async fn handle_payload(payload: Payload, state: &AppState) -> Result<()> {
 			},
 			..
 		} => handle_check(status, head_sha, state).await,
+		Payload::PullRequest {
+			action: PullRequestAction::Labeled,
+			label: Label { name: label, .. },
+			sender: User {
+				login: added_by, ..
+			},
+			repository:
+				Repository {
+					name: repo_name,
+					owner: User {
+						login: repo_owner, ..
+					},
+					..
+				},
+			pull_request,
+			..
+		} => {
+			handle_label_added(
+				label,
+				added_by,
+				repo_name,
+				repo_owner,
+				pull_request,
+				&state.github_bot,
+			)
+			.await
+		}
 		_event => Ok(()),
 	}
 }
@@ -635,11 +663,15 @@ async fn handle_comment(
 				number,
 			))))?;
 		}
-	} else if body.to_lowercase().trim() == BURNIN_REQUEST.to_lowercase().trim()
+	} else if body
+		.to_lowercase()
+		.trim()
+		.starts_with(BURNIN_REQUEST.to_lowercase().trim())
 	{
 		auth.check_org_membership(github_bot).await?;
 
 		handle_burnin_request(
+			&body,
 			github_bot,
 			&state.gitlab_bot,
 			&state.matrix_bot,
@@ -654,7 +686,52 @@ async fn handle_comment(
 	Ok(())
 }
 
+async fn handle_label_added(
+	label: String,
+	added_by: String,
+	repo_name: String,
+	repo_owner: String,
+	pr: PullRequest,
+	github_bot: &GithubBot,
+) -> Result<()> {
+	if label != "A1-needsburnin" {
+		return Ok(());
+	}
+
+	let msg = format!(
+		r#"@{added_by} to request a burn-in test for this PR, please submit a comment in the format below.
+
+Only members of the Github organization `{repo_owner}` are authorized to perform burn-in tests.
+
+For now, only full nodes on Kusama are available via automation. If you need something else, please contact Staking Ops on Matrix.
+
+Requests are expressed as ToML files. Here's an example for deploying a binary built from the most recent commit on this PR to a single node (The comment must start with "bot burnin" and use a \``` block for the ToML):
+
+bot burnin
+```toml
+pull_request = "{pr_url}"
+commit_sha = "{commit_sha}"
+requested_by = "{added_by}"
+sync_from_scratch = false
+
+[node_types]
+fullnode = 1
+sentry = 0
+validator = 0
+```"#,
+		added_by = added_by,
+		repo_owner = repo_owner,
+		pr_url = pr.html_url,
+		commit_sha = pr.head.sha,
+	);
+
+	github_bot
+		.create_issue_comment(&repo_owner, &repo_name, pr.number, &msg)
+		.await
+}
+
 async fn handle_burnin_request(
+	comment_body: &str,
 	github_bot: &GithubBot,
 	gitlab_bot: &GitlabBot,
 	matrix_bot: &MatrixBot,
@@ -663,85 +740,56 @@ async fn handle_burnin_request(
 	repo_name: &str,
 	pr: &PullRequest,
 ) {
-	let make_job_link =
-		|url| format!("<a href=\"{}\">CI job for burn-in deployment</a>", url);
-
-	let unexpected_error_msg = "Starting CI job for burn-in deployment failed with an unexpected error; see logs.".to_string();
-	let mut matrix_msg: Option<String> = None;
-
-	let msg = match gitlab_bot.build_artifact(&pr.head.sha).await {
-		Ok(job) => {
-			let ci_job_link = make_job_link(job.url);
-
-			match job.status {
-				JobStatus::Started => {
-					format!("{} was started successfully.", ci_job_link)
-				}
-				JobStatus::AlreadyRunning => {
-					format!("{} is already running.", ci_job_link)
-				}
-				JobStatus::Finished => format!(
-					"{} already ran and finished with status `{}`.",
-					ci_job_link, job.status_raw,
-				),
-				JobStatus::Unknown => format!(
-					"{} has unexpected status `{}`.",
-					ci_job_link, job.status_raw,
-				),
-			}
+	let v: Vec<&str> = comment_body.split("```").collect();
+	if v.len() < 2 {
+		let msg = format!(
+			"@{} invalid burn-in command: no \\``` block found",
+			requested_by
+		);
+		if let Err(e) = github_bot
+			.create_issue_comment(owner, &repo_name, pr.number, &msg)
+			.await
+		{
+			log::error!("Error posting comment: {:?}", e);
 		}
-		Err(e) => {
-			log::error!("handle_burnin_request: {}", e);
-			match e {
-				Error::GitlabJobNotFound { commit_sha } => format!(
-					"No matching CI job was found for commit `{}`",
-					commit_sha
-				),
-				Error::StartingGitlabJobFailed { url, status, body } => {
-					let ci_job_link = make_job_link(url);
+		return;
+	}
 
-					matrix_msg = Some(format!(
-						"Starting {} failed with HTTP status {} and body: {}",
-						ci_job_link, status, body,
-					));
+	let mut msg = format!("@{} your request has been forwarded", requested_by);
 
-					format!(
-						"Starting {} failed with HTTP status {}",
-						ci_job_link, status,
-					)
-				}
-				Error::GitlabApi {
-					method,
-					url,
-					status,
-					body,
-				} => {
-					matrix_msg = Some(format!(
-						"Request {} {} failed with reponse status {} and body: {}",
-						method, url, status, body,
-					));
+	let mut matrix_msg = format!(
+		r#"Submitted burn-in request for <a href="{}">{}#{}</a> (requested by @{})"#,
+		pr.html_url, repo_name, pr.number, requested_by,
+	);
 
-					unexpected_error_msg
-				}
-				_ => unexpected_error_msg,
-			}
-		}
-	};
+	let path = format!("requests/request-{}.toml", Utc::now().timestamp());
+	let commit_msg = format!("Add request for {}#{}", repo_name, pr.number);
+	let toml = v[1].strip_prefix('\n').unwrap_or(v[1]);
+
+	if let Err(e) = gitlab_bot
+		.create_file(&path, "master", &commit_msg, toml)
+		.await
+	{
+		msg = format!(
+			"@{} your request could not be processed. Please contact Staking Ops on Matrix.",
+			requested_by,
+		);
+
+		matrix_msg = format!(
+			r#"Submitting burn-in request for <a href="{}">{}#{}</a> (requested by @{}) failed: {:?}"#,
+			pr.html_url, repo_name, pr.number, requested_by, e,
+		);
+	}
 
 	if let Err(e) = github_bot
 		.create_issue_comment(owner, &repo_name, pr.number, &msg)
 		.await
 	{
-		log::error!("Error posting GitHub comment: {}", e);
+		log::error!("Error posting comment: {:?}", e);
 	}
 
-	let full_matrix_msg = format!(
-		"Received burn-in request for <a href=\"{}\">{}#{}</a> from {}<br />\n{}",
-		pr.html_url, repo_name, pr.number, requested_by, matrix_msg.unwrap_or(msg),
-	);
-
-	if let Err(e) = matrix_bot.send_html_to_default(&full_matrix_msg) {
-		log::error!("Error sending Matrix message: {}", e);
+	if let Err(e) = matrix_bot.send_html_to_default(&matrix_msg) {
+		log::error!("Error sending Matrix message: {:?}", e);
 	}
 }
 

@@ -848,6 +848,8 @@ pub enum Payload {
 		number: i64,
 		pull_request: PullRequest,
 		repository: Repository,
+		sender: User,
+		label: Label,
 	},
 	IssueComment {
 		action: IssueCommentAction,
