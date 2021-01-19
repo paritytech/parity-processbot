@@ -94,7 +94,7 @@ impl GithubBot {
 			owner = owner,
 			repo_name = repo_name,
 			path = path,
-            ref_field = ref_field
+			ref_field = ref_field,
 		);
 		self.client.get(url).await
 	}

@@ -1,4 +1,3 @@
-use crate::Result;
 use snafu::Snafu;
 
 type IssueDetails = Option<(String, String, i64)>;
@@ -176,10 +175,11 @@ impl Error {
 	}
 }
 
-/// Maps a curl error into a crate::error::Error.
-pub fn map_curl_error<T>(err: curl::Error) -> Result<T> {
-	Err(Error::Curl {
-		status: err.code(),
-		body: err.extra_description().map(|s| s.to_owned()),
-	})
+impl From<curl::Error> for Error {
+	fn from(value: curl::Error) -> Self {
+		Error::Curl {
+			status: value.code(),
+			body: value.extra_description().map(ToOwned::to_owned),
+		}
+	}
 }

@@ -36,32 +36,20 @@ fn get_employees_directory(
 ) -> Result<EmployeesDirectoryResponse> {
 	let mut dst = Vec::new();
 	let mut handle = Easy::new();
-	handle
-		.url(&format!("{}/employees/directory", BASE_URL))
-		.or_else(error::map_curl_error)?;
-	handle
-		.username(access_token)
-		.or_else(error::map_curl_error)?;
-	handle.password("x").or_else(error::map_curl_error)?;
-	handle
-		.accept_encoding("application/json")
-		.or_else(error::map_curl_error)?;
+	handle.url(&format!("{}/employees/directory", BASE_URL))?;
+	handle.username(access_token)?;
+	handle.password("x")?;
+	handle.accept_encoding("application/json")?;
 	let mut headers = curl::easy::List::new();
-	headers
-		.append("accept: application/json")
-		.or_else(error::map_curl_error)?;
-	handle
-		.http_headers(headers)
-		.or_else(error::map_curl_error)?;
+	headers.append("accept: application/json")?;
+	handle.http_headers(headers)?;
 	{
 		let mut transfer = handle.transfer();
-		transfer
-			.write_function(|data| {
-				dst.extend_from_slice(data);
-				Ok(data.len())
-			})
-			.or_else(error::map_curl_error)?;
-		transfer.perform().or_else(error::map_curl_error)?;
+		transfer.write_function(|data| {
+			dst.extend_from_slice(data);
+			Ok(data.len())
+		})?;
+		transfer.perform()?;
 	}
 	String::from_utf8(dst)
 		.context(error::Utf8)
@@ -75,38 +63,26 @@ fn get_employee(
 ) -> Result<EmployeeResponse> {
 	let mut dst = Vec::new();
 	let mut handle = Easy::new();
-	handle
-		.url(
-			format!(
-				"{}/employees/{}/?fields=customGithub%2CcustomRiotID",
-				BASE_URL, employee_id
-			)
-			.as_ref(),
+	handle.url(
+		format!(
+			"{}/employees/{}/?fields=customGithub%2CcustomRiotID",
+			BASE_URL, employee_id
 		)
-		.or_else(error::map_curl_error)?;
-	handle
-		.username(access_token)
-		.or_else(error::map_curl_error)?;
-	handle.password("x").or_else(error::map_curl_error)?;
-	handle
-		.accept_encoding("application/json")
-		.or_else(error::map_curl_error)?;
+		.as_ref(),
+	)?;
+	handle.username(access_token)?;
+	handle.password("x")?;
+	handle.accept_encoding("application/json")?;
 	let mut headers = curl::easy::List::new();
-	headers
-		.append("accept: application/json")
-		.or_else(error::map_curl_error)?;
-	handle
-		.http_headers(headers)
-		.or_else(error::map_curl_error)?;
+	headers.append("accept: application/json")?;
+	handle.http_headers(headers)?;
 	{
 		let mut transfer = handle.transfer();
-		transfer
-			.write_function(|data| {
-				dst.extend_from_slice(data);
-				Ok(data.len())
-			})
-			.or_else(error::map_curl_error)?;
-		transfer.perform().or_else(error::map_curl_error)?;
+		transfer.write_function(|data| {
+			dst.extend_from_slice(data);
+			Ok(data.len())
+		})?;
+		transfer.perform()?;
 	}
 	serde_json::from_str(String::from_utf8(dst).as_ref().unwrap())
 		.context(error::Json)

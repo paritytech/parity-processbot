@@ -270,7 +270,7 @@ mod tests {
 			companion_parse(
 				"\nthis is some other pr https://github.com/paritytech/polkadot/pull/1234"
 			),
-            None,
+			None,
 		);
 		assert_eq!(
 			companion_parse(
