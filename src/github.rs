@@ -822,7 +822,7 @@ pub struct Branch {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(untagged, rename_all = "snake_case")]
+#[serde(rename_all = "snake_case")]
 pub enum PullRequestAction {
 	Opened,
 	Edited,
