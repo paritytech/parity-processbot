@@ -137,8 +137,6 @@ spec:
               value: gitlab.parity.io
             - name: GITLAB_PROJECT
               value: {{ .Values.processbot.config.GITLAB_PROJECT }}
-            - name: GITLAB_JOB_NAME
-              value: build-linux-release-pr
             - name: BURNIN_ROOM_ID
               value: "!GRPGDBcewDjLUGCzAy:matrix.parity.io"
 

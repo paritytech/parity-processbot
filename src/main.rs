@@ -47,7 +47,6 @@ async fn run() -> anyhow::Result<()> {
 	let gitlab_bot = gitlab_bot::GitlabBot::new_with_token(
 		&config.gitlab_hostname,
 		&config.gitlab_project,
-		&config.gitlab_job_name,
 		&config.gitlab_private_token,
 	)
 	.await?;

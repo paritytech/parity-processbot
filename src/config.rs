@@ -73,7 +73,6 @@ pub struct MainConfig {
 	pub matrix_silent: bool,
 	pub gitlab_hostname: String,
 	pub gitlab_project: String,
-	pub gitlab_job_name: String,
 	pub gitlab_private_token: String,
 }
 
@@ -119,8 +118,6 @@ impl MainConfig {
 			dotenv::var("GITLAB_HOSTNAME").expect("GITLAB_HOSTNAME");
 		let gitlab_project =
 			dotenv::var("GITLAB_PROJECT").expect("GITLAB_PROJECT");
-		let gitlab_job_name =
-			dotenv::var("GITLAB_JOB_NAME").expect("GITLAB_JOB_NAME");
 		let gitlab_private_token =
 			dotenv::var("GITLAB_PRIVATE_TOKEN").expect("GITLAB_PRIVATE_TOKEN");
 
@@ -141,7 +138,6 @@ impl MainConfig {
 			matrix_silent,
 			gitlab_hostname,
 			gitlab_project,
-			gitlab_job_name,
 			gitlab_private_token,
 		}
 	}
