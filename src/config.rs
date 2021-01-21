@@ -45,11 +45,11 @@ pull request author or publicly to the default channel if the author's Matrix ha
 
 `TEST_REPO_NAME`: Name of a Github repository to be used for testing.
 
-`GITLAB_HOSTNAME`: Hostname of the Gitlab server used for burn-in deployment related CI jobs.
+`BURNIN_GITLAB_HOSTNAME`: Hostname of the Gitlab server used for burn-in automation.
 
-`GITLAB_PROJECT`: Name of the project in Gitlab where CI jobs for burn-in deployments can be found.
+`BURNIN_GITLAB_PROJECT`: Name of the Gitlab project to which burn-in requests are submitted.
 
-`GITLAB_PRIVATE_TOKEN`: Authentication token for the Gitlab server at GITLAB_HOSTNAME.
+`BURNIN_GITLAB_TOKEN`: Authentication token for the Gitlab server at BURNIN_GITLAB_HOSTNAME.
 
 `BURNIN_ROOM_ID`: Matrix room ID for notifications about burn-in requests
 */
@@ -71,9 +71,9 @@ pub struct MainConfig {
 	pub bamboo_tick_secs: u64,
 	/// if true then matrix notifications will not be sent
 	pub matrix_silent: bool,
-	pub gitlab_hostname: String,
-	pub gitlab_project: String,
-	pub gitlab_private_token: String,
+	pub burnin_gitlab_hostname: String,
+	pub burnin_gitlab_project: String,
+	pub burnin_gitlab_token: String,
 }
 
 impl MainConfig {
@@ -114,12 +114,12 @@ impl MainConfig {
 		let private_key = std::fs::read(&private_key_path)
 			.expect("Couldn't find private key.");
 
-		let gitlab_hostname =
-			dotenv::var("GITLAB_HOSTNAME").expect("GITLAB_HOSTNAME");
-		let gitlab_project =
-			dotenv::var("GITLAB_PROJECT").expect("GITLAB_PROJECT");
-		let gitlab_private_token =
-			dotenv::var("GITLAB_PRIVATE_TOKEN").expect("GITLAB_PRIVATE_TOKEN");
+		let burnin_gitlab_hostname = dotenv::var("BURNIN_GITLAB_HOSTNAME")
+			.expect("BURNIN_GITLAB_HOSTNAME");
+		let burnin_gitlab_project = dotenv::var("BURNIN_GITLAB_PROJECT")
+			.expect("BURNIN_GITLAB_PROJECT");
+		let burnin_gitlab_token =
+			dotenv::var("BURNIN_GITLAB_TOKEN").expect("BURNIN_GITLAB_TOKEN");
 
 		Self {
 			environment,
@@ -136,9 +136,9 @@ impl MainConfig {
 			main_tick_secs,
 			bamboo_tick_secs,
 			matrix_silent,
-			gitlab_hostname,
-			gitlab_project,
-			gitlab_private_token,
+			burnin_gitlab_hostname,
+			burnin_gitlab_project,
+			burnin_gitlab_token,
 		}
 	}
 }

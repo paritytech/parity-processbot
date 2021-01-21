@@ -70,11 +70,11 @@ spec:
                   secretKeyRef:
                       name: env-secrets
                       key: WEBHOOK_SECRET
-            - name: GITLAB_PRIVATE_TOKEN
+            - name: BURNIN_GITLAB_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: env-secrets
-                  key: GITLAB_PRIVATE_TOKEN
+                  key: BURNIN_GITLAB_TOKEN
             - name: RUST_BACKTRACE
               value: full
             - name: RUST_LOG
@@ -133,10 +133,10 @@ spec:
               value: sjeohp-test-org
             - name: ENVIRONMENT
               value: {{ .Values.environment }}
-            - name: GITLAB_HOSTNAME
-              value: gitlab.parity.io
-            - name: GITLAB_PROJECT
-              value: {{ .Values.processbot.config.GITLAB_PROJECT }}
+            - name: BURNIN_GITLAB_HOST
+              value: {{ quote .Values.processbot.config.BURNIN_GITLAB_HOST }}
+            - name: BURNIN_GITLAB_PROJECT
+              value: {{ quote .Values.processbot.config.BURNIN_GITLAB_PROJECT }}
             - name: BURNIN_ROOM_ID
               value: "!GRPGDBcewDjLUGCzAy:matrix.parity.io"
 
