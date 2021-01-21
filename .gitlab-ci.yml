@@ -100,7 +100,9 @@ dockerize-processbot:
       --set processbot.secret.BAMBOO_TOKEN=${BAMBOO_TOKEN}
       --set processbot.secret.MATRIX_ACCESS_TOKEN=${MATRIX_ACCESS_TOKEN}
       --set processbot.secret.WEBHOOK_SECRET=${WEBHOOK_SECRET}
-      --set processbot.secret.GITLAB_PRIVATE_TOKEN=${GITLAB_PRIVATE_TOKEN}
+      --set processbot.secret.BURNIN_GITLAB_TOKEN=${BURNIN_GITLAB_TOKEN}
+      --set processbot.config.BURNIN_GITLAB_HOST=${BURNIN_GITLAB_HOST}
+      --set processbot.config.BURNIN_GITLAB_PROJECT=${BURNIN_GITLAB_PROJECT}
 
 deploy-staging:
   stage:                           deploy-staging

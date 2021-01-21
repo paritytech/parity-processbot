@@ -43,11 +43,11 @@ async fn run() -> anyhow::Result<()> {
 	)
 	.await?;
 
-	log::info!("Connecting to Gitlab https://{}", config.gitlab_hostname);
+	log::info!("Connecting to Gitlab https://{}", config.burnin_gitlab_host);
 	let gitlab_bot = gitlab_bot::GitlabBot::new_with_token(
-		&config.gitlab_hostname,
-		&config.gitlab_project,
-		&config.gitlab_private_token,
+		&config.burnin_gitlab_host,
+		&config.burnin_gitlab_project,
+		&config.burnin_gitlab_token,
 	)
 	.await?;
 
