@@ -50,6 +50,8 @@ pull request author or publicly to the default channel if the author's Matrix ha
 `GITLAB_PROJECT`: Name of the project in Gitlab where CI jobs for burn-in deployments can be found.
 
 `GITLAB_PRIVATE_TOKEN`: Authentication token for the Gitlab server at GITLAB_HOSTNAME.
+
+`BURNIN_ROOM_ID`: Matrix room ID for notifications about burn-in requests
 */
 
 #[derive(Debug, Clone)]
@@ -175,6 +177,8 @@ pub struct BotConfig {
 	pub core_sorting_repo_name: String,
 	/// matrix room id for sending app logs
 	pub logs_room_id: String,
+	/// matrix room id for notifications about burn-in requests
+	pub burnin_room_id: String,
 }
 
 impl BotConfig {
@@ -261,6 +265,8 @@ impl BotConfig {
 				.expect("CORE_SORTING_REPO_NAME"),
 
 			logs_room_id: dotenv::var("LOGS_ROOM_ID").expect("LOGS_ROOM_ID"),
+			burnin_room_id: dotenv::var("BURNIN_ROOM_ID")
+				.expect("BURNIN_ROOM_ID"),
 		}
 	}
 }

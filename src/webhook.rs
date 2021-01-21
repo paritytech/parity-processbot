@@ -672,13 +672,11 @@ async fn handle_comment(
 
 		handle_burnin_request(
 			&body,
-			github_bot,
-			&state.gitlab_bot,
-			&state.matrix_bot,
 			owner,
 			&requested_by,
 			&repo_name,
 			&pr,
+			state,
 		)
 		.await;
 	}
@@ -732,13 +730,11 @@ validator = 0
 
 async fn handle_burnin_request(
 	comment_body: &str,
-	github_bot: &GithubBot,
-	gitlab_bot: &GitlabBot,
-	matrix_bot: &MatrixBot,
 	owner: &str,
 	requested_by: &str,
 	repo_name: &str,
 	pr: &PullRequest,
+	state: &AppState,
 ) {
 	let v: Vec<&str> = comment_body.split("```").collect();
 	if v.len() < 2 {
@@ -746,7 +742,8 @@ async fn handle_burnin_request(
 			"@{} invalid burn-in command: no \\``` block found",
 			requested_by
 		);
-		if let Err(e) = github_bot
+		if let Err(e) = state
+			.github_bot
 			.create_issue_comment(owner, &repo_name, pr.number, &msg)
 			.await
 		{
@@ -766,7 +763,8 @@ async fn handle_burnin_request(
 	let commit_msg = format!("Add request for {}#{}", repo_name, pr.number);
 	let toml = v[1].strip_prefix('\n').unwrap_or(v[1]);
 
-	if let Err(e) = gitlab_bot
+	if let Err(e) = state
+		.gitlab_bot
 		.create_file(&path, "master", &commit_msg, toml)
 		.await
 	{
@@ -781,14 +779,18 @@ async fn handle_burnin_request(
 		);
 	}
 
-	if let Err(e) = github_bot
+	if let Err(e) = state
+		.github_bot
 		.create_issue_comment(owner, &repo_name, pr.number, &msg)
 		.await
 	{
 		log::error!("Error posting comment: {:?}", e);
 	}
 
-	if let Err(e) = matrix_bot.send_html_to_default(&matrix_msg) {
+	if let Err(e) = state
+		.matrix_bot
+		.send_html_to_room(&state.bot_config.burnin_room_id, &matrix_msg)
+	{
 		log::error!("Error sending Matrix message: {:?}", e);
 	}
 }
