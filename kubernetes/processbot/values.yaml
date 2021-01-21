@@ -4,9 +4,11 @@ processbot:
   config:
     KUBE_NAMESPACE: processbot
     WEBHOOK_PORT: 8080
+    BURNIN_GITLAB_HOSTNAME: from-gitlab-vars
+    BURNIN_GITLAB_PROJECT: from-gitlab-vars
   secret:
     PROCESSBOT_KEY: from-gitlab-vars
     BAMBOO_TOKEN: from-gitlab-vars
     MATRIX_ACCESS_TOKEN: from-gitlab-vars
     WEBHOOK_SECRET: from-gitlab-vars
-    GITLAB_PRIVATE_TOKEN: from-gitlab-vars
+    BURNIN_GITLAB_TOKEN: from-gitlab-vars
