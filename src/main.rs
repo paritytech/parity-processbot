@@ -2,6 +2,7 @@ use rocksdb::DB;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use tokio::sync::Mutex;
+mod logging;
 
 use parity_processbot::{
 	config::{BotConfig, MainConfig},
@@ -21,6 +22,7 @@ async fn main() -> std::io::Result<()> {
 async fn run() -> anyhow::Result<()> {
 	let config = MainConfig::from_env();
 	env_logger::from_env(env_logger::Env::default().default_filter_or("info"))
+		.format(logging::gke::format)
 		.init();
 
 	let db = DB::open_default(&config.db_path)?;
