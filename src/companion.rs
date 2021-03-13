@@ -21,16 +21,12 @@ async fn update_companion_repository(
 	let secrets_to_hide = [token.as_str()];
 	let secrets_to_hide = Some(&secrets_to_hide[..]);
 
-	let owner_repository_domain =
-		format!("github.com/{}/{}.git", owner, owner_repo);
-	let owner_remote_address = format!(
-		"https://x-access-token:{}@{}",
-		token, owner_repository_domain
-	);
 	let repo_dir = format!("./{}", owner_repo);
+	let (owner_remote_address, owner_repository_domain) =
+		github_bot.get_fetch_components(owner, owner_repo, &token);
 
 	if Path::new(&repo_dir).exists() {
-		log::info!("{} is already cloned; skipping", owner_repository_domain);
+		log::info!("{} is already cloned; skipping", &owner_repository_domain);
 	} else {
 		run_cmd_in_cwd(
 			"git",
@@ -43,14 +39,10 @@ async fn update_companion_repository(
 		.await?;
 	}
 
-	let contributor_repository_domain =
-		format!("github.com/{}/{}.git", contributor, contributor_repo);
+	let (contributor_remote_address, _) =
+		github_bot.get_fetch_components(contributor, contributor_repo, &token);
 	let contributor_remote_branch =
 		format!("{}/{}", contributor, contributor_branch);
-	let contributor_remote_address = format!(
-		"https://x-access-token:{}@{}",
-		token, contributor_repository_domain
-	);
 
 	// The contributor's remote entry might exist from a previous run (not expected for a fresh
 	// clone). If so, delete it so that it can be recreated.

@@ -5,14 +5,19 @@ use crate::{error::*, github_bot::GithubBot, Result};
 
 pub async fn rebase(
 	github_bot: &GithubBot,
-	base_owner: &str,
-	base_repo: &str,
-	head_owner: &str,
-	head_repo: &str,
+	owner: &str,
+	owner_repo: &str,
+	contributor: &str,
+	contributor_repo: &str,
 	branch: &str,
 ) -> Result<()> {
 	let res = rebase_inner(
-		github_bot, base_owner, base_repo, head_owner, head_repo, branch,
+		github_bot,
+		owner,
+		owner_repo,
+		contributor,
+		contributor_repo,
+		branch,
 	)
 	.await;
 	// checkout origin master
@@ -20,7 +25,7 @@ pub async fn rebase(
 	Command::new("git")
 		.arg("checkout")
 		.arg("master")
-		.current_dir(format!("./{}", base_repo))
+		.current_dir(format!("./{}", owner_repo))
 		.spawn()
 		.context(Tokio)?
 		.await
@@ -31,7 +36,7 @@ pub async fn rebase(
 		.arg("branch")
 		.arg("-D")
 		.arg(format!("{}", branch))
-		.current_dir(format!("./{}", base_repo))
+		.current_dir(format!("./{}", owner_repo))
 		.spawn()
 		.context(Tokio)?
 		.await
@@ -42,7 +47,7 @@ pub async fn rebase(
 		.arg("remote")
 		.arg("remove")
 		.arg("temp")
-		.current_dir(format!("./{}", base_repo))
+		.current_dir(format!("./{}", owner_repo))
 		.spawn()
 		.context(Tokio)?
 		.await
@@ -52,41 +57,37 @@ pub async fn rebase(
 
 async fn rebase_inner(
 	github_bot: &GithubBot,
-	base_owner: &str,
-	base_repo: &str,
-	head_owner: &str,
-	head_repo: &str,
+	owner: &str,
+	owner_repo: &str,
+	contributor: &str,
+	contributor_repo: &str,
 	branch: &str,
 ) -> Result<()> {
 	let token = github_bot.client.auth_key().await?;
+	let (owner_remote_address, _) =
+		github_bot.get_fetch_components(owner, owner_repo, &token);
+
 	// clone in case the local clone doesn't exist
 	log::info!("Cloning repo.");
 	Command::new("git")
 		.arg("clone")
 		.arg("-v")
-		.arg(format!(
-			"https://x-access-token:{token}@github.com/{owner}/{repo}.git",
-			token = token,
-			owner = base_owner,
-			repo = base_repo,
-		))
+		.arg(&owner_remote_address)
 		.spawn()
 		.context(Tokio)?
 		.await
 		.context(Tokio)?;
+
+	let (contributor_remote_address, _) =
+		github_bot.get_fetch_components(contributor, contributor_repo, &token);
 	// add temp remote
 	log::info!("Adding temp remote.");
 	Command::new("git")
 		.arg("remote")
 		.arg("add")
 		.arg("temp")
-		.arg(format!(
-			"https://x-access-token:{token}@github.com/{owner}/{repo}.git",
-			token = token,
-			owner = head_owner,
-			repo = head_repo,
-		))
-		.current_dir(format!("./{}", base_repo))
+		.arg(&contributor_remote_address)
+		.current_dir(format!("./{}", owner_repo))
 		.spawn()
 		.context(Tokio)?
 		.await
@@ -96,7 +97,7 @@ async fn rebase_inner(
 	Command::new("git")
 		.arg("fetch")
 		.arg("temp")
-		.current_dir(format!("./{}", base_repo))
+		.current_dir(format!("./{}", owner_repo))
 		.spawn()
 		.context(Tokio)?
 		.await
@@ -108,7 +109,7 @@ async fn rebase_inner(
 		.arg("-b")
 		.arg(format!("{}", branch))
 		.arg(format!("temp/{}", branch))
-		.current_dir(format!("./{}", base_repo))
+		.current_dir(format!("./{}", owner_repo))
 		.spawn()
 		.context(Tokio)?
 		.await
@@ -121,7 +122,7 @@ async fn rebase_inner(
 			.arg("origin/master")
 			.arg("--no-ff")
 			.arg("--no-edit")
-			.current_dir(format!("./{}", base_repo))
+			.current_dir(format!("./{}", owner_repo))
 			.spawn()
 			.context(Tokio)?
 			.await
@@ -133,7 +134,7 @@ async fn rebase_inner(
 				.arg("push")
 				.arg("temp")
 				.arg(format!("{}", branch))
-				.current_dir(format!("./{}", base_repo))
+				.current_dir(format!("./{}", owner_repo))
 				.spawn()
 				.context(Tokio)?
 				.await
@@ -144,7 +145,7 @@ async fn rebase_inner(
 			Command::new("git")
 				.arg("merge")
 				.arg("--abort")
-				.current_dir(format!("./{}", base_repo))
+				.current_dir(format!("./{}", owner_repo))
 				.spawn()
 				.context(Tokio)?
 				.await

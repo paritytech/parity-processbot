@@ -15,18 +15,18 @@ struct BenchResult {
 /// IE, return `head_time / base_time`.
 pub async fn regression(
 	github_bot: &GithubBot,
-	base_owner: &str,
-	base_repo: &str,
-	head_owner: &str,
-	head_repo: &str,
+	owner: &str,
+	owner_repo: &str,
+	contributor: &str,
+	contributor_repo: &str,
 	head_branch: &str,
 ) -> Result<Option<f64>> {
 	let res = regression_inner(
 		github_bot,
-		base_owner,
-		base_repo,
-		head_owner,
-		head_repo,
+		owner,
+		owner_repo,
+		contributor,
+		contributor_repo,
 		head_branch,
 	)
 	.await;
@@ -35,7 +35,7 @@ pub async fn regression(
 	Command::new("git")
 		.arg("checkout")
 		.arg("master")
-		.current_dir(format!("./{}", base_repo))
+		.current_dir(format!("./{}", owner_repo))
 		.spawn()
 		.context(Tokio)?
 		.await
@@ -46,7 +46,7 @@ pub async fn regression(
 		.arg("branch")
 		.arg("-D")
 		.arg(format!("{}", head_branch))
-		.current_dir(format!("./{}", base_repo))
+		.current_dir(format!("./{}", owner_repo))
 		.spawn()
 		.context(Tokio)?
 		.await
@@ -57,7 +57,7 @@ pub async fn regression(
 		.arg("remote")
 		.arg("remove")
 		.arg("temp")
-		.current_dir(format!("./{}", base_repo))
+		.current_dir(format!("./{}", owner_repo))
 		.spawn()
 		.context(Tokio)?
 		.await
@@ -67,24 +67,22 @@ pub async fn regression(
 
 async fn regression_inner(
 	github_bot: &GithubBot,
-	base_owner: &str,
-	base_repo: &str,
-	head_owner: &str,
-	head_repo: &str,
+	owner: &str,
+	owner_repo: &str,
+	contributor: &str,
+	contributor_repo: &str,
 	branch: &str,
 ) -> Result<Option<f64>> {
 	let token = github_bot.client.auth_key().await?;
+
+	let (owner_remote_address, _) =
+		github_bot.get_fetch_components(owner, owner_repo, &token);
 	// clone in case the local clone doesn't exist
 	log::info!("Cloning repo.");
 	Command::new("git")
 		.arg("clone")
 		.arg("-v")
-		.arg(format!(
-			"https://x-access-token:{token}@github.com/{owner}/{repo}.git",
-			token = token,
-			owner = base_owner,
-			repo = base_repo,
-		))
+		.arg(&owner_remote_address)
 		.spawn()
 		.context(Tokio)?
 		.await
@@ -94,7 +92,7 @@ async fn regression_inner(
 	Command::new("git")
 		.arg("checkout")
 		.arg("master")
-		.current_dir(format!("./{}", base_repo))
+		.current_dir(format!("./{}", owner_repo))
 		.spawn()
 		.context(Tokio)?
 		.await
@@ -104,7 +102,7 @@ async fn regression_inner(
 	Command::new("git")
 		.arg("pull")
 		.arg("-v")
-		.current_dir(format!("./{}", base_repo))
+		.current_dir(format!("./{}", owner_repo))
 		.spawn()
 		.context(Tokio)?
 		.await
@@ -121,7 +119,7 @@ async fn regression_inner(
 			"node::import::wasm::sr25519::transfer_keep_alive::rocksdb::medium",
 		)
 		.arg("--json")
-		.current_dir(format!("./{}", base_repo))
+		.current_dir(format!("./{}", owner_repo))
 		.output()
 		.await
 		.context(Tokio)?;
@@ -130,19 +128,16 @@ async fn regression_inner(
 			.context(Json)?;
 	let base_reg = base_res.first().map(|r| r.average);
 	let mut head_reg = None;
-	// add temp remote
+
+	let (contributor_remote_address, _) =
+		github_bot.get_fetch_components(contributor, contributor_repo, &token);
 	log::info!("Adding temp remote.");
 	Command::new("git")
 		.arg("remote")
 		.arg("add")
 		.arg("temp")
-		.arg(format!(
-			"https://x-access-token:{token}@github.com/{owner}/{repo}.git",
-			token = token,
-			owner = head_owner,
-			repo = head_repo,
-		))
-		.current_dir(format!("./{}", base_repo))
+		.arg(&contributor_remote_address)
+		.current_dir(format!("./{}", owner_repo))
 		.spawn()
 		.context(Tokio)?
 		.await
@@ -152,7 +147,7 @@ async fn regression_inner(
 	Command::new("git")
 		.arg("fetch")
 		.arg("temp")
-		.current_dir(format!("./{}", base_repo))
+		.current_dir(format!("./{}", owner_repo))
 		.spawn()
 		.context(Tokio)?
 		.await
@@ -164,7 +159,7 @@ async fn regression_inner(
 		.arg("-b")
 		.arg(format!("{}", branch))
 		.arg(format!("temp/{}", branch))
-		.current_dir(format!("./{}", base_repo))
+		.current_dir(format!("./{}", owner_repo))
 		.spawn()
 		.context(Tokio)?
 		.await
@@ -176,7 +171,7 @@ async fn regression_inner(
 			.arg("merge")
 			.arg("origin/master")
 			.arg("--no-edit")
-			.current_dir(format!("./{}", base_repo))
+			.current_dir(format!("./{}", owner_repo))
 			.spawn()
 			.context(Tokio)?
 			.await
@@ -191,7 +186,7 @@ async fn regression_inner(
 				.arg("--quiet")
 				.arg("node::import::wasm::sr25519::transfer_keep_alive::rocksdb::medium")
 				.arg("--json")
-				.current_dir(format!("./{}", base_repo))
+				.current_dir(format!("./{}", owner_repo))
 				.output()
 				.await
 				.context(Tokio)?
@@ -203,7 +198,7 @@ async fn regression_inner(
 			Command::new("git")
 				.arg("merge")
 				.arg("--abort")
-				.current_dir(format!("./{}", base_repo))
+				.current_dir(format!("./{}", owner_repo))
 				.spawn()
 				.context(Tokio)?
 				.await

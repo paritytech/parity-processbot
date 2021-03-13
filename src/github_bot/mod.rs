@@ -12,6 +12,8 @@ pub mod team;
 
 pub struct GithubBot {
 	pub client: crate::http::Client,
+	fetch_domain: Option<String>,
+	fetch_prefix: Option<String>,
 }
 
 impl GithubBot {
@@ -32,7 +34,11 @@ impl GithubBot {
 			installation_login.to_owned(),
 		);
 
-		Ok(Self { client })
+		Ok(Self {
+			client,
+			fetch_domain: None,
+			fetch_prefix: None,
+		})
 	}
 
 	pub fn owner_from_html_url(url: &str) -> Option<&str> {
@@ -187,6 +193,30 @@ impl GithubBot {
 		self.team(owner, SUBSTRATE_TEAM_LEADS_GROUP)
 			.and_then(|team| self.team_members(team.id))
 			.await
+	}
+
+	pub fn get_fetch_components(
+		&self,
+		owner: &str,
+		repository_name: &str,
+		token: &str,
+	) -> (String, String) {
+		let prefix = self
+			.fetch_prefix
+			.as_ref()
+			.map(|s| s.clone())
+			.unwrap_or_else(|| format!("https://x-access-token:{}", token));
+		let domain = format!(
+			"{}/{}/{}.git",
+			self.fetch_domain
+				.as_ref()
+				.map(|s| s.clone())
+				.unwrap_or_else(|| "github.com".to_string()),
+			owner,
+			repository_name
+		);
+
+		(format!("{}@{}", &prefix, &domain), domain)
 	}
 }
 
