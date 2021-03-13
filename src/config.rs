@@ -73,6 +73,7 @@ pub struct MainConfig {
 	pub gitlab_project: String,
 	pub gitlab_job_name: String,
 	pub gitlab_private_token: String,
+	pub github_app_id: usize,
 }
 
 impl MainConfig {
@@ -122,6 +123,11 @@ impl MainConfig {
 		let gitlab_private_token =
 			dotenv::var("GITLAB_PRIVATE_TOKEN").expect("GITLAB_PRIVATE_TOKEN");
 
+		let github_app_id = dotenv::var("GITHUB_APP_ID")
+			.unwrap()
+			.parse::<usize>()
+			.expect("GITHUB_APP_ID");
+
 		Self {
 			environment,
 			test_repo,
@@ -141,6 +147,7 @@ impl MainConfig {
 			gitlab_project,
 			gitlab_job_name,
 			gitlab_private_token,
+			github_app_id,
 		}
 	}
 }

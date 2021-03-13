@@ -56,6 +56,14 @@ impl GitlabBot {
 		})
 	}
 
+	pub fn new_placeholder_for_testing() -> Self {
+		Self {
+			urls: UrlBuilder::new_placeholder_for_testing(),
+			ci_job_name: "".to_string(),
+			private_token: "".to_string(),
+		}
+	}
+
 	pub fn build_artifact(&self, commit_sha: &str) -> Result<Job> {
 		let job = self.fetch_job(commit_sha)?;
 
@@ -216,6 +224,13 @@ impl UrlBuilder {
 			base_url,
 			base_path,
 		})
+	}
+
+	pub fn new_placeholder_for_testing() -> Self {
+		Self {
+			base_url: Url::parse("http://foo.com").unwrap(),
+			base_path: vec![],
+		}
 	}
 
 	pub fn project_url(&self) -> Result<Url> {

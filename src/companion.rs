@@ -9,6 +9,11 @@ use crate::{
 	COMPANION_SHORT_REGEX, PR_HTML_URL_REGEX,
 };
 
+struct CompanionUpdateResult {
+	pub master_ref: String,
+	pub updated_sha: String,
+}
+
 async fn update_companion_repository(
 	github_bot: &GithubBot,
 	owner: &str,
@@ -16,7 +21,7 @@ async fn update_companion_repository(
 	contributor: &str,
 	contributor_repo: &str,
 	contributor_branch: &str,
-) -> Result<String> {
+) -> Result<CompanionUpdateResult> {
 	let token = github_bot.client.auth_key().await?;
 	let secrets_to_hide = [token.as_str()];
 	let secrets_to_hide = Some(&secrets_to_hide[..]);
@@ -118,6 +123,8 @@ async fn update_companion_repository(
 	let owner_branch = "master";
 	let owner_remote_branch = format!("{}/{}", owner_remote, owner_branch);
 
+	// Ensure the owner branch has the latest remote changes so that the merge commit is always
+	// done with the most updated code from Github.
 	run_cmd(
 		"git",
 		&["fetch", owner_remote, &owner_branch],
@@ -128,6 +135,27 @@ async fn update_companion_repository(
 		}),
 	)
 	.await?;
+
+	// Keep track of the HEAD for the owner's branch *after* fetching the latest changes; in case
+	// this reference does not change between attempts, then the master merge commit will have the
+	// same effect as the previous attempt, resulting in failure again, thus it's not meaningful to
+	// keep retrying in that case.
+	let master_ref = {
+		let output = run_cmd_with_output(
+			"git",
+			&["rev-parse", &owner_remote_branch],
+			&repo_dir,
+			CommandMessage::Configured(CommandMessageConfiguration {
+				secrets_to_hide,
+				are_errors_silenced: false,
+			}),
+		)
+		.await?;
+		String::from_utf8(output.stdout)
+			.context(Utf8)?
+			.trim()
+			.to_string()
+	};
 
 	// Create master merge commit before updating packages
 	let master_merge_result = run_cmd(
@@ -210,22 +238,27 @@ async fn update_companion_repository(
 		"Getting the head SHA after a companion update in {}",
 		&contributor_remote_branch
 	);
-	let updated_sha_output = run_cmd_with_output(
-		"git",
-		&["rev-parse", "HEAD"],
-		&repo_dir,
-		CommandMessage::Configured(CommandMessageConfiguration {
-			secrets_to_hide,
-			are_errors_silenced: false,
-		}),
-	)
-	.await?;
-	let updated_sha = String::from_utf8(updated_sha_output.stdout)
-		.context(Utf8)?
-		.trim()
-		.to_string();
+	let updated_sha = {
+		let output = run_cmd_with_output(
+			"git",
+			&["rev-parse", "HEAD"],
+			&repo_dir,
+			CommandMessage::Configured(CommandMessageConfiguration {
+				secrets_to_hide,
+				are_errors_silenced: false,
+			}),
+		)
+		.await?;
+		String::from_utf8(output.stdout)
+			.context(Utf8)?
+			.trim()
+			.to_string()
+	};
 
-	Ok(updated_sha)
+	Ok(CompanionUpdateResult {
+		updated_sha,
+		master_ref,
+	})
 }
 
 fn companion_parse(body: &str) -> Option<(String, String, String, i64)> {
@@ -302,7 +335,7 @@ async fn perform_companion_update(
 	} = comp_pr.clone()
 	{
 		log::info!("Updating companion {}", html_url);
-		let updated_sha = update_companion_repository(
+		let companion_update_result = update_companion_repository(
 			github_bot,
 			&owner,
 			&repo,
@@ -320,7 +353,7 @@ async fn perform_companion_update(
 			comp_pr.number,
 			&comp_pr.html_url,
 			&format!("parity-processbot[bot]"),
-			&updated_sha,
+			&companion_update_result.updated_sha,
 			db,
 		)
 		.await?;

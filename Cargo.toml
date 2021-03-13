@@ -40,3 +40,10 @@ hyper = { version = "0.13.1", default-features = false, features = ["stream"] }
 serde_yaml = "0.8"
 thiserror = "1"
 url = "2.1.1"
+once_cell = "1.7.2"
+
+[dev-dependencies]
+httptest = "0.15.1"
+tempfile = "3"
+insta = "1.7.1"
+flexi_logger = "0.17.1"

@@ -1,0 +1,17 @@
+---
+source: tests/companion.rs
+expression: "utils::read_snapshot((&log_dir).path().to_path_buf())"
+
+---
+INFO [parity_processbot::webhook] Received merge request for PR https://github.com/org/substrate/pull/1 from user foo
+INFO [parity_processbot::webhook] https://github.com/org/substrate/pull/1 is mergeable
+INFO [parity_processbot::webhook] https://github.com/org/substrate/pull/1 merge requested by a team lead.
+INFO [parity_processbot::webhook] CombinedStatus { state: Success, statuses: [Status { id: 1, context: "DOES_NOT_MATTER", state: Success }] }
+INFO [parity_processbot::webhook] https://github.com/org/substrate/pull/1 has success status
+INFO [parity_processbot::webhook] CheckRuns { check_runs: [CheckRun { id: 1, name: "DOES_NOT_MATTER", status: Completed, conclusion: Some(Success), head_sha: "MDEwOlJlcG9zaXRvcnkxMDk4NzI2MjA" }] }
+INFO [parity_processbot::webhook] https://github.com/org/substrate/pull/1 has successful checks
+INFO [parity_processbot::webhook] https://github.com/org/substrate/pull/1 checks successful; trying merge.
+INFO [parity_processbot::webhook] https://github.com/org/substrate/pull/1 merged successfully.
+INFO [parity_processbot::companion] Checking for companion.
+INFO [parity_processbot::companion] No companion found.
+

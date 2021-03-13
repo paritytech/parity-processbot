@@ -12,7 +12,7 @@ impl GithubBot {
 	) -> Result<github::Release> {
 		let url = format!(
 			"{base_url}/repos/{owner}/{repo}/releases/latest",
-			base_url = Self::BASE_URL,
+			base_url = github::base_api_url(),
 			owner = owner,
 			repo = repo_name,
 		);

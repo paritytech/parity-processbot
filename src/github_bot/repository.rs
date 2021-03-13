@@ -14,7 +14,7 @@ impl GithubBot {
 	{
 		let url = format!(
 			"{base_url}/repos/{owner}/{repo_name}",
-			base_url = Self::BASE_URL,
+			base_url = github::base_api_url(),
 			owner = owner,
 			repo_name = repo_name
 		);

@@ -12,6 +12,7 @@ use snafu::{OptionExt, ResultExt};
 #[derive(Default)]
 pub struct Client {
 	pub client: reqwest::Client,
+	github_app_id: usize,
 	private_key: Vec<u8>,
 	installation_login: String,
 }
@@ -93,10 +94,15 @@ async fn handle_response(response: Response) -> Result<Response> {
 
 /// HTTP util methods.
 impl Client {
-	pub fn new(private_key: Vec<u8>, installation_login: String) -> Self {
+	pub fn new(
+		private_key: Vec<u8>,
+		installation_login: String,
+		github_app_id: usize,
+	) -> Self {
 		Self {
-			private_key: private_key.into(),
+			private_key,
 			installation_login,
+			github_app_id,
 			..Self::default()
 		}
 	}
@@ -117,7 +123,6 @@ impl Client {
 	}
 
 	pub async fn auth_key(&self) -> Result<String> {
-		log::debug!("auth_key");
 		lazy_static::lazy_static! {
 			static ref TOKEN_CACHE: parking_lot::Mutex<Option<(DateTime<Utc>, String)>> = {
 				parking_lot::Mutex::new(None)
@@ -140,7 +145,7 @@ impl Client {
 		let installations: Vec<github::Installation> = self
 			.jwt_get(&format!(
 				"{}/app/installations",
-				crate::github_bot::GithubBot::BASE_URL
+				crate::github::base_api_url()
 			))
 			.await?;
 
@@ -153,7 +158,7 @@ impl Client {
 			.jwt_post(
 				&format!(
 					"{}/app/installations/{}/access_tokens",
-					crate::github_bot::GithubBot::BASE_URL,
+					crate::github::base_api_url(),
 					installation.id
 				),
 				&serde_json::json!({}),
@@ -205,11 +210,7 @@ impl Client {
 	}
 
 	fn create_jwt(&self) -> Result<String> {
-		log::debug!("create_jwt");
 		const TEN_MINS_IN_SECONDS: u64 = 10 * 60;
-		lazy_static::lazy_static! {
-			static ref APP_ID: u64 = dotenv::var("GITHUB_APP_ID").unwrap().parse::<u64>().unwrap();
-		}
 		let iat = SystemTime::now()
 			.duration_since(SystemTime::UNIX_EPOCH)
 			.unwrap()
@@ -218,20 +219,19 @@ impl Client {
 		let body = serde_json::json!({
 			"iat": iat,
 			"exp": iat + TEN_MINS_IN_SECONDS,
-			"iss": *APP_ID,
+			"iss": self.github_app_id,
 		});
 
 		jsonwebtoken::encode(
 			&jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256),
 			&body,
 			&jsonwebtoken::EncodingKey::from_rsa_pem(&self.private_key)
-				.expect("private key should be RSA pem"),
+				.unwrap(),
 		)
 		.context(error::Jwt)
 	}
 
 	async fn jwt_execute(&self, builder: RequestBuilder) -> Result<Response> {
-		log::debug!("jwt_execute");
 		let response = builder
 			.bearer_auth(&self.create_jwt()?)
 			.header(
@@ -253,7 +253,6 @@ impl Client {
 	where
 		T: serde::de::DeserializeOwned,
 	{
-		log::debug!("jwt_get");
 		self.jwt_execute(self.client.get(url))
 			.await?
 			.json::<T>()
@@ -270,7 +269,6 @@ impl Client {
 	where
 		T: serde::de::DeserializeOwned,
 	{
-		log::debug!("jwt_post");
 		self.jwt_execute(self.client.post(url).json(body))
 			.await?
 			.json::<T>()
@@ -337,7 +335,6 @@ impl Client {
 		I: Into<Cow<'b, str>> + Clone,
 		P: Serialize + Clone,
 	{
-		log::debug!("get_response");
 		// retry up to 5 times if request times out
 		let mut retries = 0;
 		'retry: loop {
@@ -366,12 +363,10 @@ impl Client {
 		I: Into<Cow<'b, str>>,
 		T: serde::de::DeserializeOwned + core::fmt::Debug,
 	{
-		log::debug!("get_all");
 		let mut entities = Vec::new();
 		let mut next = Some(url.into());
 
 		while let Some(url) = next {
-			log::debug!("getting next");
 			let response =
 				self.get_response(url, serde_json::json!({})).await?;
 

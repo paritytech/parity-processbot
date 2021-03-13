@@ -16,7 +16,7 @@ impl GithubBot {
 		self.client
 			.get_all(&format!(
 				"{base_url}/repos/{owner}/{repo_name}/projects",
-				base_url = Self::BASE_URL,
+				base_url = github::base_api_url(),
 				owner = owner,
 				repo_name = repo_name,
 			))
@@ -117,7 +117,7 @@ impl GithubBot {
 	{
 		let url = format!(
 			"{base}/projects/columns/{column_id}/cards",
-			base = Self::BASE_URL,
+			base = github::base_api_url(),
 			column_id = column_id,
 		);
 		let parameters = serde_json::json!({ "content_id": content_id, "content_type": content_type });
@@ -135,7 +135,7 @@ impl GithubBot {
 	{
 		let url = format!(
 			"{base}/projects/columns/cards/{card_id}",
-			base = Self::BASE_URL,
+			base = github::base_api_url(),
 			card_id = card_id,
 		);
 		self.client

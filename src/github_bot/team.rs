@@ -7,7 +7,7 @@ impl GithubBot {
 	pub async fn team(&self, owner: &str, slug: &str) -> Result<github::Team> {
 		let url = format!(
 			"{base_url}/orgs/{owner}/teams/{slug}",
-			base_url = Self::BASE_URL,
+			base_url = github::base_api_url(),
 			owner = owner,
 			slug = slug
 		);
@@ -20,7 +20,11 @@ impl GithubBot {
 		team_id: i64,
 	) -> Result<Vec<github::User>> {
 		self.client
-			.get_all(format!("{}/teams/{}/members", Self::BASE_URL, team_id))
+			.get_all(format!(
+				"{}/teams/{}/members",
+				github::base_api_url(),
+				team_id
+			))
 			.await
 	}
 }

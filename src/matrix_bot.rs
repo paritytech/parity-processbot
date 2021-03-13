@@ -51,6 +51,15 @@ impl MatrixBot {
 		)
 	}
 
+	pub fn new_placeholder_for_testing() -> Self {
+		Self {
+			homeserver: "".to_string(),
+			access_token: "".to_string(),
+			default_channel_id: "".to_string(),
+			silent: true,
+		}
+	}
+
 	pub fn message_mapped(
 		&self,
 		db: &Arc<RwLock<DB>>,
