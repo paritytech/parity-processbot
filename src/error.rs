@@ -1,6 +1,6 @@
 use snafu::Snafu;
 
-type IssueDetails = Option<(String, String, i64)>;
+type IssueDetails = (String, String, i64);
 
 #[derive(Debug, Snafu)]
 #[snafu(visibility = "pub")]
@@ -9,6 +9,11 @@ pub enum Error {
 	WithIssue {
 		source: Box<Error>,
 		issue: IssueDetails,
+	},
+
+	#[snafu(display("Field is missing: {}", field))]
+	MissingField {
+		field: String,
 	},
 
 	#[snafu(display("Error updating companion: {}", source))]
@@ -180,9 +185,12 @@ pub enum Error {
 
 impl Error {
 	pub fn map_issue(self, issue: IssueDetails) -> Self {
-		Self::WithIssue {
-			source: Box::new(self),
-			issue: issue,
+		match self {
+			Self::WithIssue { source, .. } => Self::WithIssue { source, issue },
+			_ => Self::WithIssue {
+				source: Box::new(self),
+				issue,
+			},
 		}
 	}
 }

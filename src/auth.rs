@@ -34,11 +34,11 @@ impl GithubUserAuthenticator {
 				Error::OrganizationMembership {
 					source: Box::new(e),
 				}
-				.map_issue(Some((
+				.map_issue((
 					self.org.clone(),
 					self.repo_name.clone(),
 					self.pr_number,
-				)))
+				))
 			})?;
 
 		if !is_member {
@@ -50,11 +50,11 @@ impl GithubUserAuthenticator {
 					),
 				}),
 			}
-			.map_issue(Some((
+			.map_issue((
 				self.org.clone(),
 				self.repo_name.clone(),
 				self.pr_number,
-			))))?;
+			)))?;
 		}
 		Ok(())
 	}

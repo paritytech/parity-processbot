@@ -2,7 +2,11 @@ use regex::Regex;
 use snafu::ResultExt;
 use std::path::Path;
 
-use crate::{cmd::*, error::*, github_bot::GithubBot, Result};
+use crate::{
+	cmd::*, error::*, github_bot::GithubBot, Result, COMPANION_LONG_REGEX,
+	COMPANION_PREFIX_REGEX, COMPANION_SHORT_REGEX,
+	COMPANION_SHORT_SUFFIX_REGEX, PR_HTML_URL_REGEX,
+};
 
 pub async fn companion_update(
 	github_bot: &GithubBot,
@@ -236,10 +240,7 @@ pub fn companion_parse(body: &str) -> Option<(String, String, String, i64)> {
 }
 
 fn companion_parse_long(body: &str) -> Option<(String, String, String, i64)> {
-	let re = Regex::new(
-		r"companion[^[[:alpha:]]\n]*(?P<html_url>https://github.com/(?P<owner>[^/\n]+)/(?P<repo>[^/\n]+)/pull/(?P<number>[[:digit:]]+))"
-	)
-	.unwrap();
+	let re = Regex::new(COMPANION_LONG_REGEX!()).unwrap();
 	let caps = re.captures(&body)?;
 	let html_url = caps.name("html_url")?.as_str().to_owned();
 	let owner = caps.name("owner")?.as_str().to_owned();
@@ -254,10 +255,7 @@ fn companion_parse_long(body: &str) -> Option<(String, String, String, i64)> {
 }
 
 fn companion_parse_short(body: &str) -> Option<(String, String, String, i64)> {
-	let re = Regex::new(
-		r"companion[^[[:alpha:]]\n]*(?P<owner>[^/\n]+)/(?P<repo>[^/\n]+)#(?P<number>[[:digit:]]+)",
-	)
-	.unwrap();
+	let re = Regex::new(COMPANION_SHORT_REGEX!()).unwrap();
 	let caps = re.captures(&body)?;
 	let owner = caps.name("owner")?.as_str().to_owned();
 	let repo = caps.name("repo")?.as_str().to_owned();

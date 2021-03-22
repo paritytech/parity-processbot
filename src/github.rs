@@ -1,19 +1,7 @@
+use crate::{error::*, Result, PR_HTML_URL_REGEX};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
-
-pub trait GithubIssue {
-	fn number(&self) -> i64;
-	fn id(&self) -> i64;
-	fn html_url(&self) -> &String;
-	fn user(&self) -> &User;
-	fn body(&self) -> Option<&String>;
-	fn title(&self) -> Option<&String>;
-	fn repository(&self) -> Option<&Repository>;
-	fn assignee(&self) -> Option<&User>;
-	fn is_assignee(&self, login: &str) -> bool {
-		self.assignee()
-			.map_or(false, |assignee| assignee.login == login)
-	}
-}
+use snafu::OptionExt;
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PullRequest {
@@ -33,7 +21,7 @@ pub struct PullRequest {
 	pub state: Option<String>,
 	pub locked: Option<bool>,
 	pub title: Option<String>,
-	pub user: User,
+	pub user: Option<User>,
 	pub body: Option<String>,
 	pub labels: Vec<Label>,
 	pub milestone: Option<Milestone>,
@@ -49,7 +37,8 @@ pub struct PullRequest {
 	pub assignees: Option<Vec<User>>,
 	pub requested_reviewers: Option<Vec<User>>,
 	pub requested_teams: Option<Vec<RequestedTeam>>,
-	pub head: Head,
+	// Head might be missing when e.g. the branch has been deleted
+	pub head: Option<Head>,
 	pub base: Base,
 	#[serde(rename = "_links")]
 	pub links: Option<Links>,
@@ -59,37 +48,18 @@ pub struct PullRequest {
 	pub repository: Option<Repository>,
 }
 
-impl GithubIssue for PullRequest {
-	fn number(&self) -> i64 {
-		self.number
-	}
-
-	fn id(&self) -> i64 {
-		self.id
-	}
-
-	fn html_url(&self) -> &String {
-		&self.html_url
-	}
-
-	fn user(&self) -> &User {
-		&self.user
-	}
-
-	fn body(&self) -> Option<&String> {
-		self.body.as_ref()
-	}
-
-	fn title(&self) -> Option<&String> {
-		self.title.as_ref()
-	}
-
-	fn repository(&self) -> Option<&Repository> {
-		self.repository.as_ref()
-	}
-
-	fn assignee(&self) -> Option<&User> {
-		self.assignee.as_ref()
+impl PullRequest {
+	pub fn head_sha(&self) -> Result<&String> {
+		self.head
+			.as_ref()
+			.context(MissingField {
+				field: "pull_request.head",
+			})?
+			.sha
+			.as_ref()
+			.context(MissingField {
+				field: "pull_request.head.sha",
+			})
 	}
 }
 
@@ -99,7 +69,8 @@ pub struct Issue {
 	pub id: i64,
 	pub node_id: Option<String>,
 	pub html_url: String,
-	pub user: User,
+	// User might be missing when it has been deleted
+	pub user: Option<User>,
 	pub body: Option<String>,
 	pub title: Option<String>,
 	pub state: Option<String>,
@@ -115,40 +86,6 @@ pub struct Issue {
 	pub closed_at: Option<String>,
 	pub repository: Option<Repository>,
 	pub repository_url: Option<String>,
-}
-
-impl GithubIssue for Issue {
-	fn number(&self) -> i64 {
-		self.number
-	}
-
-	fn id(&self) -> i64 {
-		self.id
-	}
-
-	fn html_url(&self) -> &String {
-		&self.html_url
-	}
-
-	fn user(&self) -> &User {
-		&self.user
-	}
-
-	fn body(&self) -> Option<&String> {
-		self.body.as_ref()
-	}
-
-	fn title(&self) -> Option<&String> {
-		self.title.as_ref()
-	}
-
-	fn repository(&self) -> Option<&Repository> {
-		self.repository.as_ref()
-	}
-
-	fn assignee(&self) -> Option<&User> {
-		self.assignee.as_ref()
-	}
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -232,7 +169,8 @@ pub struct IssueEvent {
 pub struct Comment {
 	pub id: i64,
 	pub body: String,
-	pub user: User,
+	// User might be missing when it has been deleted
+	pub user: Option<User>,
 	pub node_id: Option<String>,
 	pub url: Option<String>,
 	pub html_url: Option<String>,
@@ -325,17 +263,19 @@ pub struct IssuePullRequest {
 pub struct Head {
 	pub label: Option<String>,
 	#[serde(rename = "ref")]
-	pub ref_field: String,
-	pub sha: String,
-	pub repo: HeadRepo,
+	pub ref_field: Option<String>,
+	pub sha: Option<String>,
+	// Repository might be missing when it has been deleted
+	pub repo: Option<HeadRepo>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Base {
 	#[serde(rename = "ref")]
-	pub ref_field: String,
-	pub sha: String,
-	pub repo: HeadRepo,
+	pub ref_field: Option<String>,
+	pub sha: Option<String>,
+	// Repository might be missing when it has been deleted
+	pub repo: Option<HeadRepo>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -359,27 +299,18 @@ pub struct RequestedReviewers {
 	pub teams: Vec<Team>,
 }
 
+#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
+pub enum UserType {
+	User,
+	#[serde(other)]
+	Unknown,
+}
+
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct User {
 	pub login: String,
-	pub id: Option<i64>,
-	pub node_id: Option<String>,
-	pub avatar_url: String,
-	pub gravatar_id: String,
-	pub url: Option<String>,
-	pub html_url: Option<String>,
-	pub followers_url: String,
-	pub following_url: String,
-	pub gists_url: String,
-	pub starred_url: String,
-	pub subscriptions_url: String,
-	pub organizations_url: String,
-	pub repos_url: String,
-	pub events_url: String,
-	pub received_events_url: String,
 	#[serde(rename = "type")]
-	pub type_field: String,
-	pub site_admin: bool,
+	pub type_field: Option<UserType>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -435,7 +366,7 @@ pub struct Repository {
 	pub node_id: Option<String>,
 	pub name: String,
 	pub full_name: Option<String>,
-	pub owner: User,
+	pub owner: Option<User>,
 	pub private: Option<bool>,
 	pub html_url: String,
 	pub description: Option<String>,
@@ -700,8 +631,8 @@ pub struct Diff {
 #[serde(rename_all = "snake_case")]
 pub enum IssueCommentAction {
 	Created,
-	Edited,
-	Deleted,
+	#[serde(other)]
+	Unknown,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -754,6 +685,7 @@ pub struct HeadRepo {
 	pub id: i64,
 	pub url: String,
 	pub name: String,
+	// The owner might be missing when e.g. they have deleted their account
 	pub owner: Option<User>,
 }
 
@@ -779,34 +711,9 @@ pub struct Branch {
 	pub protected: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(untagged, rename_all = "snake_case")]
-pub enum PullRequestAction {
-	Opened,
-	Edited,
-	Closed,
-	Assigned,
-	Unassigned,
-	ReviewRequested,
-	ReviewRequestRemoved,
-	ReadyForReview,
-	Labeled,
-	Unlabeled,
-	Synchronized,
-	Locked,
-	Unlocked,
-	Reopened,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(PartialEq, Deserialize)]
 #[serde(untagged, rename_all = "snake_case")]
 pub enum Payload {
-	PullRequest {
-		action: PullRequestAction,
-		number: i64,
-		pull_request: PullRequest,
-		repository: Repository,
-	},
 	IssueComment {
 		action: IssueCommentAction,
 		issue: Issue,
@@ -824,4 +731,117 @@ pub enum Payload {
 		action: CheckRunAction,
 		check_run: CheckRun,
 	},
+}
+
+#[derive(Deserialize)]
+struct DetectUserCommentPullRequestPullRequest {
+	pub html_url: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct DetectUserCommentPullRequestRepository {
+	pub name: Option<String>,
+	pub full_name: Option<String>,
+	pub owner: Option<User>,
+}
+
+#[derive(Deserialize)]
+struct DetectUserCommentPullRequestIssue {
+	pub pull_request: Option<DetectUserCommentPullRequestPullRequest>,
+	pub number: i64,
+}
+
+#[derive(Deserialize)]
+struct DetectUserCommentPullRequestComment {
+	pub body: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct DetectUserCommentPullRequest {
+	action: IssueCommentAction,
+	issue: Option<DetectUserCommentPullRequestIssue>,
+	repository: Option<DetectUserCommentPullRequestRepository>,
+	sender: Option<User>,
+	comment: Option<DetectUserCommentPullRequestComment>,
+}
+
+impl DetectUserCommentPullRequest {
+	pub fn get_details(&self) -> Option<(String, String, i64)> {
+		if let DetectUserCommentPullRequest {
+			action: IssueCommentAction::Created,
+			issue:
+				Some(DetectUserCommentPullRequestIssue {
+					number,
+					pull_request: Some(pr),
+				}),
+			comment:
+				Some(DetectUserCommentPullRequestComment { body: Some(body) }),
+			repository,
+			sender:
+				Some(User {
+					type_field: Some(UserType::User),
+					..
+				}),
+		} = self
+		{
+			if body.trim().starts_with("bot ") {
+				if let Some(DetectUserCommentPullRequestRepository {
+					name: Some(name),
+					owner: Some(User { login, .. }),
+					..
+				}) = repository
+				{
+					Some((login.to_owned(), name.to_owned(), *number))
+				} else if let Some(DetectUserCommentPullRequestRepository {
+					full_name: Some(full_name),
+					..
+				}) = repository
+				{
+					parse_repository_full_name(full_name)
+						.map(|(owner, name)| (owner, name, *number))
+				} else if let DetectUserCommentPullRequestPullRequest {
+					html_url: Some(html_url),
+				} = pr
+				{
+					parse_issue_details_from_pr_html_url(html_url)
+						.map(|(owner, name, _)| (owner, name, *number))
+				} else {
+					None
+				}
+			} else {
+				None
+			}
+		} else {
+			None
+		}
+	}
+}
+
+pub fn parse_issue_details_from_pr_html_url(
+	pr_html_url: &str,
+) -> Option<(String, String, i64)> {
+	let re = Regex::new(PR_HTML_URL_REGEX!()).unwrap();
+	let matches = re.captures(&pr_html_url)?;
+	let owner = matches.name("owner")?.as_str().to_owned();
+	let repo = matches.name("repo")?.as_str().to_owned();
+	let number = matches
+		.name("number")?
+		.as_str()
+		.to_owned()
+		.parse::<i64>()
+		.ok()?;
+	Some((owner, repo, number))
+}
+
+pub fn parse_repository_full_name(full_name: &str) -> Option<(String, String)> {
+	let parts: Vec<&str> = full_name.split("/").collect();
+	parts
+		.get(0)
+		.map(|owner| {
+			parts.get(1).map(|repo_name| {
+				Some((owner.to_string(), repo_name.to_string()))
+			})
+		})
+		.flatten()
+		.flatten()
 }
