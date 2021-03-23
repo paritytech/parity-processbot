@@ -8,14 +8,19 @@ metadata:
   labels:
     app: parity-processbot
   annotations:
-    kubernetes.io/ingress.class: traefik
-    traefik.frontend.entryPoints: "https,http"
+    {{- toYaml .Values.ingress.annotations | nindent 4 }}
 spec:
   rules:
-  - host: {{ .Values.ingressDomain }}
+  - host: {{ .Values.ingress.domain }}
     http:
       paths:
       - path: /
         backend:
           serviceName: parity-processbot
           servicePort: {{ .Values.processbot.config.WEBHOOK_PORT }}
+  {{- if eq .Values.environment "staging" }}
+  tls:
+  - hosts:
+    - {{ .Values.ingress.domain }}
+    secretName: {{ .Values.ingress.domain }}
+  {{- end }}

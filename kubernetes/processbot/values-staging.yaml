@@ -1,5 +1,12 @@
 environment: staging
-ingressDomain: processbot.parity-stg.parity.io
+ingress:
+  domain: processbot.parity-stg.parity.io
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-http01
+    external-dns.alpha.kubernetes.io/target: traefik-external.parity-stg.parity.io.
+    kubernetes.io/ingress.class: traefik-external
+    traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
 processbot:
   config:
     GITHUB_APP_ID: 81160
