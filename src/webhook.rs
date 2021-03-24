@@ -131,7 +131,10 @@ pub async fn webhook_inner(
 
 	let payload = serde_json::from_slice::<Payload>(&msg_bytes).ok().context(
 		Message {
-			msg: format!("Error parsing request body"),
+			msg: format!(
+				"Error parsing request body {}",
+				String::from_utf8_lossy(&msg_bytes)
+			),
 		},
 	)?;
 
@@ -1241,7 +1244,7 @@ async fn update_companion(
 				} = comp_pr.clone()
 				{
 					log::info!("Updating companion {}", comp_html_url);
-					if let Some(updated_sha) = companion_update(
+					match companion_update(
 						github_bot,
 						&comp_owner,
 						&comp_repo,
@@ -1250,47 +1253,53 @@ async fn update_companion(
 						&comp_head_branch,
 					)
 					.await
-					.map_err(|e| {
-						Error::Companion {
-							source: Box::new(e),
-						}
-						.map_issue(Some((
-							comp_owner.to_string(),
-							comp_repo.to_string(),
-							comp_number,
-						)))
-					})? {
-						log::info!(
-							"Companion updated; waiting for checks on {}",
-							comp_html_url
-						);
+					{
+						Ok(updated_sha) => {
+							log::info!(
+								"Companion updated; waiting for checks on {}",
+								comp_html_url
+							);
 
-						// wait for checks on the update commit
-						wait_to_merge(
-							github_bot,
-							&comp_owner,
-							&comp_repo,
-							comp_pr.number,
-							&comp_pr.html_url,
-							&format!("parity-processbot[bot]"),
-							&updated_sha,
-							db,
-						)
-						.await?;
-					} else {
-						log::info!(
-							"Failed updating companion {}",
-							comp_html_url
-						);
-
-						Err(Error::Message {
-							msg: format!("Failed updating substrate."),
+							// wait for checks on the update commit
+							wait_to_merge(
+								github_bot,
+								&comp_owner,
+								&comp_repo,
+								comp_pr.number,
+								&comp_pr.html_url,
+								&format!("parity-processbot[bot]"),
+								&updated_sha,
+								db,
+							)
+							.await?;
 						}
-						.map_issue(Some((
-							comp_owner.to_string(),
-							comp_repo.to_string(),
-							comp_number,
-						))))?;
+						Err(e) => {
+							let err_str = format!("{}", e);
+							let err_str = err_str.trim();
+							log::info!(
+								"Failed companion update in {} with error: {}",
+								comp_html_url,
+								err_str
+							);
+							github_bot
+								.create_issue_comment(
+									&comp_owner,
+									&comp_repo,
+									comp_number,
+									format!(
+										"
+Failed companion update:
+
+```
+{}
+```
+",
+										&err_str
+									)
+									.as_str(),
+								)
+								.await?;
+						}
 					}
 				} else {
 					Err(Error::Companion {
