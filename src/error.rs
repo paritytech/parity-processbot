@@ -16,15 +16,20 @@ pub enum Error {
 		field: String,
 	},
 
-	#[snafu(display("Error updating companion: {}", source))]
-	Companion {
-		source: Box<Error>,
-	},
-
 	#[snafu(display("Error merging: {}", source))]
 	Merge {
 		source: Box<Error>,
 		commit_sha: String,
+	},
+
+	#[snafu(display("Companion update failed: {}", source))]
+	CompanionUpdate {
+		source: Box<Error>,
+	},
+
+	#[snafu(display("Rebase failed: {}", source))]
+	Rebase {
+		source: Box<Error>,
 	},
 
 	#[snafu(display("Checks failed for {}", commit_sha))]
@@ -32,9 +37,10 @@ pub enum Error {
 		commit_sha: String,
 	},
 
-	#[snafu(display("Head SHA changed from {}", commit_sha))]
+	#[snafu(display("Head SHA changed from {} to {}", expected, actual))]
 	HeadChanged {
-		commit_sha: String,
+		expected: String,
+		actual: String,
 	},
 
 	#[snafu(display("Error getting organization membership: {}", source))]
@@ -53,7 +59,7 @@ pub enum Error {
 	#[snafu(display("Missing approval."))]
 	Approval {},
 
-	#[snafu(display("Error: {}", msg))]
+	#[snafu(display("{}", msg))]
 	Message {
 		msg: String,
 	},
@@ -171,7 +177,7 @@ pub enum Error {
 	},
 
 	#[snafu(display(
-		"Cmd '{}' failed with status {:?}; output: {}",
+		"Command '{}' failed with status {:?}; output: {}",
 		cmd,
 		status_code,
 		err

@@ -1,4 +1,4 @@
-use crate::{error::*, Result, PR_HTML_URL_REGEX};
+use crate::{constants::BOT_COMMANDS, error::*, Result, PR_HTML_URL_REGEX};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use snafu::OptionExt;
@@ -784,7 +784,9 @@ impl DetectUserCommentPullRequest {
 				}),
 		} = self
 		{
-			if body.trim().starts_with("bot ") {
+			let body = body.trim();
+
+			if BOT_COMMANDS.iter().find(|cmd| **cmd == body).is_some() {
 				if let Some(DetectUserCommentPullRequestRepository {
 					name: Some(name),
 					owner: Some(User { login, .. }),

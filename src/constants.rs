@@ -1,6 +1,17 @@
 pub const AUTO_MERGE_REQUEST: &str = "bot merge";
 pub const AUTO_MERGE_FORCE: &str = "bot merge force";
 pub const AUTO_MERGE_CANCEL: &str = "bot merge cancel";
+pub const REBASE: &str = "bot rebase";
+pub const BURNIN_REQUEST: &str = "bot burnin";
+pub const COMPARE_RELEASE_REQUEST: &str = "bot compare substrate";
+pub const BOT_COMMANDS: [&str; 6] = [
+	AUTO_MERGE_REQUEST,
+	AUTO_MERGE_FORCE,
+	AUTO_MERGE_CANCEL,
+	REBASE,
+	BURNIN_REQUEST,
+	COMPARE_RELEASE_REQUEST,
+];
 
 pub const AUTO_MERGE_FAILED: &str = "Cannot merge; please ensure the pull request is mergeable and has approval from the project owner or at least {min_reviewers} core devs.";
 pub const AUTO_MERGE_CHECKS_FAILED: &str = "Checks failed; cannot auto-merge.";
@@ -8,10 +19,6 @@ pub const AUTO_MERGE_CHECKS_ERROR: &str =
 	"Checks returned an error; cannot auto-merge.";
 pub const AUTO_MERGE_INVALIDATED: &str =
 	"Something has changed since auto-merge was requested; cancelling.";
-
-pub const COMPARE_RELEASE_REQUEST: &str = "bot compare substrate";
-pub const REBASE: &str = "bot rebase";
-pub const BURNIN_REQUEST: &str = "bot burnin";
 
 pub const FEATURES_KEY: &str = "features";
 

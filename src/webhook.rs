@@ -179,9 +179,12 @@ async fn handle_payload(payload: Payload, state: &AppState) -> Result<()> {
 			comment:
 				Comment {
 					body,
-					user: Some(User {
-						login, type_field, ..
-					}),
+					user:
+						Some(User {
+							login,
+							type_field: Some(UserType::User),
+							..
+						}),
 					..
 				},
 			issue:
@@ -193,10 +196,7 @@ async fn handle_payload(payload: Payload, state: &AppState) -> Result<()> {
 					repository,
 					..
 				},
-		} => match type_field {
-			Some(UserType::User) => handle_comment(
-				body, &login, number, &html_url, &repo_url, state,
-			)
+		} => handle_comment(body, &login, number, &html_url, &repo_url, state)
 			.await
 			.map_err(|e| match e {
 				Error::WithIssue { .. } => e,
@@ -226,8 +226,6 @@ async fn handle_payload(payload: Payload, state: &AppState) -> Result<()> {
 					}
 				}
 			}),
-			_ => Ok(()),
-		},
 		Payload::CommitStatus {
 			sha, state: status, ..
 		} => handle_status(sha, status, state).await,
@@ -269,6 +267,7 @@ async fn handle_status(
 	if status != StatusState::Pending {
 		checks_and_status(github_bot, &commit_sha, db).await?;
 	}
+
 	Ok(())
 }
 
@@ -289,136 +288,33 @@ async fn checks_and_status(
 			html_url,
 			requested_by: _,
 		} = m;
-		let pr = github_bot.pull_request(&owner, &repo_name, number).await?;
 
+		let pr = github_bot.pull_request(&owner, &repo_name, number).await?;
 		let pr_head_sha = pr.head_sha()?;
 
-		// Head sha should not have changed since request was made.
-		if commit_sha == pr_head_sha {
-			log::info!(
-				"Commit sha {} matches head of {}",
-				commit_sha,
-				html_url
-			);
-
-			// Delay after status hook to avoid false success
-			tokio::time::delay_for(std::time::Duration::from_millis(1000))
-				.await;
-
-			let checks = github_bot
-				.check_runs(&owner, &repo_name, &commit_sha)
-				.await?;
-			log::info!("{:?}", checks);
-			if checks
-				.check_runs
-				.iter()
-				.all(|r| r.conclusion == Some("success".to_string()))
-			{
-				log::info!("All checks success");
-				let status =
-					github_bot.status(&owner, &repo_name, &commit_sha).await?;
-				log::info!("{:?}", status);
-				match status {
-					CombinedStatus {
-						state: StatusState::Success,
-						..
-					} => {
-						log::info!("{} is green; attempting merge.", html_url);
-
-						// to reach here merge must be allowed
-						merge(github_bot, &owner, &repo_name, &pr).await?;
-
-						// clean db
-						db.delete(pr_head_sha.as_bytes()).context(Db).map_err(
-							|e| {
-								e.map_issue((
-									owner.to_string(),
-									repo_name.to_string(),
-									pr.number,
-								))
-							},
-						)?;
-
-						// update companion if necessary
-						update_companion(github_bot, &repo_name, &pr, db)
-							.await?;
-					}
-					CombinedStatus {
-						state: StatusState::Failure,
-						..
-					} => {
-						log::info!("{} status failure.", html_url);
-						Err(Error::ChecksFailed {
-							commit_sha: commit_sha.to_string(),
-						}
-						.map_issue((
-							owner.to_string(),
-							repo_name.to_string(),
-							pr.number,
-						)))?;
-					}
-					CombinedStatus {
-						state: StatusState::Error,
-						..
-					} => {
-						log::info!("{} status error.", html_url);
-						Err(Error::ChecksFailed {
-							commit_sha: commit_sha.to_string(),
-						}
-						.map_issue((
-							owner.to_string(),
-							repo_name.to_string(),
-							pr.number,
-						)))?;
-					}
-					CombinedStatus {
-						state: StatusState::Pending,
-						..
-					} => {
-						log::info!("{} is pending.", html_url);
-					}
-				}
-			} else if checks
-				.check_runs
-				.iter()
-				.all(|r| r.status == "completed".to_string())
-			{
-				log::info!("{} checks were unsuccessful", html_url);
-				Err(Error::ChecksFailed {
-					commit_sha: commit_sha.to_string(),
-				}
-				.map_issue((
-					owner.to_string(),
-					repo_name.to_string(),
-					pr.number,
-				)))?;
+		{
+			// Head sha should not have changed since request was made.
+			if commit_sha == pr_head_sha {
+				log::info!(
+					"Commit sha {} matches head of {}",
+					commit_sha,
+					html_url
+				);
+				Ok(())
 			} else {
-				log::info!("{} checks incomplete", html_url);
+				Err(Error::HeadChanged {
+					expected: commit_sha.to_string(),
+					actual: pr_head_sha.to_owned(),
+				})
 			}
-		} else {
-			// Head sha has changed since merge request.
-			log::info!(
-				"Head sha has changed since merge was requested on {}",
-				html_url
-			);
-			return Err(Error::HeadChanged {
-				commit_sha: commit_sha.to_string(),
-			});
 		}
+		.map_err(|e| e.map_issue((owner, repo_name, number)))?;
 	}
 
 	Ok(())
 }
 
-/// Parse bot commands in pull request comments.  Possible commands include:
-/// `bot merge`
-/// `bot merge force`
-/// `bot merge cancel`
-/// `bot compare substrate`
-/// `bot rebase`
-/// `bot burnin`
-///
-/// See also README.md.
+/// Parse bot commands in pull request comments. Commands are listed in README.md.
 async fn handle_comment(
 	body: String,
 	requested_by: &str,
@@ -608,46 +504,54 @@ async fn handle_comment(
 			});
 	} else if body.to_lowercase().trim() == REBASE.to_lowercase().trim() {
 		log::info!("Rebase {} requested by {}", html_url, requested_by);
-		if let PullRequest {
-			head:
-				Some(Head {
-					ref_field: Some(head_branch),
-					repo:
-						Some(HeadRepo {
-							name: head_repo,
-							owner:
-								Some(User {
-									login: head_owner, ..
-								}),
-							..
-						}),
-					..
-				}),
-			..
-		} = pr.clone()
 		{
-			let _ = github_bot
-				.create_issue_comment(owner, &repo_name, pr.number, "Rebasing.")
+			if let PullRequest {
+				head:
+					Some(Head {
+						ref_field: Some(head_branch),
+						repo:
+							Some(HeadRepo {
+								name: head_repo,
+								owner:
+									Some(User {
+										login: head_owner, ..
+									}),
+								..
+							}),
+						..
+					}),
+				..
+			} = pr.clone()
+			{
+				let _ = github_bot
+					.create_issue_comment(
+						owner,
+						&repo_name,
+						pr.number,
+						"Rebasing.",
+					)
+					.await
+					.map_err(|e| {
+						log::error!("Error posting comment: {}", e);
+					});
+				rebase(
+					github_bot,
+					owner,
+					&repo_name,
+					&head_owner,
+					&head_repo,
+					&head_branch,
+				)
 				.await
-				.map_err(|e| {
-					log::error!("Error posting comment: {}", e);
-				});
-			rebase(
-				github_bot,
-				owner,
-				&repo_name,
-				&head_owner,
-				&head_repo,
-				&head_branch,
-			)
-			.await?;
-		} else {
-			return Err(Error::Message {
-				msg: format!(
-					"PR response is missing required fields; rebase aborted."
-				),
-			});
+			} else {
+				Err(Error::Message {
+					msg: format!("PR is missing some API data"),
+				})
+			}
 		}
+		.map_err(|e| Error::Rebase {
+			source: Box::new(e),
+		})?;
 	} else if body.to_lowercase().trim() == BURNIN_REQUEST.to_lowercase().trim()
 	{
 		auth.check_org_membership(github_bot).await?;
@@ -1169,8 +1073,7 @@ async fn performance_regression(
 	Ok(())
 }
 
-/// Check for a Polkadot companion and update it if found.
-async fn update_companion(
+async fn do_update_companion(
 	github_bot: &GithubBot,
 	repo_name: &str,
 	pr: &PullRequest,
@@ -1178,123 +1081,84 @@ async fn update_companion(
 ) -> Result<()> {
 	if repo_name == "substrate" {
 		log::info!("Checking for companion.");
-		if let Some(body) = &pr.body {
-			// check for link in pr body
-			if let Some((comp_html_url, comp_owner, comp_repo, comp_number)) =
-				companion_parse(&body)
+		if let Some((comp_html_url, comp_owner, comp_repo, comp_number)) =
+			pr.body.as_ref().map(|body| companion_parse(body)).flatten()
+		{
+			log::info!("Found companion {}", comp_html_url);
+			let comp_pr = github_bot
+				.pull_request(&comp_owner, &comp_repo, comp_number)
+				.await?;
+
+			if let PullRequest {
+				head:
+					Some(Head {
+						ref_field: Some(comp_head_branch),
+						repo:
+							Some(HeadRepo {
+								name: comp_head_repo,
+								owner:
+									Some(User {
+										login: comp_head_owner,
+										..
+									}),
+								..
+							}),
+						..
+					}),
+				..
+			} = comp_pr.clone()
 			{
-				log::info!("Found companion {}", comp_html_url);
-				let comp_pr = github_bot
-					.pull_request(&comp_owner, &comp_repo, comp_number)
-					.await
-					.map_err(|e| {
-						e.map_issue((
-							comp_owner.to_string(),
-							comp_repo.to_string(),
-							comp_number,
-						))
-					})?;
+				log::info!("Updating companion {}", comp_html_url);
+				let updated_sha = companion_update(
+					github_bot,
+					&comp_owner,
+					&comp_repo,
+					&comp_head_owner,
+					&comp_head_repo,
+					&comp_head_branch,
+				)
+				.await?;
 
-				if let PullRequest {
-					head:
-						Some(Head {
-							ref_field: Some(comp_head_branch),
-							repo:
-								Some(HeadRepo {
-									name: comp_head_repo,
-									owner:
-										Some(User {
-											login: comp_head_owner,
-											..
-										}),
-									..
-								}),
-							..
-						}),
-					..
-				} = comp_pr.clone()
-				{
-					log::info!("Updating companion {}", comp_html_url);
-					match companion_update(
-						github_bot,
-						&comp_owner,
-						&comp_repo,
-						&comp_head_owner,
-						&comp_head_repo,
-						&comp_head_branch,
-					)
-					.await
-					{
-						Ok(updated_sha) => {
-							log::info!(
-								"Companion updated; waiting for checks on {}",
-								comp_html_url
-							);
-
-							// wait for checks on the update commit
-							wait_to_merge(
-								github_bot,
-								&comp_owner,
-								&comp_repo,
-								comp_pr.number,
-								&comp_pr.html_url,
-								&format!("parity-processbot[bot]"),
-								&updated_sha,
-								db,
-							)
-							.await?;
-						}
-						Err(e) => {
-							let err_str = format!("{}", e);
-							let err_str = err_str.trim();
-							log::info!(
-								"Failed companion update in {} with error: {}",
-								comp_html_url,
-								err_str
-							);
-							github_bot
-								.create_issue_comment(
-									&comp_owner,
-									&comp_repo,
-									comp_number,
-									format!(
-										"
-Failed companion update:
-
-```
-{}
-```
-",
-										&err_str
-									)
-									.as_str(),
-								)
-								.await?;
-						}
-					}
-				} else {
-					return Err(Error::Companion {
-						source: Box::new(Error::Message {
-							msg: format!(
-								"Companion PR is missing required fields."
-							),
-						}),
-					}
-					.map_issue((
-						comp_owner.to_string(),
-						comp_repo.to_string(),
-						comp_number,
-					)));
-				}
+				log::info!(
+					"Companion updated; waiting for checks on {}",
+					comp_html_url
+				);
+				wait_to_merge(
+					github_bot,
+					&comp_owner,
+					&comp_repo,
+					comp_pr.number,
+					&comp_pr.html_url,
+					&format!("parity-processbot[bot]"),
+					&updated_sha,
+					db,
+				)
+				.await?;
 			} else {
-				log::info!("No companion found.");
+				return Err(Error::Message {
+					msg: "Companion PR is missing some API data.".to_string(),
+				});
 			}
 		} else {
-			log::info!("No PR body found.");
+			log::info!("No companion found.");
 		}
 	}
 
 	Ok(())
+}
+
+/// Check for a Polkadot companion and update it if found.
+async fn update_companion(
+	github_bot: &GithubBot,
+	repo_name: &str,
+	pr: &PullRequest,
+	db: &DB,
+) -> Result<()> {
+	do_update_companion(github_bot, repo_name, pr, db)
+		.await
+		.map_err(|e| Error::CompanionUpdate {
+			source: Box::new(e),
+		})
 }
 
 /// Distinguish required statuses.
@@ -1314,6 +1178,7 @@ const TROUBLESHOOT_MSG: &str = "Merge can be attempted if:\n- The PR has approva
 
 async fn handle_error(e: Error, state: &AppState) {
 	log::error!("{}", e);
+
 	match e {
 		Error::WithIssue {
 			source,
@@ -1321,11 +1186,7 @@ async fn handle_error(e: Error, state: &AppState) {
 			..
 		} => {
 			let msg = match *source {
-				Error::Companion { source } => {
-					format!("Error updating substrate: {}", *source)
-				}
 				Error::Merge { source, commit_sha } => {
-					// clean db
 					let _ =
 						state.db.delete(commit_sha.as_bytes()).map_err(|e| {
 							log::error!(
@@ -1371,19 +1232,16 @@ async fn handle_error(e: Error, state: &AppState) {
 				Error::Approval {} => {
 					format!("Missing approval from the project owner or a minimum of core developers.\n\n{}", TROUBLESHOOT_MSG)
 				}
-				Error::HeadChanged { commit_sha } => {
-					// clean db
-					let _ =
-						state.db.delete(commit_sha.as_bytes()).map_err(|e| {
-							log::error!(
-								"Error deleting merge request from db: {}",
-								e
-							);
-						});
-					format!("Head SHA changed; merge aborted.")
+				Error::HeadChanged { ref expected, .. } => {
+					let _ = state.db.delete(expected.as_bytes()).map_err(|e| {
+						log::error!(
+							"Error deleting merge request from db: {}",
+							e
+						);
+					});
+					format!("{}; merge aborted.", source)
 				}
-				Error::ChecksFailed { commit_sha } => {
-					// clean db
+				Error::ChecksFailed { ref commit_sha } => {
 					let _ =
 						state.db.delete(commit_sha.as_bytes()).map_err(|e| {
 							log::error!(
@@ -1391,16 +1249,25 @@ async fn handle_error(e: Error, state: &AppState) {
 								e
 							);
 						});
-					format!("Checks failed; merge aborted.")
+					format!("{}; merge aborted.", source)
 				}
 				Error::OrganizationMembership { source } => {
-					format!("Error getting organization membership: {}", source)
+					format!(
+						"Error getting organization membership: `{}`",
+						source
+					)
 				}
-				Error::Message { msg } => format!("{}", msg),
+				Error::CompanionUpdate { source } => {
+					format!("Companion update failed: `{}`", source)
+				}
+				Error::Rebase { source } => {
+					format!("Rebase failed: `{}`", source)
+				}
 				Error::Response {
 					body: serde_json::Value::Object(m),
 					..
-				} => format!("Error: `{}`", m["message"]),
+				} => format!("Response error: `{}`", m["message"]),
+				Error::Message { msg } => format!("Error: `{}`", msg),
 				_ => "Unexpected error; see logs.".to_string(),
 			};
 			let _ = state
