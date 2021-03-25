@@ -1,5 +1,9 @@
 environment: production
-ingressDomain: processbot.parity.io
+ingress:
+  domain: processbot.parity.io
+  annotations:
+    kubernetes.io/ingress.class: traefik
+    traefik.frontend.entryPoints: "https,http"
 processbot:
   config:
     GITHUB_APP_ID: 51719
