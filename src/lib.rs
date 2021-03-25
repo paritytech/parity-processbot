@@ -1,5 +1,6 @@
 mod auth;
 pub mod bamboo;
+pub mod cmd;
 pub mod companion;
 pub mod config;
 pub mod constants;

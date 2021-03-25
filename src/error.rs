@@ -164,6 +164,18 @@ pub enum Error {
 	UrlCannotBeBase {
 		url: String,
 	},
+
+	#[snafu(display(
+		"Cmd '{}' failed with status {:?}; output: {}",
+		cmd,
+		status_code,
+		err
+	))]
+	CommandFailed {
+		cmd: String,
+		status_code: Option<i32>,
+		err: String,
+	},
 }
 
 impl Error {
