@@ -780,7 +780,7 @@ pub struct Branch {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(untagged, rename_all = "snake_case")]
+#[serde(rename_all = "snake_case")]
 pub enum PullRequestAction {
 	Opened,
 	Edited,
@@ -806,6 +806,8 @@ pub enum Payload {
 		number: i64,
 		pull_request: PullRequest,
 		repository: Repository,
+		sender: User,
+		label: Label,
 	},
 	IssueComment {
 		action: IssueCommentAction,

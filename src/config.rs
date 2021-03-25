@@ -45,11 +45,13 @@ pull request author or publicly to the default channel if the author's Matrix ha
 
 `TEST_REPO_NAME`: Name of a Github repository to be used for testing.
 
-`GITLAB_HOSTNAME`: Hostname of the Gitlab server used for burn-in deployment related CI jobs.
+`BURNIN_GITLAB_HOST`: Name of the Gitlab server used for burn-in automation.
 
-`GITLAB_PROJECT`: Name of the project in Gitlab where CI jobs for burn-in deployments can be found.
+`BURNIN_GITLAB_PROJECT`: Name of the Gitlab project to which burn-in requests are submitted.
 
-`GITLAB_PRIVATE_TOKEN`: Authentication token for the Gitlab server at GITLAB_HOSTNAME.
+`BURNIN_GITLAB_TOKEN`: Authentication token for the Gitlab server at BURNIN_GITLAB_HOST.
+
+`BURNIN_ROOM_ID`: Matrix room ID for notifications about burn-in requests
 */
 
 #[derive(Debug, Clone)]
@@ -69,10 +71,9 @@ pub struct MainConfig {
 	pub bamboo_tick_secs: u64,
 	/// if true then matrix notifications will not be sent
 	pub matrix_silent: bool,
-	pub gitlab_hostname: String,
-	pub gitlab_project: String,
-	pub gitlab_job_name: String,
-	pub gitlab_private_token: String,
+	pub burnin_gitlab_host: String,
+	pub burnin_gitlab_project: String,
+	pub burnin_gitlab_token: String,
 }
 
 impl MainConfig {
@@ -113,14 +114,12 @@ impl MainConfig {
 		let private_key = std::fs::read(&private_key_path)
 			.expect("Couldn't find private key.");
 
-		let gitlab_hostname =
-			dotenv::var("GITLAB_HOSTNAME").expect("GITLAB_HOSTNAME");
-		let gitlab_project =
-			dotenv::var("GITLAB_PROJECT").expect("GITLAB_PROJECT");
-		let gitlab_job_name =
-			dotenv::var("GITLAB_JOB_NAME").expect("GITLAB_JOB_NAME");
-		let gitlab_private_token =
-			dotenv::var("GITLAB_PRIVATE_TOKEN").expect("GITLAB_PRIVATE_TOKEN");
+		let burnin_gitlab_host =
+			dotenv::var("BURNIN_GITLAB_HOST").expect("BURNIN_GITLAB_HOST");
+		let burnin_gitlab_project = dotenv::var("BURNIN_GITLAB_PROJECT")
+			.expect("BURNIN_GITLAB_PROJECT");
+		let burnin_gitlab_token =
+			dotenv::var("BURNIN_GITLAB_TOKEN").expect("BURNIN_GITLAB_TOKEN");
 
 		Self {
 			environment,
@@ -137,10 +136,9 @@ impl MainConfig {
 			main_tick_secs,
 			bamboo_tick_secs,
 			matrix_silent,
-			gitlab_hostname,
-			gitlab_project,
-			gitlab_job_name,
-			gitlab_private_token,
+			burnin_gitlab_host,
+			burnin_gitlab_project,
+			burnin_gitlab_token,
 		}
 	}
 }
@@ -175,6 +173,8 @@ pub struct BotConfig {
 	pub core_sorting_repo_name: String,
 	/// matrix room id for sending app logs
 	pub logs_room_id: String,
+	/// matrix room id for notifications about burn-in requests
+	pub burnin_room_id: String,
 }
 
 impl BotConfig {
@@ -261,6 +261,8 @@ impl BotConfig {
 				.expect("CORE_SORTING_REPO_NAME"),
 
 			logs_room_id: dotenv::var("LOGS_ROOM_ID").expect("LOGS_ROOM_ID"),
+			burnin_room_id: dotenv::var("BURNIN_ROOM_ID")
+				.expect("BURNIN_ROOM_ID"),
 		}
 	}
 }
