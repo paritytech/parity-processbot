@@ -1,11 +1,12 @@
 use snafu::Snafu;
 
-type IssueDetails = (String, String, i64);
+// TODO this really should be struct { repository, owner, number }
+pub type IssueDetails = (String, String, i64);
 
 #[derive(Debug, Snafu)]
 #[snafu(visibility = "pub")]
 pub enum Error {
-	#[snafu(display("Source: {}", source))]
+	#[snafu(display("WithIssue: {}", source))]
 	WithIssue {
 		source: Box<Error>,
 		issue: IssueDetails,
@@ -73,13 +74,13 @@ pub enum Error {
 
 	/// An error occurred while sending or receiving a HTTP request or response
 	/// respectively.
-	#[snafu(display("Source: {}", source))]
+	#[snafu(display("Http: {}", source))]
 	Http {
 		source: reqwest::Error,
 	},
 
 	/// An error occurred in a Tokio call.
-	#[snafu(display("Source: {}", source))]
+	#[snafu(display("Tokio: {}", source))]
 	Tokio {
 		source: tokio::io::Error,
 	},
@@ -89,31 +90,25 @@ pub enum Error {
 	MissingData {},
 
 	/// An error occurred while retrieving or setting values in Rocks DB.
-	#[snafu(display("Source: {}", source))]
+	#[snafu(display("Db: {}", source))]
 	Db {
 		source: rocksdb::Error,
 	},
 
 	/// An error occurred while parsing or serializing JSON.
-	#[snafu(display("Source: {}", source))]
+	#[snafu(display("Utf8: {}", source))]
 	Utf8 {
 		source: std::string::FromUtf8Error,
 	},
 
 	/// An error occurred while parsing or serializing JSON.
-	#[snafu(display("Source: {}", source))]
+	#[snafu(display("Json: {}", source))]
 	Json {
 		source: serde_json::Error,
 	},
 
 	/// An error occurred while parsing TOML.
-	#[snafu(display("Source: {}", source))]
-	Toml {
-		source: toml::de::Error,
-	},
-
-	/// An error occurred while parsing TOML.
-	#[snafu(display("Source: {}", source))]
+	#[snafu(display("Base64: {}", source))]
 	Base64 {
 		source: base64::DecodeError,
 	},
@@ -129,7 +124,7 @@ pub enum Error {
 		source: jsonwebtoken::errors::Error,
 	},
 
-	#[snafu(display("Source: {}", source))]
+	#[snafu(display("Bincode: {}", source))]
 	Bincode {
 		source: bincode::Error,
 	},

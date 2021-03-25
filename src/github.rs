@@ -3,6 +3,10 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use snafu::OptionExt;
 
+pub trait HasIssueDetails {
+	fn get_issue_details(&self) -> Option<IssueDetails>;
+}
+
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PullRequest {
 	pub url: String,
@@ -48,6 +52,34 @@ pub struct PullRequest {
 	pub repository: Option<Repository>,
 }
 
+impl HasIssueDetails for PullRequest {
+	fn get_issue_details(&self) -> Option<(String, String, i64)> {
+		if let Some(Repository {
+			owner: Some(User { login, .. }),
+			name,
+			..
+		}) = self.repository.as_ref()
+		{
+			Some((login.to_owned(), name.to_owned(), self.number))
+		} else {
+			None
+		}
+		.or_else(|| {
+			if let Some(Repository {
+				full_name: Some(full_name),
+				..
+			}) = self.repository.as_ref()
+			{
+				parse_repository_full_name(full_name)
+					.map(|(owner, name)| (owner, name, self.number))
+			} else {
+				None
+			}
+		})
+		.or_else(|| parse_issue_details_from_pr_html_url(&self.html_url))
+	}
+}
+
 impl PullRequest {
 	pub fn head_sha(&self) -> Result<&String> {
 		self.head
@@ -86,6 +118,43 @@ pub struct Issue {
 	pub closed_at: Option<String>,
 	pub repository: Option<Repository>,
 	pub repository_url: Option<String>,
+}
+
+impl HasIssueDetails for Issue {
+	fn get_issue_details(&self) -> Option<(String, String, i64)> {
+		match self {
+			Issue {
+				number,
+				html_url,
+				pull_request: Some(_), // indicates the issue is a pr
+				repository,
+				..
+			} => if let Some(Repository {
+				owner: Some(User { login, .. }),
+				name,
+				..
+			}) = &repository
+			{
+				Some((login.to_owned(), name.to_owned(), *number))
+			} else {
+				None
+			}
+			.or_else(|| {
+				if let Some(Repository {
+					full_name: Some(full_name),
+					..
+				}) = &repository
+				{
+					parse_repository_full_name(full_name)
+						.map(|(owner, name)| (owner, name, *number))
+				} else {
+					None
+				}
+			})
+			.or_else(|| parse_issue_details_from_pr_html_url(&html_url)),
+			_ => None,
+		}
+	}
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -765,8 +834,8 @@ pub struct DetectUserCommentPullRequest {
 	comment: Option<DetectUserCommentPullRequestComment>,
 }
 
-impl DetectUserCommentPullRequest {
-	pub fn get_details(&self) -> Option<(String, String, i64)> {
+impl HasIssueDetails for DetectUserCommentPullRequest {
+	fn get_issue_details(&self) -> Option<(String, String, i64)> {
 		if let DetectUserCommentPullRequest {
 			action: IssueCommentAction::Created,
 			issue:
@@ -794,22 +863,32 @@ impl DetectUserCommentPullRequest {
 				}) = repository
 				{
 					Some((login.to_owned(), name.to_owned(), *number))
-				} else if let Some(DetectUserCommentPullRequestRepository {
-					full_name: Some(full_name),
-					..
-				}) = repository
-				{
-					parse_repository_full_name(full_name)
-						.map(|(owner, name)| (owner, name, *number))
-				} else if let DetectUserCommentPullRequestPullRequest {
-					html_url: Some(html_url),
-				} = pr
-				{
-					parse_issue_details_from_pr_html_url(html_url)
-						.map(|(owner, name, _)| (owner, name, *number))
 				} else {
 					None
 				}
+				.or_else(|| {
+					if let Some(DetectUserCommentPullRequestRepository {
+						full_name: Some(full_name),
+						..
+					}) = repository
+					{
+						parse_repository_full_name(full_name)
+							.map(|(owner, name)| (owner, name, *number))
+					} else {
+						None
+					}
+				})
+				.or_else(|| {
+					if let DetectUserCommentPullRequestPullRequest {
+						html_url: Some(html_url),
+					} = pr
+					{
+						parse_issue_details_from_pr_html_url(html_url)
+							.map(|(owner, name, _)| (owner, name, *number))
+					} else {
+						None
+					}
+				})
 			} else {
 				None
 			}
