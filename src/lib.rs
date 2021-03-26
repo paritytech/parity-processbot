@@ -1,10 +1,13 @@
 mod auth;
 pub mod bamboo;
 pub mod cmd;
+mod macros;
+#[macro_use]
 pub mod companion;
 pub mod config;
 pub mod constants;
 pub mod error;
+#[macro_use]
 pub mod github;
 pub mod github_bot;
 pub mod gitlab_bot;

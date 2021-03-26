@@ -1,10 +1,15 @@
 use regex::Regex;
+use rocksdb::DB;
 use snafu::ResultExt;
 use std::path::Path;
 
-use crate::{cmd::*, error::*, github_bot::GithubBot, Result};
+use crate::{
+	cmd::*, error::*, github::*, github_bot::GithubBot, webhook::wait_to_merge,
+	Result, COMPANION_LONG_REGEX, COMPANION_PREFIX_REGEX,
+	COMPANION_SHORT_REGEX, PR_HTML_URL_REGEX,
+};
 
-pub async fn companion_update(
+async fn update_companion_repository(
 	github_bot: &GithubBot,
 	owner: &str,
 	owner_repo: &str,
@@ -231,15 +236,12 @@ pub async fn companion_update(
 	Ok(updated_sha)
 }
 
-pub fn companion_parse(body: &str) -> Option<(String, String, String, i64)> {
+fn companion_parse(body: &str) -> Option<(String, String, String, i64)> {
 	companion_parse_long(body).or(companion_parse_short(body))
 }
 
 fn companion_parse_long(body: &str) -> Option<(String, String, String, i64)> {
-	let re = Regex::new(
-		r"companion[^[[:alpha:]]\n]*(?P<html_url>https://github.com/(?P<owner>[^/\n]+)/(?P<repo>[^/\n]+)/pull/(?P<number>[[:digit:]]+))"
-	)
-	.unwrap();
+	let re = Regex::new(COMPANION_LONG_REGEX!()).unwrap();
 	let caps = re.captures(&body)?;
 	let html_url = caps.name("html_url")?.as_str().to_owned();
 	let owner = caps.name("owner")?.as_str().to_owned();
@@ -254,10 +256,7 @@ fn companion_parse_long(body: &str) -> Option<(String, String, String, i64)> {
 }
 
 fn companion_parse_short(body: &str) -> Option<(String, String, String, i64)> {
-	let re = Regex::new(
-		r"companion[^[[:alpha:]]\n]*(?P<owner>[^/\n]+)/(?P<repo>[^/\n]+)#(?P<number>[[:digit:]]+)",
-	)
-	.unwrap();
+	let re = Regex::new(COMPANION_SHORT_REGEX!()).unwrap();
 	let caps = re.captures(&body)?;
 	let owner = caps.name("owner")?.as_str().to_owned();
 	let repo = caps.name("repo")?.as_str().to_owned();
@@ -274,6 +273,117 @@ fn companion_parse_short(body: &str) -> Option<(String, String, String, i64)> {
 		number = number
 	);
 	Some((html_url, owner, repo, number))
+}
+
+async fn perform_companion_update(
+	github_bot: &GithubBot,
+	db: &DB,
+	html_url: &str,
+	owner: &str,
+	repo: &str,
+	number: i64,
+) -> Result<()> {
+	let comp_pr = github_bot.pull_request(&owner, &repo, number).await?;
+
+	if let PullRequest {
+		head:
+			Some(Head {
+				ref_field: Some(contributor_branch),
+				repo:
+					Some(HeadRepo {
+						name: contributor_repo,
+						owner:
+							Some(User {
+								login: contributor, ..
+							}),
+						..
+					}),
+				..
+			}),
+		..
+	} = comp_pr.clone()
+	{
+		log::info!("Updating companion {}", html_url);
+		let updated_sha = update_companion_repository(
+			github_bot,
+			&owner,
+			&repo,
+			&contributor,
+			&contributor_repo,
+			&contributor_branch,
+		)
+		.await?;
+
+		log::info!("Companion updated; waiting for checks on {}", html_url);
+		wait_to_merge(
+			github_bot,
+			&owner,
+			&repo,
+			comp_pr.number,
+			&comp_pr.html_url,
+			&format!("parity-processbot[bot]"),
+			&updated_sha,
+			db,
+		)
+		.await?;
+	} else {
+		return Err(Error::Message {
+			msg: "Companion PR is missing some API data.".to_string(),
+		});
+	}
+
+	Ok(())
+}
+
+async fn detect_then_update_companion(
+	github_bot: &GithubBot,
+	merge_done_in: &str,
+	pr: &PullRequest,
+	db: &DB,
+) -> Result<()> {
+	if merge_done_in == "substrate" {
+		log::info!("Checking for companion.");
+		if let Some((html_url, owner, repo, number)) =
+			pr.body.as_ref().map(|body| companion_parse(body)).flatten()
+		{
+			log::info!("Found companion {}", html_url);
+			perform_companion_update(
+				github_bot, db, &html_url, &owner, &repo, number,
+			)
+			.await
+			.map_err(|e| e.map_issue((owner, repo, number)))?;
+		} else {
+			log::info!("No companion found.");
+		}
+	}
+
+	Ok(())
+}
+
+/// Check for a Polkadot companion and update it if found.
+pub async fn update_companion(
+	github_bot: &GithubBot,
+	merge_done_in: &str,
+	pr: &PullRequest,
+	db: &DB,
+) -> Result<()> {
+	detect_then_update_companion(github_bot, merge_done_in, pr, db)
+		.await
+		.map_err(|e| match e {
+			Error::WithIssue { source, issue } => {
+				Error::CompanionUpdate { source }.map_issue(issue)
+			}
+			_ => {
+				let e = Error::CompanionUpdate {
+					source: Box::new(e),
+				};
+				if let Some(details) = pr.get_issue_details() {
+					e.map_issue(details)
+				} else {
+					e
+				}
+			}
+		})
 }
 
 #[cfg(test)]
