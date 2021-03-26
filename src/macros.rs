@@ -20,14 +20,11 @@ macro_rules! COMPANION_LONG_REGEX {
 }
 
 #[macro_export]
-macro_rules! COMPANION_SHORT_SUFFIX_REGEX {
-	() => {
-		r"(?P<owner>[^/\n]+)/(?P<repo>[^/\n]+)#(?P<number>[[:digit:]]+)"
-	};
-}
-#[macro_export]
 macro_rules! COMPANION_SHORT_REGEX {
 	() => {
-		concat!(COMPANION_PREFIX_REGEX!(), COMPANION_SHORT_SUFFIX_REGEX!())
+		concat!(
+			COMPANION_PREFIX_REGEX!(),
+			r"(?P<owner>[^/\n]+)/(?P<repo>[^/\n]+)#(?P<number>[[:digit:]]+)"
+		)
 	};
 }

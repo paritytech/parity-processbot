@@ -6,7 +6,7 @@ use std::path::Path;
 use crate::{
 	cmd::*, error::*, github::*, github_bot::GithubBot, webhook::wait_to_merge,
 	Result, COMPANION_LONG_REGEX, COMPANION_PREFIX_REGEX,
-	COMPANION_SHORT_REGEX, COMPANION_SHORT_SUFFIX_REGEX, PR_HTML_URL_REGEX,
+	COMPANION_SHORT_REGEX, PR_HTML_URL_REGEX,
 };
 
 async fn update_companion_repository(
