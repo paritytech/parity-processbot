@@ -369,18 +369,18 @@ pub async fn update_companion(
 ) -> Result<()> {
 	detect_then_update_companion(github_bot, merge_done_in, pr, db)
 		.await
-		.map_err(|err| match err {
+		.map_err(|e| match e {
 			Error::WithIssue { source, issue } => {
 				Error::CompanionUpdate { source }.map_issue(issue)
 			}
 			_ => {
-				let err = Error::CompanionUpdate {
-					source: Box::new(err),
+				let e = Error::CompanionUpdate {
+					source: Box::new(e),
 				};
 				if let Some(details) = pr.get_issue_details() {
-					err.map_issue(details)
+					e.map_issue(details)
 				} else {
-					err
+					e
 				}
 			}
 		})

@@ -201,7 +201,6 @@ async fn handle_payload(payload: Payload, state: &AppState) -> Result<()> {
 					.map_err(|e| match e {
 						Error::WithIssue { .. } => e,
 						e => {
-							log::info!("FIXME dbg {}", e);
 							if let Some(details) = issue.get_issue_details() {
 								e.map_issue(details)
 							} else {
@@ -1075,7 +1074,7 @@ fn status_failure_allowed(ci: &str, context: &str) -> bool {
 const TROUBLESHOOT_MSG: &str = "Merge can be attempted if:\n- The PR has approval from two core-devs (or one if the PR is labelled insubstantial).\n- The PR has approval from a member of `substrateteamleads`.\n- The PR is attached to a project column and has approval from the project owner.\n\nSee https://github.com/paritytech/parity-processbot#faq";
 
 async fn handle_error(e: Error, state: &AppState) {
-	log::error!("handle_error {}", e);
+	log::error!("handle_error: {}", e);
 
 	match e {
 		Error::WithIssue {
@@ -1137,7 +1136,7 @@ async fn handle_error(e: Error, state: &AppState) {
 							e
 						);
 					});
-					format!("{}; merge aborted.", source)
+					format!("Merge aborted: {}", source)
 				}
 				Error::ChecksFailed { ref commit_sha } => {
 					let _ =
@@ -1147,25 +1146,18 @@ async fn handle_error(e: Error, state: &AppState) {
 								e
 							);
 						});
-					format!("{}; merge aborted.", source)
-				}
-				Error::OrganizationMembership { source } => {
-					format!(
-						"Error getting organization membership: `{}`",
-						source
-					)
-				}
-				Error::CompanionUpdate { source } => {
-					format!("Companion update failed: `{}`", source)
-				}
-				Error::Rebase { source } => {
-					format!("Rebase failed: `{}`", source)
+					format!("Merge aborted: {}", source)
 				}
 				Error::Response {
 					body: serde_json::Value::Object(m),
 					..
 				} => format!("Response error: `{}`", m["message"]),
-				Error::Message { msg } => format!("Error: {}", msg),
+				Error::OrganizationMembership { .. }
+				| Error::CompanionUpdate { .. }
+				| Error::Message { .. }
+				| Error::Rebase { .. } => {
+					format!("Error: {}", source)
+				}
 				_ => "Unexpected error; see logs.".to_string(),
 			};
 			let _ = state
