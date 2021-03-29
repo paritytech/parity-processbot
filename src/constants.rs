@@ -61,3 +61,7 @@ pub const CORE_SORTING_REPO: &str = "core-sorting";
 pub const BACKLOG_DEFAULT_NAME: &str = "backlog";
 
 pub const LOCAL_STATE_KEY: &str = "LOCAL_STATE_KEY";
+
+pub const SUBSTRATE_TEAM_LEADS_GROUP: &str = "substrateteamleads";
+
+pub const CORE_DEVS_GROUP: &str = "core-devs";

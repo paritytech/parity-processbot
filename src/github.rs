@@ -325,6 +325,7 @@ pub struct CheckRun {
 }
 
 #[derive(PartialEq, Deserialize)]
+#[serde(untagged)]
 pub enum Payload {
 	IssueComment {
 		action: IssueCommentAction,
