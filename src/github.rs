@@ -242,7 +242,9 @@ pub struct CombinedStatus {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Status {
+	pub id: i64,
 	pub context: String,
+	pub state: StatusState,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
@@ -318,9 +320,27 @@ pub struct HeadRepo {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CheckRunConclusion {
+	Success,
+	#[serde(other)]
+	Unknown,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CheckRunStatus {
+	Completed,
+	#[serde(other)]
+	Unknown,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CheckRun {
-	pub status: String,
-	pub conclusion: Option<String>,
+	pub id: i64,
+	pub name: String,
+	pub status: CheckRunStatus,
+	pub conclusion: Option<CheckRunConclusion>,
 	pub head_sha: String,
 }
 
