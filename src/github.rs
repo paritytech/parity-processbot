@@ -242,7 +242,9 @@ pub struct CombinedStatus {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Status {
+	pub id: i64,
 	pub context: String,
+	pub state: StatusState,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
@@ -333,8 +335,8 @@ pub enum Payload {
 		comment: Comment,
 	},
 	CommitStatus {
-		sha: String,
 		state: StatusState,
+		sha: String,
 		description: String,
 		target_url: String,
 		repository: Repository,
