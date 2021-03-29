@@ -320,31 +320,40 @@ async fn checks_and_status(
 							actual: pr_head_sha.to_owned(),
 						})
 					} else {
-						let checks = github_bot
+						match github_bot
 							.check_runs(&owner, &repo_name, &commit_sha)
-							.await?;
-						log::info!("{:?}", checks);
-						if checks.check_runs.iter().all(|r| {
-							r.conclusion == Some("success".to_string())
-						}) {
-							log::info!("All checks success");
-							merge_based_on_status(
-								github_bot, db, &pr, &owner, &repo_name,
-								commit_sha, &html_url,
-							)
 							.await
-						} else if checks
-							.check_runs
-							.iter()
-							.all(|r| r.status == "completed".to_string())
 						{
-							log::info!("{} checks were unsuccessful", html_url);
-							Err(Error::ChecksFailed {
-								commit_sha: commit_sha.to_string(),
-							})
-						} else {
-							log::info!("{} has pending checks.", html_url);
-							Ok(())
+							Ok(checks) => {
+								log::info!("{:?}", checks);
+								if checks.check_runs.iter().all(|r| {
+									r.conclusion == Some("success".to_string())
+								}) {
+									log::info!("All checks success");
+									merge_based_on_status(
+										github_bot, db, &pr, &owner,
+										&repo_name, commit_sha, &html_url,
+									)
+									.await
+								} else if checks.check_runs.iter().all(|r| {
+									r.status == "completed".to_string()
+								}) {
+									log::info!(
+										"{} checks were unsuccessful",
+										html_url
+									);
+									Err(Error::ChecksFailed {
+										commit_sha: commit_sha.to_string(),
+									})
+								} else {
+									log::info!(
+										"{} has pending checks.",
+										html_url
+									);
+									Ok(())
+								}
+							}
+							Err(e) => Err(e),
 						}
 					}
 				}
@@ -825,105 +834,81 @@ async fn ready_to_merge(
 	repo_name: &str,
 	pr: &PullRequest,
 ) -> Result<bool> {
-	let pr_head_sha = pr.head_sha()?;
+	match pr.head_sha() {
+		Ok(pr_head_sha) => {
+			match github_bot.status(owner, &repo_name, pr_head_sha).await {
+				Ok(status) => match status {
+					CombinedStatus {
+						state: StatusState::Success,
+						..
+					} => {
+						log::info!(
+							"{} has successful combined status.",
+							pr.html_url
+						);
 
-	//
-	// status
-	//
-	match github_bot
-		.status(owner, &repo_name, pr_head_sha)
-		.await
-		.map_err(|e| {
-			e.map_issue((owner.to_string(), repo_name.to_string(), pr.number))
-		})? {
-		CombinedStatus {
-			state: StatusState::Success,
-			..
-		} => {
-			log::info!("{} is green.", pr.html_url);
-			//
-			// checks
-			//
-			let checks = github_bot
-				.check_runs(&owner, &repo_name, pr_head_sha)
-				.await
-				.map_err(|e| {
-					e.map_issue((
-						owner.to_string(),
-						repo_name.to_string(),
-						pr.number,
-					))
-				})?;
-			log::info!("{:?}", checks);
-			if checks
-				.check_runs
-				.iter()
-				.all(|r| r.conclusion == Some("success".to_string()))
-			{
-				//
-				// status/checks green
-				//
-				return Ok(true);
-			} else if checks
-				.check_runs
-				.iter()
-				.all(|r| r.status == "completed".to_string())
-			{
-				//
-				// status/checks failure
-				//
-				log::info!("{} checks were unsuccessful.", pr.html_url);
-				return Err(Error::ChecksFailed {
-					commit_sha: pr_head_sha.to_string(),
-				}
-				.map_issue((
-					owner.to_string(),
-					repo_name.to_string(),
-					pr.number,
-				)));
-			} else {
-				//
-				// status/checks pending
-				//
-				return Ok(false);
+						match github_bot
+							.check_runs(&owner, &repo_name, pr_head_sha)
+							.await
+						{
+							Ok(checks) => {
+								log::info!("{:?}", checks);
+
+								if checks.check_runs.iter().all(|r| {
+									r.conclusion == Some("success".to_string())
+								}) {
+									log::info!(
+										"{} has successful check runs status.",
+										pr.html_url
+									);
+									Ok(true)
+								} else if checks.check_runs.iter().all(|r| {
+									r.status == "completed".to_string()
+								}) {
+									log::info!(
+										"{} checks were unsuccessful.",
+										pr.html_url
+									);
+									Err(Error::ChecksFailed {
+										commit_sha: pr_head_sha.to_string(),
+									})
+								} else {
+									log::info!(
+										"{} checks are pending.",
+										pr.html_url
+									);
+									Ok(false)
+								}
+							}
+							Err(e) => Err(e),
+						}
+					}
+					CombinedStatus {
+						state: StatusState::Pending,
+						..
+					} => {
+						log::info!("{} has pending status.", pr.html_url);
+						Ok(false)
+					}
+					status => {
+						log::info!(
+							"{} has failed or unknown status {:?}.",
+							pr.html_url,
+							status
+						);
+						Err(Error::ChecksFailed {
+							commit_sha: pr_head_sha.to_string(),
+						})
+					}
+				},
+				Err(e) => Err(e),
 			}
 		}
-		CombinedStatus {
-			state: StatusState::Pending,
-			..
-		} => {
-			//
-			// status/checks pending
-			//
-			return Ok(false);
-		}
-		CombinedStatus {
-			state: StatusState::Failure,
-			..
-		} => {
-			//
-			// status/checks failure
-			//
-			log::info!("{} status failure.", pr.html_url);
-			return Err(Error::ChecksFailed {
-				commit_sha: pr_head_sha.to_string(),
-			}
-			.map_issue((owner.to_string(), repo_name.to_string(), pr.number)));
-		}
-		CombinedStatus {
-			state: StatusState::Error,
-			..
-		} => {
-			//
-			// status/checks failure
-			//
-			log::info!("{} status error.", pr.html_url);
-			return Err(Error::ChecksFailed {
-				commit_sha: pr_head_sha.to_string(),
-			}
-			.map_issue((owner.to_string(), repo_name.to_string(), pr.number)));
-		}
+		Err(e) => Err(e),
 	}
+	.map_err(|e| {
+		e.map_issue((owner.to_string(), repo_name.to_string(), pr.number))
+	})
 }
 
 /// Create a merge request object.
