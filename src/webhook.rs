@@ -194,6 +194,7 @@ async fn handle_payload(payload: Payload, state: &AppState) -> Result<()> {
 				number,
 				html_url,
 				repository_url: Some(repo_url),
+				pull_request: Some(_),
 				..
 			} => {
 				handle_comment(body, &login, *number, html_url, repo_url, state)
