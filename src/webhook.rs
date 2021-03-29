@@ -256,6 +256,40 @@ async fn handle_status(
 	Ok(())
 }
 
+async fn merge_based_on_status(
+	github_bot: &GithubBot,
+	db: &DB,
+	pr: &PullRequest,
+	owner: &str,
+	owner_repo: &str,
+	commit_sha: &str,
+	html_url: &str,
+) -> Result<()> {
+	let status = github_bot.status(&owner, &owner_repo, &commit_sha).await?;
+	log::info!("{:?}", status);
+	match status {
+		CombinedStatus {
+			state: StatusState::Success,
+			..
+		} => {
+			log::info!("{} is green; attempting merge.", html_url);
+			merge(github_bot, &owner, &owner_repo, &pr).await?;
+			db.delete(&commit_sha).context(Db)?;
+			update_companion(github_bot, &owner_repo, &pr, db).await
+		}
+		CombinedStatus {
+			state: StatusState::Pending,
+			..
+		} => {
+			log::info!("{} has pending status.", html_url);
+			Ok(())
+		}
+		_ => Err(Error::ChecksFailed {
+			commit_sha: commit_sha.to_string(),
+		}),
+	}
+}
+
 /// Check that no commit has been pushed since the merge request was received.  Query checks and
 /// statuses and if they are green, attempt merge.
 async fn checks_and_status(
@@ -263,40 +297,65 @@ async fn checks_and_status(
 	commit_sha: &str,
 	db: &DB,
 ) -> Result<()> {
-	if let Some(b) = db.get(commit_sha.as_bytes()).context(Db)? {
-		let m = bincode::deserialize(&b).context(Bincode)?;
+	if let Some(pr_bytes) = db.get(commit_sha.as_bytes()).context(Db)? {
+		// Wait after receiving the webhook payload to avoid false success (?)
+		tokio::time::delay_for(std::time::Duration::from_millis(1000)).await;
+
+		let m = bincode::deserialize(&pr_bytes).context(Bincode)?;
 		log::info!("Deserialized merge request: {:?}", m);
 		let MergeRequest {
 			owner,
 			repo_name,
 			number,
 			html_url,
-			requested_by: _,
+			..
 		} = m;
 
-		let pr = github_bot.pull_request(&owner, &repo_name, number).await?;
-		let pr_head_sha = pr.head_sha()?;
-
-		{
-			// Head sha should not have changed since request was made.
-			if commit_sha == pr_head_sha {
-				log::info!(
-					"Commit sha {} matches head of {}",
-					commit_sha,
-					html_url
-				);
-				Ok(())
-			} else {
-				Err(Error::HeadChanged {
-					expected: commit_sha.to_string(),
-					actual: pr_head_sha.to_owned(),
-				})
-			}
+		match github_bot.pull_request(&owner, &repo_name, number).await {
+			Ok(pr) => match pr.head_sha() {
+				Ok(pr_head_sha) => {
+					if commit_sha != pr_head_sha {
+						Err(Error::HeadChanged {
+							expected: commit_sha.to_string(),
+							actual: pr_head_sha.to_owned(),
+						})
+					} else {
+						let checks = github_bot
+							.check_runs(&owner, &repo_name, &commit_sha)
+							.await?;
+						log::info!("{:?}", checks);
+						if checks.check_runs.iter().all(|r| {
+							r.conclusion == Some("success".to_string())
+						}) {
+							log::info!("All checks success");
+							merge_based_on_status(
+								github_bot, db, &pr, &owner, &repo_name,
+								commit_sha, &html_url,
+							)
+							.await
+						} else if checks
+							.check_runs
+							.iter()
+							.all(|r| r.status == "completed".to_string())
+						{
+							log::info!("{} checks were unsuccessful", html_url);
+							Err(Error::ChecksFailed {
+								commit_sha: commit_sha.to_string(),
+							})
+						} else {
+							log::info!("{} has pending checks.", html_url);
+							Ok(())
+						}
+					}
+				}
+				Err(e) => Err(e),
+			},
+			Err(e) => Err(e),
 		}
-		.map_err(|e| e.map_issue((owner, repo_name, number)))?;
+		.map_err(|e| e.map_issue((owner, repo_name, number)))
+	} else {
+		Ok(())
 	}
-
-	Ok(())
 }
 
 /// Parse bot commands in pull request comments. Commands are listed in README.md.
