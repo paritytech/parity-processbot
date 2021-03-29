@@ -398,9 +398,6 @@ async fn handle_comment(
 		GithubUserAuthenticator::new(requested_by, owner, &repo_name, number);
 
 	if body.to_lowercase().trim() == AUTO_MERGE_REQUEST.to_lowercase().trim() {
-		//
-		// MERGE
-		//
 		log::info!(
 			"Received merge request for PR {} from user {}",
 			html_url,
@@ -409,9 +406,6 @@ async fn handle_comment(
 
 		auth.check_org_membership(&github_bot).await?;
 
-		//
-		// merge allowed
-		//
 		merge_allowed(
 			github_bot,
 			owner,
@@ -422,9 +416,6 @@ async fn handle_comment(
 		)
 		.await?;
 
-		//
-		// status and merge
-		//
 		if ready_to_merge(github_bot, owner, &repo_name, pr).await? {
 			prepare_to_merge(
 				github_bot,
@@ -454,9 +445,6 @@ async fn handle_comment(
 	} else if body.to_lowercase().trim()
 		== AUTO_MERGE_FORCE.to_lowercase().trim()
 	{
-		//
-		// MERGE
-		//
 		log::info!(
 			"Received merge request for PR {} from user {}",
 			html_url,
@@ -465,9 +453,6 @@ async fn handle_comment(
 
 		auth.check_org_membership(&github_bot).await?;
 
-		//
-		// merge allowed
-		//
 		merge_allowed(
 			github_bot,
 			owner,
@@ -478,9 +463,6 @@ async fn handle_comment(
 		)
 		.await?;
 
-		//
-		// attempt merge without wait for checks
-		//
 		prepare_to_merge(
 			github_bot,
 			owner,
@@ -496,9 +478,6 @@ async fn handle_comment(
 	{
 		let pr_head_sha = pr.head_sha()?;
 
-		//
-		// CANCEL MERGE
-		//
 		log::info!(
 			"Received merge cancel for PR {} from user {}",
 			html_url,
@@ -523,9 +502,6 @@ async fn handle_comment(
 	{
 		let pr_head_sha = pr.head_sha()?;
 
-		//
-		// DIFF
-		//
 		log::info!(
 			"Received diff request for PR {} from user {}",
 			html_url,
@@ -547,7 +523,6 @@ async fn handle_comment(
 			&branch_substrate_commit,
 		);
 
-		// post link
 		log::info!("Posting link to substrate diff: {}", &link);
 		let _ = github_bot
 			.create_issue_comment(owner, &repo_name, number, &link)
@@ -735,35 +710,33 @@ async fn merge_allowed(
 	log::info!("{} is mergeable.", pr.html_url);
 
 	let team_leads = github_bot
-		.team(owner, "substrateteamleads")
+		.team(owner, SUBSTRATE_TEAM_LEADS_GROUP)
 		.and_then(|team| github_bot.team_members(team.id))
 		.await
 		.unwrap_or_else(|e| {
-			log::error!("Error getting core devs: {}", e);
+			log::error!("Error getting {}: {}", SUBSTRATE_TEAM_LEADS_GROUP, e);
 			vec![]
 		});
 
 	if team_leads.iter().any(|lead| lead.login == requested_by) {
-		//
-		// MERGE ALLOWED
-		//
 		log::info!("{} merge requested by a team lead.", pr.html_url);
 	} else {
-		fn label_insubstantial(label: &&Label) -> bool {
-			label.name.contains("insubstantial")
-		}
-		let min_reviewers =
-			if pr.labels.iter().find(label_insubstantial).is_some() {
-				1
-			} else {
-				bot_config.min_reviewers
-			};
+		let min_reviewers = if pr
+			.labels
+			.iter()
+			.find(|label| label.name.contains("insubstantial"))
+			.is_some()
+		{
+			1
+		} else {
+			bot_config.min_reviewers
+		};
 		let core_devs = github_bot
-			.team(owner, "core-devs")
+			.team(owner, CORE_DEVS_GROUP)
 			.and_then(|team| github_bot.team_members(team.id))
 			.await
 			.unwrap_or_else(|e| {
-				log::error!("Error getting core devs: {}", e);
+				log::error!("Error getting {}: {}", CORE_DEVS_GROUP, e);
 				vec![]
 			});
 		let reviews = github_bot.reviews(&pr.url).await.unwrap_or_else(|e| {
@@ -785,38 +758,29 @@ async fn merge_allowed(
 			})
 			.count() >= 1;
 		if core_approved || lead_approved {
-			//
-			// MERGE ALLOWED
-			//
 			log::info!("{} has core or team lead approval.", pr.html_url);
 		} else {
-			// get process info
 			let process =
 				process::get_process(github_bot, owner, repo_name, pr.number)
 					.await
 					.map_err(|e| Error::ProcessFile {
 						source: Box::new(e),
 					})?;
+
 			let owner_approved = reviews
 				.iter()
 				.sorted_by_key(|r| r.submitted_at)
 				.rev()
 				.find(|r| process.is_owner(&r.user.login))
 				.map_or(false, |r| r.state == Some(ReviewState::Approved));
-
 			let owner_requested = process.is_owner(&requested_by);
 
 			if owner_approved || owner_requested {
-				//
-				// MERGE ALLOWED
-				//
 				log::info!("{} has owner approval.", pr.html_url);
+			} else if process.is_empty() {
+				return Err(Error::ProcessInfo {});
 			} else {
-				if process.is_empty() {
-					Err(Error::ProcessInfo {})?;
-				} else {
-					Err(Error::Approval {})?;
-				}
+				return Err(Error::Approval {});
 			}
 		}
 	}
@@ -1102,20 +1066,66 @@ async fn performance_regression(
 	Ok(())
 }
 
-/// Distinguish required statuses.
-#[allow(dead_code)]
-fn status_failure_allowed(ci: &str, context: &str) -> bool {
-	let d: serde_yaml::Result<serde_yaml::Value> = serde_yaml::from_str(ci);
-	match d {
-		Ok(v) => v[context]["allow_failure"].as_bool().unwrap_or(false),
-		Err(e) => {
-			log::error!("Error parsing value from ci yaml: {}", e);
-			false
+const TROUBLESHOOT_MSG: &str = "Merge cannot succeed as it is. Check out the [criteria for merge](https://github.com/paritytech/parity-processbot#criteria-for-merge).";
+
+fn handle_error_inner(err: Error, state: &AppState) -> Option<String> {
+	match err {
+		Error::Merge { source, commit_sha } => {
+			let _ = state.db.delete(commit_sha.as_bytes()).map_err(|e| {
+				log::error!("Error deleting merge request from db: {}", e);
+			});
+			match *source {
+				Error::Response {
+					body: serde_json::Value::Object(m),
+					..
+				} => Some(format!("Merge failed: `{}`", m["message"])),
+				Error::Http { source, .. } => {
+					Some(format!("Merge failed due to network error:\n\n{}", source))
+				}
+				_ => Some(format!("Merge failed due to unexpected error:\n\n{}", source)),
+			}
 		}
+		Error::ProcessFile { source } => match *source {
+			Error::Response {
+				body: serde_json::Value::Object(m),
+				..
+			} => Some(format!("Error getting Process.json: `{}`", m["message"])),
+			Error::Http { source, .. } => {
+				Some(format!("Network error getting Process.json:\n\n{}", source))
+			}
+			_ => Some(format!("Unexpected error getting Process.json:\n\n{}", source)),
+		},
+		Error::ProcessInfo {} => {
+			Some(format!("Missing process info; check that the PR belongs to a project column.\n\n{}", TROUBLESHOOT_MSG))
+		}
+		Error::Approval {} => {
+			Some(format!("Missing approval from the project owner or a minimum of core developers.\n\n{}", TROUBLESHOOT_MSG))
+		}
+		Error::HeadChanged { ref expected, .. } => {
+			let _ = state.db.delete(expected.as_bytes()).map_err(|e| {
+				log::error!("Error deleting merge request from db: {}", e);
+			});
+			Some(format!("Merge aborted: {}", err))
+		}
+		Error::ChecksFailed { ref commit_sha } => {
+			let _ = state.db.delete(commit_sha.as_bytes()).map_err(|e| {
+				log::error!("Error deleting merge request from db: {}", e);
+			});
+			Some(format!("Merge aborted: {}", err))
+		}
+		Error::Response {
+			body: serde_json::Value::Object(m),
+			..
+		} => Some(format!("Response error: `{}`", m["message"])),
+		Error::OrganizationMembership { .. }
+		| Error::CompanionUpdate { .. }
+		| Error::Message { .. }
+		| Error::Rebase { .. } => {
+			Some(format!("Error: {}", err))
+		}
+		_ => None
 	}
 }
-
-const TROUBLESHOOT_MSG: &str = "Merge can be attempted if:\n- The PR has approval from two core-devs (or one if the PR is labelled insubstantial).\n- The PR has approval from a member of `substrateteamleads`.\n- The PR is attached to a project column and has approval from the project owner.\n\nSee https://github.com/paritytech/parity-processbot#faq";
 
 async fn handle_error(e: Error, state: &AppState) {
 	log::error!("handle_error: {}", e);
@@ -1126,84 +1136,12 @@ async fn handle_error(e: Error, state: &AppState) {
 			issue: (owner, repo, number),
 			..
 		} => {
-			let msg = match *source {
-				Error::Merge { source, commit_sha } => {
-					let _ =
-						state.db.delete(commit_sha.as_bytes()).map_err(|e| {
-							log::error!(
-								"Error deleting merge request from db: {}",
-								e
-							);
-						});
-					match *source {
-						Error::Response {
-							body: serde_json::Value::Object(m),
-							..
-						} => format!("Merge failed: `{}`", m["message"]),
-						Error::Http { source, .. } => format!(
-							"Merge failed due to network error:\n\n{}",
-							source
-						),
-						e => format!(
-							"Merge failed due to unexpected error:\n\n{}",
-							e
-						),
-					}
-				}
-				Error::ProcessFile { source } => match *source {
-					Error::Response {
-						body: serde_json::Value::Object(m),
-						..
-					} => format!(
-						"Error getting Process.json: `{}`",
-						m["message"]
-					),
-					Error::Http { source, .. } => format!(
-						"Network error getting Process.json:\n\n{}",
-						source
-					),
-					e => format!(
-						"Unexpected error getting Process.json:\n\n{}",
-						e
-					),
-				},
-				Error::ProcessInfo {} => {
-					format!("Missing process info; check that the PR belongs to a project column.\n\n{}", TROUBLESHOOT_MSG)
-				}
-				Error::Approval {} => {
-					format!("Missing approval from the project owner or a minimum of core developers.\n\n{}", TROUBLESHOOT_MSG)
-				}
-				Error::HeadChanged { ref expected, .. } => {
-					let _ = state.db.delete(expected.as_bytes()).map_err(|e| {
-						log::error!(
-							"Error deleting merge request from db: {}",
-							e
-						);
-					});
-					format!("Merge aborted: {}", source)
-				}
-				Error::ChecksFailed { ref commit_sha } => {
-					let _ =
-						state.db.delete(commit_sha.as_bytes()).map_err(|e| {
-							log::error!(
-								"Error deleting merge request from db: {}",
-								e
-							);
-						});
-					format!("Merge aborted: {}", source)
-				}
-				Error::Response {
-					body: serde_json::Value::Object(m),
-					..
-				} => format!("Response error: `{}`", m["message"]),
-				Error::OrganizationMembership { .. }
-				| Error::CompanionUpdate { .. }
-				| Error::Message { .. }
-				| Error::Rebase { .. } => {
-					format!("Error: {}", source)
-				}
-				_ => "Unexpected error; see logs.".to_string(),
-			};
+			let msg = handle_error_inner(*source, state).unwrap_or_else(|| {
+				format!(
+					"Unexpected error (at {} server time).",
+					chrono::Utc::now().to_string()
+				)
+			});
 			let _ = state
 				.github_bot
 				.create_issue_comment(&owner, &repo, number, &msg)
@@ -1212,6 +1150,8 @@ async fn handle_error(e: Error, state: &AppState) {
 					log::error!("Error posting comment: {}", e);
 				});
 		}
-		_ => {}
+		_ => {
+			handle_error_inner(e, state);
+		}
 	}
 }
