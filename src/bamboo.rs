@@ -14,9 +14,6 @@ pub struct EmployeesDirectoryResponse {
 #[serde(rename_all = "camelCase")]
 pub struct EmployeesDirectoryInnerResponse {
 	id: String,
-	display_name: Option<String>,
-	first_name: Option<String>,
-	last_name: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -115,21 +112,6 @@ pub fn github_to_matrix(access_token: &str) -> Result<HashMap<String, String>> {
 #[cfg(test)]
 mod tests {
 	use super::*;
-
-	#[test]
-	#[ignore]
-	fn test_get_employees_directory() {
-		dotenv::dotenv().ok();
-		let bamboo_token = dotenv::var("BAMBOO_TOKEN").expect("BAMBOO_TOKEN");
-		let res = get_employees_directory(&bamboo_token).map(|response| {
-			response
-				.employees
-				.into_iter()
-				.filter(|empl| empl.last_name == Some("Mark".to_owned()))
-				.collect::<Vec<_>>()
-		});
-		dbg!(res).unwrap();
-	}
 
 	#[test]
 	#[ignore]
