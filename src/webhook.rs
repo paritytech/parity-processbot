@@ -2,6 +2,7 @@ use futures::StreamExt;
 use futures_util::future::TryFutureExt;
 use hyper::{Body, Request, Response, StatusCode};
 use itertools::Itertools;
+use regex::RegexBuilder;
 use ring::hmac;
 use rocksdb::DB;
 use serde::{Deserialize, Serialize};
@@ -988,122 +989,68 @@ async fn merge(
 	pr: &PullRequest,
 ) -> Result<()> {
 	match pr.head_sha() {
-		Ok(pr_head_sha) => {
-			match github_bot
-				.merge_pull_request(owner, repo_name, pr.number, pr_head_sha)
-				.await
-			{
-				Ok(response) => {
-                    log::info!("pull request merge response: {:?}", response);
-					let status = response.status();
-                    let bytes = response.bytes().await;
-					match status {
-						StatusCode::OK => {
-							log::info!("{} merged successfully.", pr.html_url);
-							Ok(())
-						}
-						StatusCode::METHOD_NOT_ALLOWED => {
-                            // The PR might not be mergeable because some late required status is
-                            // still missing from the pipeline, although it will be delivered at
-                            // some point in the future. This case is detected by a pattern in the
-                            // message returned by Github.
-							//
-                            // Example: `Required status check
-                            // "continuous-integration/gitlab-check-transaction-versions" is
-                            // expected.`
-							//
-                            // That problem can be safely ignored since another merge attempt will
-                            // be made once the event for the missing status is delivered.
-                            match bytes {
-                                Ok(bytes) => {
-                                    if let Ok(PayloadWithMessage {
-                                        message
-                                    }) = serde_json::from_slice(&bytes) {
-                                        let clean_msg = message.to_lowercase();
-                                        let clean_msg = clean_msg.trim();
-                                        // Catches the following
-                                        // - "Required status check ... is expected."
-                                        // - "... required status checks have not succeeded: ... expected."
-                                        if clean_msg.contains("required status check") &&
-											clean_msg.ends_with("expected.")
-                                        {
-                                            // This problem will be solved by itself when all the
-                                            // required statuses are delivered, thus it can be
-                                            // ignored here
-                                            log::info!("Ignoring merge failure due to missing required status check; message: {}", message);
-											Ok(())
-                                        } else {
-											Err(Error::Message {
-											    msg: message,
-											})
-                                        }
-                                    } else {
-                                        let bytes = bytes.to_vec();
-                                        let body = String::from_utf8_lossy(&bytes[..]);
-                                        Err(Error::Message {
-                                            msg: format!(
-                                                "
-While trying to recover from failed HTTP request (status {}):
-
-Pull Request Merge Endpoint responded with unexpected body: `{}`",
-                                                status,
-                                                body
-                                            ),
-                                        })
-                                    }
-                                }
-                                Err(e) => Err(Error::Message {
-                                    msg: format!(
-                                        "
-While trying to recover from failed HTTP request (status {}):
-
-Failed to read response from Pull Request Merge Endpoint: `{}`",
-                                        status,
-                                        e
-                                    ),
-                                }),
-                            }
-						}
-						_ => match bytes {
-							Ok(bytes) => {
-                                let bytes = bytes.to_vec();
-								let body = String::from_utf8_lossy(&bytes[..]);
-								Err(if body.is_empty() {
-                                    Error::Message {
-                                        msg: format!("Request for Pull Request Merge Endpoint failed (status {})", status)
-                                    }
+		Ok(pr_head_sha) => match github_bot
+			.merge_pull_request(owner, repo_name, pr.number, pr_head_sha)
+			.await
+		{
+			Ok(_) => {
+				log::info!("{} merged successfully.", pr.html_url);
+				Ok(())
+			}
+			Err(e) => match e {
+				Error::Response {
+					ref status,
+					ref body,
+				} => match *status {
+					StatusCode::METHOD_NOT_ALLOWED => {
+						match body.get("message") {
+							Some(message) => {
+								// Catches the following
+								// - "Required status check ... is expected."
+								// - "... required status checks have not succeeded: ... expected."
+								let missing_status_matcher = RegexBuilder::new(
+									r"required\s+status.*expected",
+								)
+								.case_insensitive(true)
+								.build()
+								.unwrap();
+								if missing_status_matcher
+									.find(&message.to_string())
+									.is_some()
+								{
+									// This problem will be solved by itself when all the required
+									// statuses are delivered, thus it can be ignored here
+									log::info!(
+										"Ignoring merge failure due to missing required status; message: {}",
+										message
+									);
+									Ok(())
 								} else {
-									Error::Message {
-										msg: format!(
-                                            "Request for Pull Request Merge Endpoint failed (status {}): `{}`",
-                                            status,
-                                            body
-                                        ),
-									}
-								})
+									Err(Error::Message {
+										msg: message.to_string(),
+									})
+								}
 							}
-							Err(e) => Err(Error::Message {
+							_ => Err(Error::Message {
 								msg: format!(
 									"
 While trying to recover from failed HTTP request (status {}):
 
-Failed to read response from Pull Request Merge Endpoint: `{}`",
-									status,
-                                    e
+Pull Request Merge Endpoint responded with unexpected body: `{}`",
+									status, body
 								),
 							}),
-						},
+						}
 					}
-				}
-				e => e.map(|_| ()),
+					_ => Err(e),
+				},
+				_ => Err(e),
 			}
-			.map_err(|e| {
-				Error::Merge {
-					source: Box::new(e),
-					commit_sha: pr_head_sha.to_string(),
-				}
-			})
-		}
+			.map_err(|e| Error::Merge {
+				source: Box::new(e),
+				commit_sha: pr_head_sha.to_string(),
+			}),
+		},
 		Err(e) => Err(e),
 	}
 	.map_err(|e| {
@@ -1203,8 +1150,8 @@ fn handle_error_inner(err: Error, state: &AppState) -> Option<String> {
 			match *source {
 				Error::Response {
 					body,
-					..
-				} => Some(format!("Merge failed with response: `{}`", body)),
+					status
+				} => Some(format!("Merge failed with response status: {} and body: `{}`", status, body)),
 				Error::Http { source, .. } => {
 					Some(format!("Merge failed due to network error:\n\n{}", source))
 				}
