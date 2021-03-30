@@ -90,7 +90,7 @@ impl GithubBot {
 		repo_name: &str,
 		number: i64,
 		head_sha: &str,
-	) -> Result<()> {
+	) -> Result<reqwest::Response> {
 		let url = format!(
 			"{base_url}/repos/{owner}/{repo}/pulls/{number}/merge",
 			base_url = Self::BASE_URL,
@@ -102,7 +102,7 @@ impl GithubBot {
 			"sha": head_sha,
 			"merge_method": "squash"
 		});
-		self.client.put_response(&url, &params).await.map(|_| ())
+		self.client.put_response(&url, &params).await
 	}
 
 	/// Closes a pull request.
