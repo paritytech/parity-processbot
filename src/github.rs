@@ -8,6 +8,11 @@ pub trait HasIssueDetails {
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PayloadWithMessage {
+	pub message: Option<String>,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PullRequest {
 	pub url: String,
 	pub html_url: String,

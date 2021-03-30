@@ -1,6 +1,6 @@
 use futures::StreamExt;
 use futures_util::future::TryFutureExt;
-use hyper::{http::StatusCode, Body, Request, Response};
+use hyper::{Body, Request, Response, StatusCode};
 use itertools::Itertools;
 use ring::hmac;
 use rocksdb::DB;
@@ -987,19 +987,121 @@ async fn merge(
 	repo_name: &str,
 	pr: &PullRequest,
 ) -> Result<()> {
-	let pr_head_sha = pr.head_sha()?;
-	github_bot
-		.merge_pull_request(owner, repo_name, pr.number, pr_head_sha)
-		.await
-		.map_err(|e| {
-			Error::Merge {
-				source: Box::new(e),
-				commit_sha: pr_head_sha.to_string(),
+	match pr.head_sha() {
+		Ok(pr_head_sha) => {
+			match github_bot
+				.merge_pull_request(owner, repo_name, pr.number, pr_head_sha)
+				.await
+			{
+				Ok(response) => {
+					let status = response.status();
+                    let bytes = response.bytes().await;
+					match status {
+						StatusCode::OK => {
+							log::info!("{} merged successfully.", pr.html_url);
+							Ok(())
+						}
+						StatusCode::METHOD_NOT_ALLOWED => {
+                            // The PR might not be mergeable because some late required status is
+                            // still missing from the pipeline, although it will be delivered at
+                            // some point in the future.  This case is detected by a pattern in the
+                            // message returned by Github.
+							//
+                            // Example: `Required status check
+                            // "continuous-integration/gitlab-check-transaction-versions" is
+                            // expected.`
+							//
+                            // That problem can be safely ignored since another merge attempt will
+                            // be made once the event for the missing status is delivered.
+                            match bytes {
+                                Ok(bytes) => {
+                                    if let Ok(PayloadWithMessage {
+                                        message: Some(message),
+                                    }) = serde_json::from_slice::<PayloadWithMessage>(&bytes) {
+                                        if message.starts_with("Required status check") &&
+											message.ends_with("is expected.")
+                                        {
+                                            // This problem will be solved by itself when the all
+                                            // required statuses are delivered, thus it can be
+                                            // ignored here
+											Ok(())
+                                        } else {
+											Err(Error::Message {
+											    msg: message,
+											})
+                                        }
+                                    } else {
+                                        let bytes = bytes.to_vec();
+                                        let body = String::from_utf8_lossy(&bytes[..]);
+                                        Err(Error::Message {
+                                            msg: format!(
+                                                "
+While trying to recover from failed HTTP request (status {}):
+
+Pull Request Merge Endpoint responded with unexpected body: `{}`",
+                                                status,
+                                                body
+                                            ),
+                                        })
+                                    }
+                                }
+                                Err(e) => Err(Error::Message {
+                                    msg: format!(
+                                        "
+While trying to recover from failed HTTP request (status {}):
+
+Failed to read response from Pull Request Merge Endpoint: `{}`",
+                                        status,
+                                        e
+                                    ),
+                                }),
+                            }
+						}
+						_ => match bytes {
+							Ok(bytes) => {
+                                let bytes = bytes.to_vec();
+								let body = String::from_utf8_lossy(&bytes[..]);
+								Err(if body.is_empty() {
+                                    Error::Message {
+                                        msg: format!("Request for Pull Request Merge Endpoint failed (status {})", status)
+                                    }
+								} else {
+									Error::Message {
+										msg: format!(
+                                            "Request for Pull Request Merge Endpoint failed (status {}): `{}`",
+                                            status,
+                                            body
+                                        ),
+									}
+								})
+							}
+							Err(e) => Err(Error::Message {
+								msg: format!(
+									"
+While trying to recover from failed HTTP request (status {}):
+
+Failed to read response from Pull Request Merge Endpoint: `{}`",
+									status,
+                                    e
+								),
+							}),
+						},
+					}
+				}
+				e => e.map(|_| ()),
 			}
-			.map_issue((owner.to_string(), repo_name.to_string(), pr.number))
-		})?;
-	log::info!("{} merged successfully.", pr.html_url);
-	Ok(())
+			.map_err(|e| {
+				Error::Merge {
+					source: Box::new(e),
+					commit_sha: pr_head_sha.to_string(),
+				}
+			})
+		}
+		Err(e) => Err(e),
+	}
+	.map_err(|e| {
+		e.map_issue((owner.to_string(), repo_name.to_string(), pr.number))
+	})
 }
 
 #[allow(dead_code)]
@@ -1093,13 +1195,16 @@ fn handle_error_inner(err: Error, state: &AppState) -> Option<String> {
 			});
 			match *source {
 				Error::Response {
-					body: serde_json::Value::Object(m),
+					body,
 					..
-				} => Some(format!("Merge failed: `{}`", m["message"])),
+				} => Some(format!("Merge failed with response: `{}`", body)),
 				Error::Http { source, .. } => {
 					Some(format!("Merge failed due to network error:\n\n{}", source))
 				}
-				_ => Some(format!("Merge failed due to unexpected error:\n\n{}", source)),
+				Error::Message { .. } => {
+					Some(format!("Merge failed: {}", *source))
+				}
+				_ => Some("Merge failed due to unexpected error".to_string()),
 			}
 		}
 		Error::ProcessFile { source } => match *source {
