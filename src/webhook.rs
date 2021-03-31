@@ -363,50 +363,65 @@ async fn checks_and_status(
 		} = m;
 
 		match github_bot.pull_request(&owner, &repo_name, number).await {
-			Ok(pr) => {
-				match get_latest_statuses_state(
-					github_bot, &owner, &repo_name, commit_sha, &html_url,
-				)
-				.await
-				{
-					Ok(status) => match status {
-						Status::Success => {
-							match get_latest_checks_state(
-								github_bot, &owner, &repo_name, commit_sha,
-								&html_url,
-							)
-							.await
-							{
-								Ok(status) => match status {
-									Status::Success => {
-										merge(
-											github_bot, &owner, &repo_name, &pr,
-										)
-										.await?;
-										db.delete(&commit_sha).context(Db)?;
-										update_companion(
-											github_bot, &repo_name, &pr, db,
-										)
-										.await
+			Ok(pr) => match pr.head_sha() {
+				Ok(pr_head_sha) => {
+					if commit_sha != pr_head_sha {
+						Err(Error::HeadChanged {
+							expected: commit_sha.to_string(),
+							actual: pr_head_sha.to_owned(),
+						})
+					} else {
+						match get_latest_statuses_state(
+							github_bot, &owner, &repo_name, commit_sha,
+							&html_url,
+						)
+						.await
+						{
+							Ok(status) => match status {
+								Status::Success => {
+									match get_latest_checks_state(
+										github_bot, &owner, &repo_name,
+										commit_sha, &html_url,
+									)
+									.await
+									{
+										Ok(status) => match status {
+											Status::Success => {
+												merge(
+													github_bot, &owner,
+													&repo_name, &pr,
+												)
+												.await?;
+												db.delete(&commit_sha)
+													.context(Db)?;
+												update_companion(
+													github_bot, &repo_name,
+													&pr, db,
+												)
+												.await
+											}
+											Status::Failure => {
+												Err(Error::ChecksFailed {
+													commit_sha: commit_sha
+														.to_string(),
+												})
+											}
+											_ => Ok(()),
+										},
+										Err(e) => Err(e),
 									}
-									Status::Failure => {
-										Err(Error::ChecksFailed {
-											commit_sha: commit_sha.to_string(),
-										})
-									}
-									_ => Ok(()),
-								},
-								Err(e) => Err(e),
-							}
+								}
+								Status::Failure => Err(Error::ChecksFailed {
+									commit_sha: commit_sha.to_string(),
+								}),
+								_ => Ok(()),
+							},
+							Err(e) => Err(e),
 						}
-						Status::Failure => Err(Error::ChecksFailed {
-							commit_sha: commit_sha.to_string(),
-						}),
-						_ => Ok(()),
-					},
-					Err(e) => Err(e),
+					}
 				}
-			}
+				Err(e) => Err(e),
+			},
 			Err(e) => Err(e),
 		}
 		.map_err(|e| e.map_issue((owner, repo_name, number)))?;
