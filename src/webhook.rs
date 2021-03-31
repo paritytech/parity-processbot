@@ -1,5 +1,5 @@
+use async_recursion::async_recursion;
 use futures::StreamExt;
-use futures_util::future::TryFutureExt;
 use hyper::{Body, Request, Response, StatusCode};
 use itertools::Itertools;
 use regex::RegexBuilder;
@@ -234,7 +234,13 @@ async fn handle_check(
 	state: &AppState,
 ) -> Result<()> {
 	if status == CheckRunStatus::Completed {
-		checks_and_status(&state.github_bot, &state.db, &commit_sha).await
+		checks_and_status(
+			&state.bot_config,
+			&state.github_bot,
+			&state.db,
+			&commit_sha,
+		)
+		.await
 	} else {
 		Ok(())
 	}
@@ -249,7 +255,13 @@ async fn handle_status(
 	if status == StatusState::Pending {
 		Ok(())
 	} else {
-		checks_and_status(&state.github_bot, &state.db, &commit_sha).await
+		checks_and_status(
+			&state.bot_config,
+			&state.github_bot,
+			&state.db,
+			&commit_sha,
+		)
+		.await
 	}
 }
 
@@ -347,6 +359,7 @@ async fn get_latest_checks_state(
 /// Check that no commit has been pushed since the merge request was received.  Query checks and
 /// statuses and if they are green, attempt merge.
 async fn checks_and_status(
+	bot_config: &BotConfig,
 	github_bot: &GithubBot,
 	db: &DB,
 	commit_sha: &str,
@@ -359,7 +372,7 @@ async fn checks_and_status(
 			repo_name,
 			number,
 			html_url,
-			..
+			requested_by,
 		} = m;
 
 		match github_bot.pull_request(&owner, &repo_name, number).await {
@@ -388,8 +401,13 @@ async fn checks_and_status(
 										Ok(status) => match status {
 											Status::Success => {
 												merge(
-													github_bot, &owner,
-													&repo_name, &pr,
+													github_bot,
+													&owner,
+													&repo_name,
+													&pr,
+													bot_config,
+													&requested_by,
+													None,
 												)
 												.await?;
 												db.delete(&commit_sha)
@@ -474,10 +492,11 @@ async fn handle_comment(
 			owner,
 			&repo_name,
 			pr,
-			&bot_config,
+			bot_config,
 			requested_by,
+			None,
 		)
-		.await?;
+		.await??;
 
 		if ready_to_merge(github_bot, owner, &repo_name, pr).await? {
 			prepare_to_merge(
@@ -489,7 +508,16 @@ async fn handle_comment(
 			)
 			.await?;
 
-			merge(github_bot, owner, &repo_name, pr).await?;
+			merge(
+				github_bot,
+				owner,
+				&repo_name,
+				pr,
+				bot_config,
+				requested_by,
+				None,
+			)
+			.await?;
 			update_companion(github_bot, &repo_name, pr, db).await?;
 		} else {
 			let pr_head_sha = pr.head_sha()?;
@@ -523,8 +551,9 @@ async fn handle_comment(
 			&pr,
 			&bot_config,
 			requested_by,
+			None,
 		)
-		.await?;
+		.await??;
 
 		prepare_to_merge(
 			github_bot,
@@ -534,7 +563,16 @@ async fn handle_comment(
 			&pr.html_url,
 		)
 		.await?;
-		merge(github_bot, owner, &repo_name, &pr).await?;
+		merge(
+			github_bot,
+			owner,
+			&repo_name,
+			&pr,
+			bot_config,
+			requested_by,
+			None,
+		)
+		.await?;
 		update_companion(github_bot, &repo_name, &pr, db).await?;
 	} else if body.to_lowercase().trim()
 		== AUTO_MERGE_CANCEL.to_lowercase().trim()
@@ -754,6 +792,9 @@ async fn handle_burnin_request(
 }
 
 /// Check if the pull request is mergeable and approved.
+/// Errors related to core-devs and substrateteamleads API requests are ignored
+/// because the merge might succeed regardless of them, thus it does not make
+/// sense to fail this scenario completely if the request fails for some reason.
 async fn merge_allowed(
 	github_bot: &GithubBot,
 	owner: &str,
@@ -761,94 +802,254 @@ async fn merge_allowed(
 	pr: &PullRequest,
 	bot_config: &BotConfig,
 	requested_by: &str,
-) -> Result<()> {
-	let mergeable = pr.mergeable.unwrap_or(false);
+	min_approvals_required: Option<usize>,
+) -> Result<Result<Option<String>>> {
+	let is_mergeable = pr.mergeable.unwrap_or(false);
 
-	if !mergeable {
-		let msg = format!("{} is unmergeable", pr.html_url);
-		log::info!("{}", msg);
-		return Err(Error::Message { msg });
-	}
-
-	log::info!("{} is mergeable.", pr.html_url);
-
-	let team_leads = github_bot
-		.team(owner, SUBSTRATE_TEAM_LEADS_GROUP)
-		.and_then(|team| github_bot.team_members(team.id))
-		.await
-		.unwrap_or_else(|e| {
-			log::error!("Error getting {}: {}", SUBSTRATE_TEAM_LEADS_GROUP, e);
-			vec![]
-		});
-
-	if team_leads.iter().any(|lead| lead.login == requested_by) {
-		log::info!("{} merge requested by a team lead.", pr.html_url);
+	if let Some(min_approvals_required) = &min_approvals_required {
+		log::info!(
+			"Attempting to reach minimum number of approvals {}",
+			min_approvals_required
+		);
+	} else if is_mergeable {
+		log::info!("{} is mergeable", pr.html_url);
 	} else {
-		let min_reviewers = if pr
-			.labels
-			.iter()
-			.find(|label| label.name.contains("insubstantial"))
-			.is_some()
-		{
-			1
-		} else {
-			bot_config.min_reviewers
-		};
-		let core_devs = github_bot
-			.team(owner, CORE_DEVS_GROUP)
-			.and_then(|team| github_bot.team_members(team.id))
-			.await
-			.unwrap_or_else(|e| {
-				log::error!("Error getting {}: {}", CORE_DEVS_GROUP, e);
-				vec![]
-			});
-		let reviews = github_bot.reviews(&pr.url).await.unwrap_or_else(|e| {
-			log::error!("Error getting reviews: {}", e);
-			vec![]
-		});
-		let core_approved = reviews
-			.iter()
-			.filter(|r| {
-				core_devs.iter().any(|u| u.login == r.user.login)
-					&& r.state == Some(ReviewState::Approved)
-			})
-			.count() >= min_reviewers;
-		let lead_approved = reviews
-			.iter()
-			.filter(|r| {
-				team_leads.iter().any(|u| u.login == r.user.login)
-					&& r.state == Some(ReviewState::Approved)
-			})
-			.count() >= 1;
-		if core_approved || lead_approved {
-			log::info!("{} has core or team lead approval.", pr.html_url);
-		} else {
-			let process =
-				process::get_process(github_bot, owner, repo_name, pr.number)
-					.await
-					.map_err(|e| Error::ProcessFile {
-						source: Box::new(e),
-					})?;
-
-			let owner_approved = reviews
-				.iter()
-				.sorted_by_key(|r| r.submitted_at)
-				.rev()
-				.find(|r| process.is_owner(&r.user.login))
-				.map_or(false, |r| r.state == Some(ReviewState::Approved));
-			let owner_requested = process.is_owner(&requested_by);
-
-			if owner_approved || owner_requested {
-				log::info!("{} has owner approval.", pr.html_url);
-			} else if process.is_empty() {
-				return Err(Error::ProcessInfo {});
-			} else {
-				return Err(Error::Approval {});
-			}
-		}
+		log::info!("{} is not mergeable", pr.html_url);
 	}
 
-	Ok(())
+	if is_mergeable || min_approvals_required.is_some() {
+		match github_bot.reviews(&pr.url).await {
+			Ok(reviews) => {
+				let mut errors: Vec<String> = Vec::new();
+
+				// Consider only the latest review submitted per user
+				let mut latest_reviews: HashMap<String, (i64, Review)> =
+					HashMap::new();
+				for review in reviews {
+					if let Some(user) = (&review.user).as_ref() {
+						if latest_reviews
+							.get(&user.login)
+							.map(|(prev_id, _)| prev_id < &(&review).id)
+							.unwrap_or(true)
+						{
+							let user_login = (&user.login).to_owned();
+							latest_reviews
+								.insert(user_login, (review.id, review));
+						}
+					}
+				}
+				let approved_reviews = latest_reviews
+					.values()
+					.filter_map(|(_, review)| {
+						if review.state == Some(ReviewState::Approved) {
+							Some(review)
+						} else {
+							None
+						}
+					})
+					.collect::<Vec<_>>();
+
+				let team_leads = github_bot
+					.substrate_team_leads(owner)
+					.await
+					.unwrap_or_else(|e| {
+						let msg = format!(
+							"Error getting {}: `{}`",
+							SUBSTRATE_TEAM_LEADS_GROUP, e
+						);
+						log::error!("{}", msg);
+						errors.push(msg);
+						vec![]
+					});
+
+				let is_allowed = if team_leads
+					.iter()
+					.any(|lead| lead.login == requested_by)
+				{
+					log::info!(
+						"{} merge requested by a team lead.",
+						pr.html_url
+					);
+					Ok(())
+				} else {
+					let core_devs =
+						github_bot.core_devs(owner).await.unwrap_or_else(|e| {
+							let msg = format!(
+								"Error getting {}: `{}`",
+								CORE_DEVS_GROUP, e
+							);
+							log::error!("{}", msg);
+							errors.push(msg);
+							vec![]
+						});
+
+					let min_reviewers = if pr
+						.labels
+						.iter()
+						.find(|label| label.name.contains("insubstantial"))
+						.is_some()
+					{
+						1
+					} else {
+						bot_config.min_reviewers
+					};
+
+					let core_approved = approved_reviews
+						.iter()
+						.filter(|review| {
+							core_devs.iter().any(|core_dev| {
+								review
+									.user
+									.as_ref()
+									.map(|user| user.login == core_dev.login)
+									.unwrap_or(false)
+							})
+						})
+						.count() >= min_reviewers;
+					let lead_approved = approved_reviews
+						.iter()
+						.filter(|review| {
+							team_leads.iter().any(|team_lead| {
+								review
+									.user
+									.as_ref()
+									.map(|user| user.login == team_lead.login)
+									.unwrap_or(false)
+							})
+						})
+						.count() >= 1;
+
+					if core_approved || lead_approved {
+						log::info!(
+							"{} has core or team lead approval.",
+							pr.html_url
+						);
+						Ok(())
+					} else {
+						let process = process::get_process(
+							github_bot, owner, repo_name, pr.number,
+						)
+						.await
+						.map_err(|e| Error::ProcessFile {
+							source: Box::new(e),
+						})?;
+
+						let project_owner_approved =
+							approved_reviews.iter().rev().any(|review| {
+								review
+									.user
+									.as_ref()
+									.map(|user| process.is_owner(&user.login))
+									.unwrap_or(false)
+							});
+						let project_owner_requested =
+							process.is_owner(requested_by);
+
+						if project_owner_approved || project_owner_requested {
+							log::info!(
+								"{} has project owner approval.",
+								pr.html_url
+							);
+							Ok(())
+						} else if process.is_empty() {
+							Err(Error::ProcessInfo {
+								errors: Some(errors),
+							})
+						} else {
+							Err(Error::Approval {
+								errors: Some(errors),
+							})
+						}
+					}
+				};
+
+				match is_allowed {
+					Ok(_) => Ok(match min_approvals_required {
+						Some(min_approvals_required) => {
+							let has_bot_approved =
+								approved_reviews.iter().any(|review| {
+									review
+										.user
+										.as_ref()
+										.map(|user| {
+											user.type_field
+												.as_ref()
+												.map(|type_field| {
+													*type_field == UserType::Bot
+												})
+												.unwrap_or(false)
+										})
+										.unwrap_or(false)
+								});
+							// If the bot has already approved, then approving again will not make a
+							// difference.
+							if has_bot_approved {
+								Ok(None)
+							} else {
+								let relevant_approvals = approved_reviews
+									.iter()
+									.filter(|review| {
+										review
+											.user
+											.as_ref()
+											.map(|user| {
+												user.type_field
+													.as_ref()
+													.map(|type_field| {
+														*type_field
+															== UserType::User
+													})
+													.unwrap_or(false)
+											})
+											.unwrap_or(false)
+									})
+									.count();
+								// See if the target approval count can be reached with the bot's approval
+								let bot_approval = 1;
+								if relevant_approvals + bot_approval
+									== min_approvals_required
+								{
+									if team_leads.iter().any(|team_lead| {
+										team_lead.login == requested_by
+									}) {
+										Ok(Some("a team lead".to_string()))
+									} else {
+										process::get_process(
+											github_bot, owner, repo_name,
+											pr.number,
+										)
+										.await
+										.map(|process| {
+											if process.is_owner(requested_by) {
+												Some(
+													"a project owner"
+														.to_string(),
+												)
+											} else {
+												None
+											}
+										})
+									}
+								} else {
+									Ok(None)
+								}
+							}
+						}
+						_ => Ok(None),
+					}),
+					Err(e) => Err(e),
+				}
+			}
+			Err(e) => Err(e),
+		}
+	} else {
+		Err(Error::Message {
+			msg: format!("{} is not mergeable", pr.html_url),
+		})
+	}
+	.map_err(|e| {
+		e.map_issue((owner.to_string(), repo_name.to_string(), pr.number))
+	})
 }
 
 /// Query checks and statuses.
@@ -997,11 +1198,17 @@ async fn prepare_to_merge(
 }
 
 /// Send a merge request.
+/// It might recursively call itself when attempting to solve a merge error after something
+/// meaningful happens.
+#[async_recursion]
 async fn merge(
 	github_bot: &GithubBot,
 	owner: &str,
 	repo_name: &str,
 	pr: &PullRequest,
+	bot_config: &BotConfig,
+	requested_by: &str,
+	created_approval_id: Option<i64>,
 ) -> Result<()> {
 	match pr.head_sha() {
 		Ok(pr_head_sha) => match github_bot
@@ -1020,15 +1227,24 @@ async fn merge(
 					StatusCode::METHOD_NOT_ALLOWED => {
 						match body.get("message") {
 							Some(message) => {
-								// Catches the following
-								// - "Required status check ... is expected."
+								// Matches the following
+								// - "Required status check ... is {pending,expected}."
 								// - "... required status checks have not succeeded: ... {pending,expected}."
 								let missing_status_matcher = RegexBuilder::new(
-									r"required\s+status.*(pending|expected)\.$",
+									r"required\s+status\s+.*(pending|expected)",
 								)
 								.case_insensitive(true)
 								.build()
 								.unwrap();
+
+								// Matches the following
+								// - "At least N approving reviews are required by reviewers with write access."
+								let insufficient_approval_quota_matcher =
+									RegexBuilder::new(r"([[:digit:]]+).*approving\s+reviews?\s+(is|are)\s+required")
+										.case_insensitive(true)
+										.build()
+										.unwrap();
+
 								if missing_status_matcher
 									.find(&message.to_string())
 									.is_some()
@@ -1040,6 +1256,80 @@ async fn merge(
 										message
 									);
 									Ok(())
+								} else if let (
+									true,
+									Some(matches)
+								) = (
+									created_approval_id.is_none(),
+									insufficient_approval_quota_matcher
+										.captures(&message.to_string())
+								) {
+									let min_approvals_required = matches
+										.get(1)
+										.unwrap()
+										.as_str()
+										.parse::<usize>()
+										.unwrap();
+									match merge_allowed(
+										github_bot,
+										owner,
+										repo_name,
+										pr,
+										bot_config,
+										requested_by,
+										Some(min_approvals_required),
+									)
+									.await
+									{
+										Ok(result) => match result {
+											Ok(requester_role) => match requester_role {
+												Some(requester_role) => {
+													let _ = github_bot
+														.create_issue_comment(
+															owner,
+															&repo_name,
+															pr.number,
+															&format!(
+																"Bot will approve on the behalf of @{}, since they are {}, in an attempt to reach the minimum approval count",
+																requested_by,
+																requester_role,
+															),
+														)
+														.await
+														.map_err(|e| {
+															log::error!("Error posting comment: {}", e);
+														});
+													match github_bot.approve_merge_request(
+														owner,
+														repo_name,
+														pr.number
+													).await {
+														Ok(review) => merge(
+															github_bot,
+															owner,
+															repo_name,
+															pr,
+															bot_config,
+															requested_by,
+															Some(review.id)
+														).await,
+														Err(e) => Err(e)
+													}
+												},
+												None => Err(Error::Message {
+													msg: "Requester's approval is not enough to make the PR mergeable".to_string()
+												}),
+											},
+											Err(e) => Err(e)
+										},
+										Err(e) => Err(e),
+									}.map_err(|e| Error::Message {
+										msg: format!(
+											"Could not recover from: `{}` due to: `{}`",
+											message,
+											e
+										)
+									})
 								} else {
 									Err(Error::Message {
 										msg: message.to_string(),
@@ -1064,6 +1354,11 @@ Pull Request Merge Endpoint responded with unexpected body: `{}`",
 			.map_err(|e| Error::Merge {
 				source: Box::new(e),
 				commit_sha: pr_head_sha.to_string(),
+				pr_url: pr.url.to_string(),
+				owner: owner.to_string(),
+				repo_name: repo_name.to_string(),
+				pr_number: pr.number,
+				created_approval_id
 			}),
 		},
 		Err(e) => Err(e),
@@ -1156,12 +1451,38 @@ async fn performance_regression(
 
 const TROUBLESHOOT_MSG: &str = "Merge cannot succeed as it is. Check out the [criteria for merge](https://github.com/paritytech/parity-processbot#criteria-for-merge).";
 
-fn handle_error_inner(err: Error, state: &AppState) -> Option<String> {
+fn display_errors_along_the_way(errors: Option<Vec<String>>) -> String {
+	errors
+		.map(|errors| {
+			if errors.len() == 0 {
+				"".to_string()
+			} else {
+				format!(
+					"The following errors *might* have affected the outcome of this attempt:\n{}",
+					errors.iter().map(|e| format!("- {}", e)).join("\n")
+				)
+			}
+		})
+		.unwrap_or_else(|| "".to_string())
+}
+
+async fn handle_error_inner(err: Error, state: &AppState) -> Option<String> {
 	match err {
-		Error::Merge { source, commit_sha } => {
+		Error::Merge { source, commit_sha, pr_url, owner, repo_name, pr_number, created_approval_id } => {
 			let _ = state.db.delete(commit_sha.as_bytes()).map_err(|e| {
 				log::error!("Error deleting merge request from db: {}", e);
 			});
+			let github_bot = &state.github_bot;
+			if let Some(created_approval_id) = created_approval_id {
+				let _ = github_bot.clear_merge_request_approval(
+					&owner,
+					&repo_name,
+					pr_number,
+					created_approval_id
+				).await.map_err(
+					|e| log::error!("Failed to cleanup a bot review in {} due to: {}", pr_url, e)
+				);
+			}
 			match *source {
 				Error::Response {
 					body,
@@ -1186,11 +1507,23 @@ fn handle_error_inner(err: Error, state: &AppState) -> Option<String> {
 			}
 			_ => Some(format!("Unexpected error getting Process.json:\n\n{}", source)),
 		},
-		Error::ProcessInfo {} => {
-			Some(format!("Missing process info; check that the PR belongs to a project column.\n\n{}", TROUBLESHOOT_MSG))
+		Error::ProcessInfo { errors } => {
+			Some(
+				format!(
+					"Error: Missing process info; check that the PR belongs to a project column.\n\n{}\n\n{}",
+					display_errors_along_the_way(errors),
+					TROUBLESHOOT_MSG
+				)
+			)
 		}
-		Error::Approval {} => {
-			Some(format!("Missing approval from the project owner or a minimum of core developers.\n\n{}", TROUBLESHOOT_MSG))
+		Error::Approval { errors } => {
+			Some(
+				format!(
+					"Error: Approval criteria was not satisfied.\n\n{}\n\n{}",
+					display_errors_along_the_way(errors),
+					TROUBLESHOOT_MSG
+				)
+			)
 		}
 		Error::HeadChanged { ref expected, .. } => {
 			let _ = state.db.delete(expected.as_bytes()).map_err(|e| {
@@ -1227,12 +1560,13 @@ async fn handle_error(e: Error, state: &AppState) {
 			issue: (owner, repo, number),
 			..
 		} => {
-			let msg = handle_error_inner(*source, state).unwrap_or_else(|| {
-				format!(
-					"Unexpected error (at {} server time).",
-					chrono::Utc::now().to_string()
-				)
-			});
+			let msg =
+				handle_error_inner(*source, state).await.unwrap_or_else(|| {
+					format!(
+						"Unexpected error (at {} server time).",
+						chrono::Utc::now().to_string()
+					)
+				});
 			let _ = state
 				.github_bot
 				.create_issue_comment(&owner, &repo, number, &msg)
@@ -1242,7 +1576,7 @@ async fn handle_error(e: Error, state: &AppState) {
 				});
 		}
 		_ => {
-			handle_error_inner(e, state);
+			handle_error_inner(e, state).await;
 		}
 	}
 }

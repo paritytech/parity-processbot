@@ -37,7 +37,7 @@ The deployment's status can be followed through [Gitlab Pipelines on the parity-
 
 # Configuration
 
-## Project owners <a name="project-owners"></a>
+## Project Owners <a name="project-owners"></a>
 
 Project owners can be configured by placing a `Process.json` file in the root of your repository. **The bot always considers only the `master` branch's version of the file**. See [./Process.json](./Process.json) or [Substrate's Process.json](https://github.com/paritytech/substrate/blob/master/Process.json) for examples.
 
@@ -45,7 +45,7 @@ The file should have a valid JSON array of `{ "project_name": string, "owner": s
 
 - `project_name` is the [Github Project](#github-project)'s name
 - `owner` is the Github Username of the project's lead
-- `matrix_room_id` is the project's room address on Matrix, like `"!yBKstWVBkwzUkPslsp:matrix.parity.io"`. *It's not currently used, but needs to be defined.*
+- `matrix_room_id` is the project's room address on Matrix, like `"!yBKstWVBkwzUkPslsp:matrix.parity.io"`. It's not currently used, but needs to be defined.
 
 ## Runtime
 
@@ -53,13 +53,42 @@ Some of the bot's configuration (e.g. the number of required reviewers for a pul
 
 # Criteria for merge
 
-**Approvals**: A Pull Request needs either
+## Approvals
+
+A Pull Request needs either
 
 - `$MIN_REVIEWERS` (default: 2) [core-dev](#core-devs) member approvals, or
 - One [substrateteamleads](#substrateteamleads) member approval, or
-- One approval from the project owner **for the PR**. Projects are managed [through the Github UI](#github-project) and its [owners](#project-owners) are defined in `Process.json`. If the PR does not belong to any project or if it has been approved by a project owner which is not the PR's project owner, then this rule will not take effect.
+- One approval from the project owner **for the PR**. Projects are managed
+  [through the Github UI](#github-project) and its [owners](#project-owners)
+  are defined in `Process.json`. If the PR does not belong to any project or if
+  it has been approved by a project owner which is not the PR's project owner,
+  then this rule will not take effect.
 
-**Checks and statuses**: all CI statuses and checks should be green when using `bot merge`; those can be bypassed by using `bot merge force`.
+---
+
+For the sake of the following explanation, consider "Allowed Developers"
+to be either
+- [Project Owners](#project-owners)
+- [substrateteamleads](#substrateteamleads)
+
+When the bot is commanded to merge, if the PR is short of 1 approval and the
+command's requester might not be able to fulfill the approval count on their
+own, then the bot will try to pitch in the missing approval if the requester is
+an Allowed Developer. The reasoning for this feature is as follows:
+
+1. PR authors cannot approve their own merge requests, although Allowed
+   Developers should have the means to bypass that requirement.
+
+2. If the Allowed Developer has already approved and it's still short of one,
+   they cannot "approve twice" in order to meet the quota. In that case, the
+   bot should contribute one approval in order to help them meet that
+   requirement.
+
+## Checks and statuses
+
+All CI statuses and checks should be green when using `bot merge` (can be
+bypassed by using `bot merge force`).
 
 # FAQ
 
@@ -70,17 +99,17 @@ Some of the bot's configuration (e.g. the number of required reviewers for a pul
 	- https://github.com/orgs/paritytech/teams/substrateteamleads/members
 
 - What is a project column and how do I attach one? <a name="github-project"></a>
-	- A project column is necessary for Processbot to identify a [project owner](#project-owners).
+	- A project column is necessary for Processbot to identify a [Project Owner](#project-owners).
 	- A pull request can be attached to a project column using the Github web UI (similar to attaching a label):
 
 		- No project *(cannot be recognised)*
 
 		![](https://github.com/paritytech/parity-processbot/blob/master/no-project.png)
-	
+
 		- A project but no column *(cannot be recognised)*
-	
+
 		![](https://github.com/paritytech/parity-processbot/blob/master/no-column.png)
-	
+
 		- The project `parity-processbot` and column `general` *(will be recognised)*
-	
+
 		![](https://github.com/paritytech/parity-processbot/blob/master/proj-column.png)

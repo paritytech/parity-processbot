@@ -30,7 +30,6 @@ macro_rules! impl_methods_with_body {
 					.json::<T>()
 					.await
 					.context(error::Http)
-
 			}
 
 			pub async fn $method_response_fn<'b, I, B>(
@@ -70,6 +69,8 @@ macro_rules! impl_methods_with_body {
 /// Checks the response's status and maps into an `Err` branch if
 /// not successful.
 async fn handle_response(response: Response) -> Result<Response> {
+	log::debug!("response: {:?}", &response);
+
 	let status = response.status();
 	if status.is_success() {
 		Ok(response)
@@ -196,8 +197,7 @@ impl Client {
 			.build()
 			.context(error::Http)?;
 
-		log::debug!("{:?}", &request);
-
+		log::debug!("request: {:?}", &request);
 		handle_response(
 			self.client.execute(request).await.context(error::Http)?,
 		)

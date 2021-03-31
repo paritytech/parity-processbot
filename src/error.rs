@@ -21,6 +21,11 @@ pub enum Error {
 	Merge {
 		source: Box<Error>,
 		commit_sha: String,
+		pr_url: String,
+		owner: String,
+		repo_name: String,
+		pr_number: i64,
+		created_approval_id: Option<i64>,
 	},
 
 	#[snafu(display("Companion update failed: {}", source))]
@@ -55,10 +60,14 @@ pub enum Error {
 	},
 
 	#[snafu(display("Missing process info."))]
-	ProcessInfo {},
+	ProcessInfo {
+		errors: Option<Vec<String>>,
+	},
 
 	#[snafu(display("Missing approval."))]
-	Approval {},
+	Approval {
+		errors: Option<Vec<String>>,
+	},
 
 	#[snafu(display("{}", msg))]
 	Message {
