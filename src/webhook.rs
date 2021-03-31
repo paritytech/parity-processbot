@@ -1,18 +1,20 @@
 use futures::StreamExt;
 use futures_util::future::TryFutureExt;
-use hyper::{http::StatusCode, Body, Request, Response};
+use hyper::{Body, Request, Response, StatusCode};
 use itertools::Itertools;
+use regex::RegexBuilder;
 use ring::hmac;
 use rocksdb::DB;
 use serde::{Deserialize, Serialize};
 use snafu::{OptionExt, ResultExt};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::{
 	auth::GithubUserAuthenticator, companion::*, config::BotConfig,
 	constants::*, error::*, github::*, github_bot::GithubBot, gitlab_bot::*,
-	matrix_bot::MatrixBot, performance, process, rebase::*, Result,
+	matrix_bot::MatrixBot, performance, process, rebase::*, Result, Status,
 };
 
 /// This data gets passed along with each webhook to the webhook handler.
@@ -194,6 +196,7 @@ async fn handle_payload(payload: Payload, state: &AppState) -> Result<()> {
 				number,
 				html_url,
 				repository_url: Some(repo_url),
+				pull_request: Some(_),
 				..
 			} => {
 				handle_comment(body, &login, *number, html_url, repo_url, state)
@@ -226,18 +229,15 @@ async fn handle_payload(payload: Payload, state: &AppState) -> Result<()> {
 
 /// If a check completes, query if all statuses and checks are complete.
 async fn handle_check(
-	status: String,
+	status: CheckRunStatus,
 	commit_sha: String,
 	state: &AppState,
 ) -> Result<()> {
-	let db = &state.db;
-	let github_bot = &state.github_bot;
-
-	if status == "completed".to_string() {
-		checks_and_status(github_bot, &commit_sha, db).await?;
+	if status == CheckRunStatus::Completed {
+		checks_and_status(&state.github_bot, &state.db, &commit_sha).await
+	} else {
+		Ok(())
 	}
-
-	Ok(())
 }
 
 /// If we receive a status other than `Pending`, query if all statuses and checks are complete.
@@ -246,61 +246,112 @@ async fn handle_status(
 	status: StatusState,
 	state: &AppState,
 ) -> Result<()> {
-	let db = &state.db;
-	let github_bot = &state.github_bot;
-
-	if status != StatusState::Pending {
-		checks_and_status(github_bot, &commit_sha, db).await?;
+	if status == StatusState::Pending {
+		Ok(())
+	} else {
+		checks_and_status(&state.github_bot, &state.db, &commit_sha).await
 	}
-
-	Ok(())
 }
 
-async fn merge_based_on_status(
+async fn get_latest_statuses_state(
 	github_bot: &GithubBot,
-	db: &DB,
-	pr: &PullRequest,
 	owner: &str,
 	owner_repo: &str,
 	commit_sha: &str,
 	html_url: &str,
-) -> Result<()> {
+) -> Result<Status> {
 	let status = github_bot.status(&owner, &owner_repo, &commit_sha).await?;
 	log::info!("{:?}", status);
-	match status {
-		CombinedStatus {
-			state: StatusState::Success,
-			..
-		} => {
-			log::info!("{} is green; attempting merge.", html_url);
-			merge(github_bot, &owner, &owner_repo, &pr).await?;
-			db.delete(&commit_sha).context(Db)?;
-			update_companion(github_bot, &owner_repo, &pr, db).await
+
+	// Since Github only considers the latest instance of each status, we should abide by the same
+	// rule. Each instance is uniquely identified by "context".
+	let mut latest_statuses: HashMap<String, (i64, StatusState)> =
+		HashMap::new();
+	for s in status.statuses {
+		if latest_statuses
+			.get(&s.context)
+			.map(|(prev_id, _)| prev_id < &(&s).id)
+			.unwrap_or(true)
+		{
+			latest_statuses.insert(s.context, (s.id, s.state));
 		}
-		CombinedStatus {
-			state: StatusState::Pending,
-			..
-		} => {
-			log::info!("{} has pending status.", html_url);
-			Ok(())
-		}
-		_ => Err(Error::ChecksFailed {
-			commit_sha: commit_sha.to_string(),
-		}),
 	}
+
+	Ok(
+		if latest_statuses
+			.values()
+			.all(|(_, state)| *state == StatusState::Success)
+		{
+			log::info!("{} has success status", html_url);
+			Status::Success
+		} else if latest_statuses
+			.values()
+			.any(|(_, state)| *state == StatusState::Pending)
+		{
+			log::info!("{} has pending status", html_url);
+			Status::Pending
+		} else {
+			log::info!("{} has failed status", html_url);
+			Status::Failure
+		},
+	)
+}
+
+async fn get_latest_checks_state(
+	github_bot: &GithubBot,
+	owner: &str,
+	repo_name: &str,
+	commit_sha: &str,
+	html_url: &str,
+) -> Result<Status> {
+	let checks = github_bot
+		.check_runs(&owner, &repo_name, commit_sha)
+		.await?;
+	log::info!("{:?}", checks);
+
+	// Since Github only considers the latest instance of each check, we should abide by the same
+	// rule. Each instance is uniquely identified by "name".
+	let mut latest_checks: HashMap<
+		String,
+		(i64, CheckRunStatus, Option<CheckRunConclusion>),
+	> = HashMap::new();
+	for c in checks.check_runs {
+		if latest_checks
+			.get(&c.name)
+			.map(|(prev_id, _, _)| prev_id < &(&c).id)
+			.unwrap_or(true)
+		{
+			latest_checks.insert(c.name, (c.id, c.status, c.conclusion));
+		}
+	}
+
+	Ok(
+		if latest_checks.values().all(|(_, _, conclusion)| {
+			*conclusion == Some(CheckRunConclusion::Success)
+		}) {
+			log::info!("{} has successful checks", html_url);
+			Status::Success
+		} else if latest_checks
+			.values()
+			.all(|(_, status, _)| *status == CheckRunStatus::Completed)
+		{
+			log::info!("{} has unsuccessful checks", html_url);
+			Status::Failure
+		} else {
+			log::info!("{} has pending checks", html_url);
+			Status::Pending
+		},
+	)
 }
 
 /// Check that no commit has been pushed since the merge request was received.  Query checks and
 /// statuses and if they are green, attempt merge.
 async fn checks_and_status(
 	github_bot: &GithubBot,
-	commit_sha: &str,
 	db: &DB,
+	commit_sha: &str,
 ) -> Result<()> {
 	if let Some(pr_bytes) = db.get(commit_sha.as_bytes()).context(Db)? {
-		// Wait after receiving the webhook payload to avoid false success (?)
-		tokio::time::delay_for(std::time::Duration::from_millis(1000)).await;
-
 		let m = bincode::deserialize(&pr_bytes).context(Bincode)?;
 		log::info!("Deserialized merge request: {:?}", m);
 		let MergeRequest {
@@ -312,59 +363,56 @@ async fn checks_and_status(
 		} = m;
 
 		match github_bot.pull_request(&owner, &repo_name, number).await {
-			Ok(pr) => match pr.head_sha() {
-				Ok(pr_head_sha) => {
-					if commit_sha != pr_head_sha {
-						Err(Error::HeadChanged {
-							expected: commit_sha.to_string(),
-							actual: pr_head_sha.to_owned(),
-						})
-					} else {
-						match github_bot
-							.check_runs(&owner, &repo_name, &commit_sha)
+			Ok(pr) => {
+				match get_latest_statuses_state(
+					github_bot, &owner, &repo_name, commit_sha, &html_url,
+				)
+				.await
+				{
+					Ok(status) => match status {
+						Status::Success => {
+							match get_latest_checks_state(
+								github_bot, &owner, &repo_name, commit_sha,
+								&html_url,
+							)
 							.await
-						{
-							Ok(checks) => {
-								log::info!("{:?}", checks);
-								if checks.check_runs.iter().all(|r| {
-									r.conclusion == Some("success".to_string())
-								}) {
-									log::info!("All checks success");
-									merge_based_on_status(
-										github_bot, db, &pr, &owner,
-										&repo_name, commit_sha, &html_url,
-									)
-									.await
-								} else if checks.check_runs.iter().all(|r| {
-									r.status == "completed".to_string()
-								}) {
-									log::info!(
-										"{} checks were unsuccessful",
-										html_url
-									);
-									Err(Error::ChecksFailed {
-										commit_sha: commit_sha.to_string(),
-									})
-								} else {
-									log::info!(
-										"{} has pending checks.",
-										html_url
-									);
-									Ok(())
-								}
+							{
+								Ok(status) => match status {
+									Status::Success => {
+										merge(
+											github_bot, &owner, &repo_name, &pr,
+										)
+										.await?;
+										db.delete(&commit_sha).context(Db)?;
+										update_companion(
+											github_bot, &repo_name, &pr, db,
+										)
+										.await
+									}
+									Status::Failure => {
+										Err(Error::ChecksFailed {
+											commit_sha: commit_sha.to_string(),
+										})
+									}
+									_ => Ok(()),
+								},
+								Err(e) => Err(e),
 							}
-							Err(e) => Err(e),
 						}
-					}
+						Status::Failure => Err(Error::ChecksFailed {
+							commit_sha: commit_sha.to_string(),
+						}),
+						_ => Ok(()),
+					},
+					Err(e) => Err(e),
 				}
-				Err(e) => Err(e),
-			},
+			}
 			Err(e) => Err(e),
 		}
-		.map_err(|e| e.map_issue((owner, repo_name, number)))
-	} else {
-		Ok(())
+		.map_err(|e| e.map_issue((owner, repo_name, number)))?;
 	}
+
+	Ok(())
 }
 
 /// Parse bot commands in pull request comments. Commands are listed in README.md.
@@ -800,70 +848,40 @@ async fn ready_to_merge(
 ) -> Result<bool> {
 	match pr.head_sha() {
 		Ok(pr_head_sha) => {
-			match github_bot.status(owner, &repo_name, pr_head_sha).await {
+			match get_latest_statuses_state(
+				github_bot,
+				owner,
+				repo_name,
+				pr_head_sha,
+				&pr.html_url,
+			)
+			.await
+			{
 				Ok(status) => match status {
-					CombinedStatus {
-						state: StatusState::Success,
-						..
-					} => {
-						log::info!(
-							"{} has successful combined status.",
-							pr.html_url
-						);
-
-						match github_bot
-							.check_runs(&owner, &repo_name, pr_head_sha)
-							.await
+					Status::Success => {
+						match get_latest_checks_state(
+							github_bot,
+							owner,
+							repo_name,
+							pr_head_sha,
+							&pr.html_url,
+						)
+						.await
 						{
-							Ok(checks) => {
-								log::info!("{:?}", checks);
-
-								if checks.check_runs.iter().all(|r| {
-									r.conclusion == Some("success".to_string())
-								}) {
-									log::info!(
-										"{} has successful check runs status.",
-										pr.html_url
-									);
-									Ok(true)
-								} else if checks.check_runs.iter().all(|r| {
-									r.status == "completed".to_string()
-								}) {
-									log::info!(
-										"{} checks were unsuccessful.",
-										pr.html_url
-									);
-									Err(Error::ChecksFailed {
-										commit_sha: pr_head_sha.to_string(),
-									})
-								} else {
-									log::info!(
-										"{} checks are pending.",
-										pr.html_url
-									);
-									Ok(false)
-								}
-							}
+							Ok(status) => match status {
+								Status::Success => Ok(true),
+								Status::Failure => Err(Error::ChecksFailed {
+									commit_sha: pr_head_sha.to_string(),
+								}),
+								_ => Ok(false),
+							},
 							Err(e) => Err(e),
 						}
 					}
-					CombinedStatus {
-						state: StatusState::Pending,
-						..
-					} => {
-						log::info!("{} has pending status.", pr.html_url);
-						Ok(false)
-					}
-					status => {
-						log::info!(
-							"{} has failed or unknown status {:?}.",
-							pr.html_url,
-							status
-						);
-						Err(Error::ChecksFailed {
-							commit_sha: pr_head_sha.to_string(),
-						})
-					}
+					Status::Failure => Err(Error::ChecksFailed {
+						commit_sha: pr_head_sha.to_string(),
+					}),
+					_ => Ok(false),
 				},
 				Err(e) => Err(e),
 			}
@@ -970,19 +988,74 @@ async fn merge(
 	repo_name: &str,
 	pr: &PullRequest,
 ) -> Result<()> {
-	let pr_head_sha = pr.head_sha()?;
-	github_bot
-		.merge_pull_request(owner, repo_name, pr.number, pr_head_sha)
-		.await
-		.map_err(|e| {
-			Error::Merge {
+	match pr.head_sha() {
+		Ok(pr_head_sha) => match github_bot
+			.merge_pull_request(owner, repo_name, pr.number, pr_head_sha)
+			.await
+		{
+			Ok(_) => {
+				log::info!("{} merged successfully.", pr.html_url);
+				Ok(())
+			}
+			Err(e) => match e {
+				Error::Response {
+					ref status,
+					ref body,
+				} => match *status {
+					StatusCode::METHOD_NOT_ALLOWED => {
+						match body.get("message") {
+							Some(message) => {
+								// Catches the following
+								// - "Required status check ... is expected."
+								// - "... required status checks have not succeeded: ... expected."
+								let missing_status_matcher = RegexBuilder::new(
+									r"required\s+status.*expected",
+								)
+								.case_insensitive(true)
+								.build()
+								.unwrap();
+								if missing_status_matcher
+									.find(&message.to_string())
+									.is_some()
+								{
+									// This problem will be solved by itself when all the required
+									// statuses are delivered, thus it can be ignored here
+									log::info!(
+										"Ignoring merge failure due to missing required status; message: {}",
+										message
+									);
+									Ok(())
+								} else {
+									Err(Error::Message {
+										msg: message.to_string(),
+									})
+								}
+							}
+							_ => Err(Error::Message {
+								msg: format!(
+									"
+While trying to recover from failed HTTP request (status {}):
+
+Pull Request Merge Endpoint responded with unexpected body: `{}`",
+									status, body
+								),
+							}),
+						}
+					}
+					_ => Err(e),
+				},
+				_ => Err(e),
+			}
+			.map_err(|e| Error::Merge {
 				source: Box::new(e),
 				commit_sha: pr_head_sha.to_string(),
-			}
-			.map_issue((owner.to_string(), repo_name.to_string(), pr.number))
-		})?;
-	log::info!("{} merged successfully.", pr.html_url);
-	Ok(())
+			}),
+		},
+		Err(e) => Err(e),
+	}
+	.map_err(|e| {
+		e.map_issue((owner.to_string(), repo_name.to_string(), pr.number))
+	})
 }
 
 #[allow(dead_code)]
@@ -1076,13 +1149,16 @@ fn handle_error_inner(err: Error, state: &AppState) -> Option<String> {
 			});
 			match *source {
 				Error::Response {
-					body: serde_json::Value::Object(m),
-					..
-				} => Some(format!("Merge failed: `{}`", m["message"])),
+					body,
+					status
+				} => Some(format!("Merge failed with response status: {} and body: `{}`", status, body)),
 				Error::Http { source, .. } => {
 					Some(format!("Merge failed due to network error:\n\n{}", source))
 				}
-				_ => Some(format!("Merge failed due to unexpected error:\n\n{}", source)),
+				Error::Message { .. } => {
+					Some(format!("Merge failed: {}", *source))
+				}
+				_ => Some("Merge failed due to unexpected error".to_string()),
 			}
 		}
 		Error::ProcessFile { source } => match *source {

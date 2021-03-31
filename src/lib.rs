@@ -21,3 +21,9 @@ pub mod server;
 pub mod webhook;
 
 pub type Result<T, E = error::Error> = std::result::Result<T, E>;
+
+pub enum Status {
+	Success,
+	Pending,
+	Failure,
+}
