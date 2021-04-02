@@ -1022,9 +1022,9 @@ async fn merge(
 							Some(message) => {
 								// Catches the following
 								// - "Required status check ... is expected."
-								// - "... required status checks have not succeeded: ... expected."
+								// - "... required status checks have not succeeded: ... {pending,expected}."
 								let missing_status_matcher = RegexBuilder::new(
-									r"required\s+status.*expected",
+									r"required\s+status.*(pending|expected)\.$",
 								)
 								.case_insensitive(true)
 								.build()
@@ -1036,7 +1036,7 @@ async fn merge(
 									// This problem will be solved by itself when all the required
 									// statuses are delivered, thus it can be ignored here
 									log::info!(
-										"Ignoring merge failure due to missing required status; message: {}",
+										"Ignoring merge failure due to pending required status; message: {}",
 										message
 									);
 									Ok(())
