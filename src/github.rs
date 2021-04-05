@@ -194,9 +194,10 @@ pub struct Base {
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Review {
-	pub user: User,
+	pub id: i64,
+	// User might be missing when it has been deleted
+	pub user: Option<User>,
 	pub state: Option<ReviewState>,
-	pub submitted_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -208,6 +209,7 @@ pub struct RequestedReviewers {
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub enum UserType {
 	User,
+	Bot,
 	#[serde(other)]
 	Unknown,
 }
