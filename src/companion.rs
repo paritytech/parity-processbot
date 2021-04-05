@@ -1,4 +1,4 @@
-use regex::Regex;
+use regex::RegexBuilder;
 use rocksdb::DB;
 use snafu::ResultExt;
 use std::path::Path;
@@ -241,7 +241,10 @@ fn companion_parse(body: &str) -> Option<(String, String, String, i64)> {
 }
 
 fn companion_parse_long(body: &str) -> Option<(String, String, String, i64)> {
-	let re = Regex::new(COMPANION_LONG_REGEX!()).unwrap();
+	let re = RegexBuilder::new(COMPANION_LONG_REGEX!())
+		.case_insensitive(true)
+		.build()
+		.unwrap();
 	let caps = re.captures(&body)?;
 	let html_url = caps.name("html_url")?.as_str().to_owned();
 	let owner = caps.name("owner")?.as_str().to_owned();
@@ -256,7 +259,10 @@ fn companion_parse_long(body: &str) -> Option<(String, String, String, i64)> {
 }
 
 fn companion_parse_short(body: &str) -> Option<(String, String, String, i64)> {
-	let re = Regex::new(COMPANION_SHORT_REGEX!()).unwrap();
+	let re = RegexBuilder::new(COMPANION_SHORT_REGEX!())
+		.case_insensitive(true)
+		.build()
+		.unwrap();
 	let caps = re.captures(&body)?;
 	let owner = caps.name("owner")?.as_str().to_owned();
 	let repo = caps.name("repo")?.as_str().to_owned();
@@ -405,44 +411,57 @@ mod tests {
 			))
 		);
 
-		// Long version should work even if the body has some other content around the companion
-		// text
-		assert_eq!(
-			companion_parse(
-				"Companion line is in the middle
-                companion: https://github.com/paritytech/polkadot/pull/1234
-                Final line"
-			),
-			Some((
-				"https://github.com/paritytech/polkadot/pull/1234".to_owned(),
-				"paritytech".to_owned(),
-				"polkadot".to_owned(),
-				1234
-			))
-		);
+		// Should be case-insensitive on the "companion" marker
+		for companion_marker in &["Companion", "companion"] {
+			// Long version should work even if the body has some other content around the
+			// companion text
+			assert_eq!(
+				companion_parse(&format!(
+					"
+					Companion line is in the middle
+					{}: https://github.com/paritytech/polkadot/pull/1234
+					Final line
+					",
+					companion_marker
+				)),
+				Some((
+					"https://github.com/paritytech/polkadot/pull/1234"
+						.to_owned(),
+					"paritytech".to_owned(),
+					"polkadot".to_owned(),
+					1234
+				))
+			);
 
-		// Short version should work even if the body has some other content around the companion
-		// text
-		assert_eq!(
-			companion_parse(
-				"Companion line is in the middle
-                companion: paritytech/polkadot#1234
-                Final line"
-			),
-			Some((
-				"https://github.com/paritytech/polkadot/pull/1234".to_owned(),
-				"paritytech".to_owned(),
-				"polkadot".to_owned(),
-				1234
-			))
-		);
+			// Short version should work even if the body has some other content around the
+			// companion text
+			assert_eq!(
+				companion_parse(&format!(
+					"
+					Companion line is in the middle
+					{}: paritytech/polkadot#1234
+			        Final line
+					",
+					companion_marker
+				)),
+				Some((
+					"https://github.com/paritytech/polkadot/pull/1234"
+						.to_owned(),
+					"paritytech".to_owned(),
+					"polkadot".to_owned(),
+					1234
+				))
+			);
+		}
 
 		// Long version should not be detected if "companion: " and the expression are not both in
 		// the same line
 		assert_eq!(
 			companion_parse(
-				"I want to talk about companion: but NOT reference it
-                I submitted it in https://github.com/paritytech/polkadot/pull/1234"
+				"
+				I want to talk about companion: but NOT reference it
+				I submitted it in https://github.com/paritytech/polkadot/pull/1234
+				"
 			),
 			None
 		);
@@ -451,8 +470,10 @@ mod tests {
 		// the same line
 		assert_eq!(
 			companion_parse(
-				"I want to talk about companion: but NOT reference it
-                I submitted it in paritytech/polkadot#1234"
+				"
+				I want to talk about companion: but NOT reference it
+				I submitted it in paritytech/polkadot#1234
+				"
 			),
 			None
 		);
