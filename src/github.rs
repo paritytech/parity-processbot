@@ -63,6 +63,44 @@ impl PullRequest {
 				field: "pull_request.head.sha",
 			})
 	}
+	pub fn base_owner(&self) -> Result<&String> {
+		Ok(&self
+			.base
+			.repo
+			.as_ref()
+			.context(MissingField {
+				field: "pull_request.base.repo",
+			})?
+			.owner
+			.as_ref()
+			.context(MissingField {
+				field: "pull_request.base.repo.owner",
+			})?
+			.login)
+	}
+	pub fn base_name(&self) -> Result<&String> {
+		Ok(&self
+			.base
+			.repo
+			.as_ref()
+			.context(MissingField {
+				field: "pull_request.base.repo",
+			})?
+			.name)
+	}
+	pub fn head_ref(&self) -> Result<&str> {
+		Ok(self
+			.head
+			.as_ref()
+			.context(MissingField {
+				field: "pull_request.head",
+			})?
+			.ref_field
+			.as_ref()
+			.context(MissingField {
+				field: "pull_request.head.ref",
+			})?)
+	}
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -354,9 +392,6 @@ pub enum Payload {
 	CommitStatus {
 		sha: String,
 		state: StatusState,
-		description: String,
-		target_url: String,
-		repository: Repository,
 	},
 	CheckRun {
 		check_run: CheckRun,
@@ -490,7 +525,6 @@ pub fn parse_repository_full_name(full_name: &str) -> Option<(String, String)> {
 
 pub static BASE_API_URL: OnceCell<String> = OnceCell::new();
 const DEFAULT_BASE_API_URL: &str = "https://api.github.com";
-
 pub fn base_api_url() -> String {
 	BASE_API_URL
 		.get()

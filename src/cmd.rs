@@ -8,8 +8,9 @@ use tokio::process::Command;
 
 #[derive(PartialEq)]
 pub struct CommandMessageConfiguration<'a> {
-	pub secrets_to_hide: Option<&'a [&'a str]>,
+	pub secrets_to_hide: Option<&'a Vec<String>>,
 	pub are_errors_silenced: bool,
+	pub dirs_to_hide: Option<&'a Vec<String>>,
 }
 
 #[derive(PartialEq)]
@@ -91,6 +92,7 @@ fn before_cmd<'a, Cmd, Dir>(
 	match logging {
 		CommandMessage::Configured(CommandMessageConfiguration {
 			secrets_to_hide,
+			dirs_to_hide,
 			..
 		}) => {
 			let mut cmd_display = format!("{}", cmd);
@@ -102,15 +104,30 @@ fn before_cmd<'a, Cmd, Dir>(
 				}
 			}
 
-			if let Some(dir) = dir {
-				log::info!("Run {} {} in {}", cmd_display, args_display, dir);
-			} else {
-				log::info!(
-					"Run {} {} in the current directory",
-					cmd_display,
-					args_display,
-				);
-			}
+			log::info!(
+				"Run {} {} in {}",
+				cmd_display,
+				args_display,
+				if let Some(dir) = dir {
+					if dirs_to_hide
+						.map(|dirs_to_hide| {
+							dirs_to_hide.iter().any(|dir_to_hide| {
+								dir.as_ref()
+									.to_str()
+									.map(|dir_p| dir_p.starts_with(dir_to_hide))
+									.unwrap_or(false)
+							})
+						})
+						.unwrap_or(false)
+					{
+						"{REDACTED}".to_string()
+					} else {
+						dir.to_string()
+					}
+				} else {
+					"the current directory".to_string()
+				}
+			);
 		}
 	};
 }
@@ -127,6 +144,7 @@ fn handle_cmd_result<'a>(
 			CommandMessage::Configured(CommandMessageConfiguration {
 				are_errors_silenced,
 				secrets_to_hide,
+				..
 			}) => {
 				let mut cmd_display = format!("{:?}", cmd);
 				if let Some(secrets) = secrets_to_hide.as_ref() {

@@ -223,9 +223,9 @@ impl GithubBot {
 			.fetch_prefix
 			.as_ref()
 			.map(|s| s.clone())
-			.unwrap_or_else(|| format!("https://x-access-token:{}", token));
+			.unwrap_or_else(|| format!("https://x-access-token:{}@", token));
 		let domain = format!(
-			"{}/{}/{}.git",
+			"{}/{}/{}",
 			self.fetch_domain
 				.as_ref()
 				.map(|s| s.clone())
@@ -234,7 +234,7 @@ impl GithubBot {
 			repository_name
 		);
 
-		(format!("{}@{}", &prefix, &domain), domain)
+		(format!("{}{}", &prefix, &domain), domain)
 	}
 }
 
