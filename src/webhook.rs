@@ -1573,16 +1573,16 @@ async fn handle_error_inner(err: Error, state: &AppState) -> Option<String> {
 async fn handle_error(e: Error, state: &AppState) {
 	match e {
 		Error::Skipped { .. } => (),
-		e => {
-			log::error!("handle_error: {}", e);
-
-			match e {
-				Error::WithIssue {
-					source,
-					issue: (owner, repo, number),
-					..
-				} => {
-					let msg = handle_error_inner(*source, state)
+		e => match e {
+			Error::WithIssue {
+				source,
+				issue: (owner, repo, number),
+				..
+			} => match *source {
+				Error::Skipped { .. } => (),
+				e => {
+					log::error!("handle_error: {}", e);
+					let msg = handle_error_inner(e, state)
 						.await
 						.unwrap_or_else(|| {
 							format!(
@@ -1598,10 +1598,11 @@ async fn handle_error(e: Error, state: &AppState) {
 							log::error!("Error posting comment: {}", e);
 						});
 				}
-				_ => {
-					handle_error_inner(e, state).await;
-				}
+			},
+			_ => {
+				log::error!("handle_error: {}", e);
+				handle_error_inner(e, state).await;
 			}
-		}
+		},
 	}
 }
