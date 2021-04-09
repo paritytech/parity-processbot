@@ -409,7 +409,7 @@ async fn checks_and_status(
 													&requested_by,
 													None,
 												)
-												.await?;
+												.await??;
 												db.delete(&commit_sha)
 													.context(Db)?;
 												update_companion(
@@ -517,7 +517,7 @@ async fn handle_comment(
 				requested_by,
 				None,
 			)
-			.await?;
+			.await??;
 			update_companion(github_bot, &repo_name, pr, db).await?;
 		} else {
 			let pr_head_sha = pr.head_sha()?;
@@ -572,7 +572,7 @@ async fn handle_comment(
 			requested_by,
 			None,
 		)
-		.await?;
+		.await??;
 		update_companion(github_bot, &repo_name, &pr, db).await?;
 	} else if body.to_lowercase().trim()
 		== AUTO_MERGE_CANCEL.to_lowercase().trim()
@@ -1197,6 +1197,11 @@ async fn prepare_to_merge(
 	Ok(())
 }
 
+pub enum MergeConclusion {
+	Continue,
+	Skip,
+}
+
 /// Send a merge request.
 /// It might recursively call itself when attempting to solve a merge error after something
 /// meaningful happens.
@@ -1209,7 +1214,7 @@ async fn merge(
 	bot_config: &BotConfig,
 	requested_by: &str,
 	created_approval_id: Option<i64>,
-) -> Result<()> {
+) -> Result<Result<()>> {
 	match pr.head_sha() {
 		Ok(pr_head_sha) => match github_bot
 			.merge_pull_request(owner, repo_name, pr.number, pr_head_sha)
@@ -1217,7 +1222,7 @@ async fn merge(
 		{
 			Ok(_) => {
 				log::info!("{} merged successfully.", pr.html_url);
-				Ok(())
+				Ok(Ok(()))
 			}
 			Err(e) => match e {
 				Error::Response {
@@ -1249,13 +1254,13 @@ async fn merge(
 									.find(&message.to_string())
 									.is_some()
 								{
-									// This problem will be solved by itself when all the required
-									// statuses are delivered, thus it can be ignored here
+									// This problem will be solved automatically when all the
+									// required statuses are delivered, thus it can be ignored here
 									log::info!(
 										"Ignoring merge failure due to pending required status; message: {}",
 										message
 									);
-									Ok(())
+									Ok(Err(Error::Skipped {}))
 								} else if let (
 									true,
 									Some(matches)
@@ -1552,31 +1557,37 @@ async fn handle_error_inner(err: Error, state: &AppState) -> Option<String> {
 }
 
 async fn handle_error(e: Error, state: &AppState) {
-	log::error!("handle_error: {}", e);
-
 	match e {
-		Error::WithIssue {
-			source,
-			issue: (owner, repo, number),
-			..
-		} => {
-			let msg =
-				handle_error_inner(*source, state).await.unwrap_or_else(|| {
-					format!(
-						"Unexpected error (at {} server time).",
-						chrono::Utc::now().to_string()
-					)
-				});
-			let _ = state
-				.github_bot
-				.create_issue_comment(&owner, &repo, number, &msg)
-				.await
-				.map_err(|e| {
-					log::error!("Error posting comment: {}", e);
-				});
-		}
-		_ => {
-			handle_error_inner(e, state).await;
+		Error::Skipped { .. } => (),
+		e => {
+			log::error!("handle_error: {}", e);
+
+			match e {
+				Error::WithIssue {
+					source,
+					issue: (owner, repo, number),
+					..
+				} => {
+					let msg = handle_error_inner(*source, state)
+						.await
+						.unwrap_or_else(|| {
+							format!(
+								"Unexpected error (at {} server time).",
+								chrono::Utc::now().to_string()
+							)
+						});
+					let _ = state
+						.github_bot
+						.create_issue_comment(&owner, &repo, number, &msg)
+						.await
+						.map_err(|e| {
+							log::error!("Error posting comment: {}", e);
+						});
+				}
+				_ => {
+					handle_error_inner(e, state).await;
+				}
+			}
 		}
 	}
 }
