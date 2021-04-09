@@ -828,19 +828,32 @@ async fn merge_allowed(
 			Ok(reviews) => {
 				let mut errors: Vec<String> = Vec::new();
 
-				// Consider only the latest review submitted per user
+				// Consider only the latest relevant review submitted per user
 				let mut latest_reviews: HashMap<String, (i64, Review)> =
 					HashMap::new();
 				for review in reviews {
-					if let Some(user) = (&review.user).as_ref() {
-						if latest_reviews
-							.get(&user.login)
-							.map(|(prev_id, _)| prev_id < &(&review).id)
-							.unwrap_or(true)
-						{
-							let user_login = (&user.login).to_owned();
-							latest_reviews
-								.insert(user_login, (review.id, review));
+					// Do not consider states such as "Commented" as having invalidated a previous
+					// approval. Note: this assumes approvals are not invalidated on comments or
+					// pushes.
+					if review
+						.state
+						.as_ref()
+						.map(|state| {
+							*state == ReviewState::Approved
+								|| *state == ReviewState::ChangesRequested
+						})
+						.unwrap_or(false)
+					{
+						if let Some(user) = review.user.as_ref() {
+							if latest_reviews
+								.get(&user.login)
+								.map(|(prev_id, _)| *prev_id < review.id)
+								.unwrap_or(true)
+							{
+								let user_login = (&user.login).to_owned();
+								latest_reviews
+									.insert(user_login, (review.id, review));
+							}
 						}
 					}
 				}
