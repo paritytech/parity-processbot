@@ -28,3 +28,15 @@ macro_rules! COMPANION_SHORT_REGEX {
 		)
 	};
 }
+#[macro_export]
+macro_rules! results {
+    ($e:expr $(, $es:expr)*$(,)? $(;# $($i:ident)*)?) => {
+		match $e {
+			Ok(x) => results!($($es),* ;# $($($i)*)? x),
+			Err(e) => Err(e)
+		}
+    };
+    ($(;# $($i:ident)*)?) => {
+        Ok(($($($i),*)?))
+    };
+}

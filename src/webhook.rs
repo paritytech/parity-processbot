@@ -14,7 +14,7 @@ use crate::{
 	auth::GithubUserAuthenticator, companion::*, config::BotConfig,
 	config::MainConfig, constants::*, error::*, github::*,
 	github_bot::GithubBot, gitlab_bot::*, matrix_bot::MatrixBot, performance,
-	process, rebase::*, utils::*, Result, Status,
+	process, rebase::*, results, utils::*, Result, Status,
 };
 
 /// This data gets passed along with each webhook to the webhook handler.
@@ -389,7 +389,7 @@ async fn checks_and_status(
 			.pull_request(&contributor, &contributor_repo, number)
 			.await
 		{
-			Ok(pr) => match result_t2(pr.head_sha(), pr.head_ref()) {
+			Ok(pr) => match results!(pr.head_sha(), pr.head_ref()) {
 				Ok((head_sha, contributor_branch)) => {
 					if commit_sha != head_sha {
 						Err(Error::HeadChanged {
