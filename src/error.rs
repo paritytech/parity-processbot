@@ -191,6 +191,9 @@ pub enum Error {
 		status_code: Option<i32>,
 		err: String,
 	},
+
+	#[snafu(display("Error was skipped",))]
+	Skipped {},
 }
 
 impl Error {
