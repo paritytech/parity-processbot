@@ -375,6 +375,12 @@ async fn checks_and_status(
 			requested_by,
 		} = m;
 
+		// Wait a bit for all the statuses to settle; some missing status might be
+		// delivered with a small delay right after this is triggered, thus it's
+		// worthwhile to wait for it instead of having to recover from a premature
+		// merge attempt due to some slightly-delayed missing status.
+		tokio::time::delay_for(std::time::Duration::from_millis(2048)).await;
+
 		match github_bot.pull_request(&owner, &repo_name, number).await {
 			Ok(pr) => match pr.head_sha() {
 				Ok(pr_head_sha) => {
