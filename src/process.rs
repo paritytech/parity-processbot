@@ -1,4 +1,6 @@
-use crate::{error, github, github_bot::GithubBot, process, Result};
+use crate::{
+	constants::*, error, github, github_bot::GithubBot, process, Result,
+};
 use serde::Deserialize;
 use snafu::ResultExt;
 
@@ -99,10 +101,10 @@ pub async fn get_process(
 	owner: &str,
 	repo_name: &str,
 	issue_number: i64,
-) -> Result<CombinedProcessInfo> {
+) -> Result<(CombinedProcessInfo, Vec<String>)> {
 	// get Process file from master
 	let process = github_bot
-		.contents(owner, repo_name, "Process.json", "master")
+		.contents(owner, repo_name, PROCESS_FILE, "master")
 		.await
 		.and_then(process::process_from_contents)?;
 
@@ -110,17 +112,18 @@ pub async fn get_process(
 	let projects = github_bot.projects(owner, repo_name).await?;
 
 	// ignore process entries that do not match a project in the repository
+	let mut warnings: Vec<String> = vec![];
 	let process = process
 		.into_iter()
-		.filter(|proc| {
-			let keep =
-				projects.iter().any(|proj| proj.name == proc.project_name);
+		.filter(|p| {
+			let keep = projects.iter().any(|pj| pj.name == p.project_name);
 			if !keep {
-				log::warn!(
-					"'{proc_name}' doesn not match any projects in repository '{repo_name}'",
-					proc_name = proc.project_name,
-					repo_name = repo_name,
+				let warning = format!(
+					"'{}' doesn not match any projects in repository '{}'",
+					p.project_name, repo_name,
 				);
+				log::info!("{}", &warning);
+				warnings.push(warning);
 			}
 			keep
 		})
@@ -135,6 +138,7 @@ pub async fn get_process(
 		&process,
 	)
 	.await
+	.map(|info| (info, warnings))
 }
 
 fn process_from_contents(c: github::Contents) -> Result<Vec<ProcessInfo>> {
@@ -166,14 +170,12 @@ async fn combined_process_info(
 			processes: &'a [ProcessInfo],
 			project: &github::Project,
 		) -> Option<&'a ProcessInfo> {
-			processes
-				.iter()
-				.find(|proc| project.name == proc.project_name)
+			processes.iter().find(|p| project.name == p.project_name)
 		}
 
 		projects
 			.iter()
-			.filter_map(|proj| process_matching_project(processes, proj))
+			.filter_map(|pj| process_matching_project(processes, pj))
 			.cloned()
 			.collect::<_>()
 	}
@@ -186,10 +188,7 @@ async fn combined_process_info(
 			.iter()
 			.filter_map(|event| event.project_card.clone())
 			.filter_map(|card| {
-				projects
-					.iter()
-					.find(|proj| card.project_id == proj.id)
-					.cloned()
+				projects.iter().find(|pj| card.project_id == pj.id).cloned()
 			})
 			.collect::<_>()
 	}
@@ -211,12 +210,12 @@ mod tests {
 
 	#[test]
 	fn test_process_json() {
-		let proc = serde_json::from_str::<Vec<ProcessInfo>>(include_str!(
+		let p = serde_json::from_str::<Vec<ProcessInfo>>(include_str!(
 			"../Process.json"
 		))
 		.expect("parse json");
 		assert_eq!(
-			proc,
+			p,
 			vec![ProcessInfo {
 				project_name: format!("parity-processbot"),
 				owner: format!("sjeohp"),

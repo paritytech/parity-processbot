@@ -7,8 +7,7 @@ use ring::hmac;
 use rocksdb::DB;
 use serde::{Deserialize, Serialize};
 use snafu::{OptionExt, ResultExt};
-use std::collections::HashMap;
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 use tokio::sync::Mutex;
 
 use crate::{
@@ -945,39 +944,51 @@ async fn merge_allowed(
 						);
 						Ok(())
 					} else {
-						let process = process::get_process(
+						match process::get_process(
 							github_bot, owner, repo_name, pr.number,
 						)
 						.await
-						.map_err(|e| Error::ProcessFile {
-							source: Box::new(e),
-						})?;
+						{
+							Ok((process, process_warnings)) => {
+								let project_owner_approved = approved_reviews
+									.iter()
+									.rev()
+									.any(|review| {
+										review
+											.user
+											.as_ref()
+											.map(|user| {
+												process.is_owner(&user.login)
+											})
+											.unwrap_or(false)
+									});
+								let project_owner_requested =
+									process.is_owner(requested_by);
 
-						let project_owner_approved =
-							approved_reviews.iter().rev().any(|review| {
-								review
-									.user
-									.as_ref()
-									.map(|user| process.is_owner(&user.login))
-									.unwrap_or(false)
-							});
-						let project_owner_requested =
-							process.is_owner(requested_by);
-
-						if project_owner_approved || project_owner_requested {
-							log::info!(
-								"{} has project owner approval.",
-								pr.html_url
-							);
-							Ok(())
-						} else if process.is_empty() {
-							Err(Error::ProcessInfo {
-								errors: Some(errors),
-							})
-						} else {
-							Err(Error::Approval {
-								errors: Some(errors),
-							})
+								if project_owner_approved
+									|| project_owner_requested
+								{
+									log::info!(
+										"{} has project owner approval.",
+										pr.html_url
+									);
+									Ok(())
+								} else {
+									errors.extend(process_warnings);
+									if process.is_empty() {
+										Err(Error::ProcessInfo {
+											errors: Some(errors),
+										})
+									} else {
+										Err(Error::Approval {
+											errors: Some(errors),
+										})
+									}
+								}
+							}
+							Err(e) => Err(Error::ProcessFile {
+								source: Box::new(e),
+							}),
 						}
 					}
 				};
@@ -1038,7 +1049,7 @@ async fn merge_allowed(
 											pr.number,
 										)
 										.await
-										.map(|process| {
+										.map(|(process, _)| {
 											if process.is_owner(requested_by) {
 												Some(
 													"a project owner"
@@ -1520,16 +1531,17 @@ async fn handle_error_inner(err: Error, state: &AppState) -> Option<String> {
 			Error::Response {
 				body: serde_json::Value::Object(m),
 				..
-			} => Some(format!("Error getting Process.json: `{}`", m["message"])),
+			} => Some(format!("Error getting {}: `{}`", PROCESS_FILE, m["message"])),
 			Error::Http { source, .. } => {
-				Some(format!("Network error getting Process.json:\n\n{}", source))
+				Some(format!("Network error getting {}:\n\n{}", PROCESS_FILE, source))
 			}
-			_ => Some(format!("Unexpected error getting Process.json:\n\n{}", source)),
+			_ => Some(format!("Unexpected error getting {}:\n\n{}", PROCESS_FILE, source)),
 		},
 		Error::ProcessInfo { errors } => {
 			Some(
 				format!(
-					"Error: Missing process info; check that the PR belongs to a project column.\n\n{}\n\n{}",
+					"Error: Missing process info. Check that the project for this pull request is defined in {} and no process-related errors have been listed below.\n\n{}\n\n{}",
+					PROCESS_FILE,
 					display_errors_along_the_way(errors),
 					TROUBLESHOOT_MSG
 				)
