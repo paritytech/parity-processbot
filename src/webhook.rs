@@ -1479,7 +1479,7 @@ async fn performance_regression(
 	Ok(())
 }
 
-const TROUBLESHOOT_MSG: &str = "Merge cannot succeed as it is. Check out the [criteria for merge](https://github.com/paritytech/parity-processbot#criteria-for-merge).";
+const TROUBLESHOOT_MSG: &str = "Merge failed. Check out the [criteria for merge](https://github.com/paritytech/parity-processbot#criteria-for-merge).";
 
 fn display_errors_along_the_way(errors: Option<Vec<String>>) -> String {
 	errors
@@ -1540,10 +1540,15 @@ async fn handle_error_inner(err: Error, state: &AppState) -> Option<String> {
 		Error::ProcessInfo { errors } => {
 			Some(
 				format!(
-					"Error: Missing process info. Check that the project for this pull request is defined in {} and no process-related errors have been listed below.\n\n{}\n\n{}",
+					"
+Error: When trying to meet the \"Project Owners\" approval requirements: this pull request does not belong to a project defined in {}.
+
+Approval by \"Project Owners\" is only attempted if other means defined in the [criteria for merge](https://github.com/paritytech/parity-processbot#criteria-for-merge) are not satisfied first.
+
+{}
+",
 					PROCESS_FILE,
 					display_errors_along_the_way(errors),
-					TROUBLESHOOT_MSG
 				)
 			)
 		}
