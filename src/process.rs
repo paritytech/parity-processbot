@@ -119,8 +119,8 @@ pub async fn get_process(
 			let keep = projects.iter().any(|pj| pj.name == p.project_name);
 			if !keep {
 				let warning = format!(
-					"'{}' doesn not match any projects in repository '{}'",
-					p.project_name, repo_name,
+					"'{}' does not match any projects in {}'s {}",
+					p.project_name, repo_name, PROCESS_FILE
 				);
 				log::info!("{}", &warning);
 				warnings.push(warning);
