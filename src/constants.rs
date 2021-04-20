@@ -47,9 +47,6 @@ pub const ISSUE_REVERT_PROJECT_NOTIFICATION: &str = "The change you made to {iss
 pub const REQUESTING_REVIEWS_MESSAGE: &str =
 	"@{author}, {pr_url} needs reviewers.";
 
-pub const STATUS_FAILURE_NOTIFICATION: &str =
-	"{1} failed status checks or is not mergeable.";
-
 pub const REQUEST_DELEGATED_REVIEW_MESSAGE: &str = "{1} needs your review in the next 72 hours, as you are the owner or delegated reviewer.";
 
 pub const PRIVATE_REVIEW_REMINDER_MESSAGE: &str = "{1} needs your review.";

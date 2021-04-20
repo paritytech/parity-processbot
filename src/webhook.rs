@@ -1074,7 +1074,7 @@ async fn merge_allowed(
 		}
 	} else {
 		Err(Error::Message {
-			msg: format!("{} is not mergeable", pr.html_url),
+			msg: format!("Github API says {} is not mergeable", pr.html_url),
 		})
 	}
 	.map_err(|e| {
