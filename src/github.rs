@@ -238,7 +238,6 @@ pub struct Repository {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CombinedStatus {
-	pub state: StatusState,
 	pub statuses: Vec<Status>,
 }
 
@@ -247,6 +246,7 @@ pub struct Status {
 	pub id: i64,
 	pub context: String,
 	pub state: StatusState,
+	pub description: Option<String>,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]

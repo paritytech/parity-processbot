@@ -13,7 +13,8 @@ use tokio::sync::Mutex;
 use crate::{
 	auth::GithubUserAuthenticator, companion::*, config::BotConfig,
 	constants::*, error::*, github::*, github_bot::GithubBot, gitlab_bot::*,
-	matrix_bot::MatrixBot, performance, process, rebase::*, Result, Status,
+	matrix_bot::MatrixBot, performance, process, rebase::*, vanity_service,
+	Result, Status,
 };
 
 /// This data gets passed along with each webhook to the webhook handler.
@@ -279,6 +280,20 @@ async fn get_latest_statuses_state(
 	let mut latest_statuses: HashMap<String, (i64, StatusState)> =
 		HashMap::new();
 	for s in status.statuses {
+		if s.description
+			.as_ref()
+			.map(|description| {
+				match serde_json::from_str::<vanity_service::JobInformation>(
+					description,
+				) {
+					Ok(info) => info.build_allow_failure.unwrap_or(false),
+					_ => false,
+				}
+			})
+			.unwrap_or(false)
+		{
+			continue;
+		}
 		if latest_statuses
 			.get(&s.context)
 			.map(|(prev_id, _)| prev_id < &(&s).id)
