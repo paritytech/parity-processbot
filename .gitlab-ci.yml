@@ -57,12 +57,6 @@ test-build:
     paths:
       - ./artifacts/
 
-test-failure:
-  stage:                           test
-  allow_failure: true
-  script:
-    - exit 1
-
 #### stage:                        dockerize
 
 .build_and_push:                   &build_and_push
