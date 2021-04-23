@@ -302,6 +302,7 @@ async fn get_latest_statuses_state(
 			latest_statuses.insert(s.context, (s.id, s.state));
 		}
 	}
+	log::info!("{:?}", latest_statuses);
 
 	Ok(
 		if latest_statuses
