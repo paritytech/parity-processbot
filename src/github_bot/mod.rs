@@ -61,16 +61,7 @@ impl GithubBot {
 			repo = repo_name,
 			sha = sha
 		);
-		let mut result: Result<CombinedStatus> = self.client.get(url).await;
-		// FIXME: stopgap hardcoded measure until vanity-service encodes which jobs
-		// can be skipped into the status' description
-		// https://github.com/paritytech/parity-processbot/issues/242
-		if let Ok(combined) = result.as_mut() {
-			combined.statuses.retain(|s| {
-				s.context != "continuous-integration/gitlab-cargo-deny"
-			})
-		}
-		result
+		self.client.get(url).await
 	}
 
 	/// Returns check runs associated for a reference.
