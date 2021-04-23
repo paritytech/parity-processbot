@@ -2,4 +2,9 @@
 	"project_name": "parity-processbot",
 	"owner": "sjeohp",
 	"matrix_room_id": "!VDLSjvBpNqqgyMDIBO:matrix.parity.io"
+},
+{
+	"project_name": "joao-paulo-parity",
+	"owner": "joao-paulo-parity",
+	"matrix_room_id": "!VDLSjvBpNqqgyMDIBO:matrix.parity.io"
 }]
