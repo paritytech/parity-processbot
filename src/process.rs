@@ -210,20 +210,9 @@ mod tests {
 
 	#[test]
 	fn test_process_json() {
-		let p = serde_json::from_str::<Vec<ProcessInfo>>(include_str!(
+		serde_json::from_str::<Vec<ProcessInfo>>(include_str!(
 			"../Process.json"
 		))
-		.expect("parse json");
-		assert_eq!(
-			p,
-			vec![ProcessInfo {
-				project_name: format!("parity-processbot"),
-				owner: format!("sjeohp"),
-				delegated_reviewer: None,
-				whitelist: vec![],
-				matrix_room_id: format!("!VDLSjvBpNqqgyMDIBO:matrix.parity.io"),
-				backlog: None,
-			},]
-		);
+		.unwrap();
 	}
 }
