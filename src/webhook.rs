@@ -296,7 +296,7 @@ async fn get_latest_statuses_state(
 		}
 		if latest_statuses
 			.get(&s.context)
-			.map(|(prev_id, _)| prev_id < &(&s).id)
+			.map(|(prev_id, _)| prev_id < &s.id)
 			.unwrap_or(true)
 		{
 			latest_statuses.insert(s.context, (s.id, s.state));
@@ -345,7 +345,7 @@ async fn get_latest_checks_state(
 	for c in checks.check_runs {
 		if latest_checks
 			.get(&c.name)
-			.map(|(prev_id, _, _)| prev_id < &(&c).id)
+			.map(|(prev_id, _, _)| prev_id < &c.id)
 			.unwrap_or(true)
 		{
 			latest_checks.insert(c.name, (c.id, c.status, c.conclusion));
@@ -435,7 +435,7 @@ async fn checks_and_status(
 													.context(Db)?;
 												update_companion(
 													github_bot, &repo_name,
-													&pr, db,
+													&pr, db, bot_config,
 												)
 												.await
 											}
@@ -499,7 +499,13 @@ async fn handle_comment(
 	let auth =
 		GithubUserAuthenticator::new(requested_by, owner, &repo_name, number);
 
-	if body.to_lowercase().trim() == AUTO_MERGE_REQUEST.to_lowercase().trim() {
+	let is_forced_merge =
+		body.to_lowercase().trim() == AUTO_MERGE_FORCE.to_lowercase().trim();
+	let is_merge = is_forced_merge
+		|| body.to_lowercase().trim()
+			== AUTO_MERGE_REQUEST.to_lowercase().trim();
+
+	if is_merge {
 		log::info!(
 			"Received merge request for PR {} from user {}",
 			html_url,
@@ -519,82 +525,22 @@ async fn handle_comment(
 		)
 		.await??;
 
-		if ready_to_merge(github_bot, owner, &repo_name, pr).await? {
-			prepare_to_merge(
-				github_bot,
-				owner,
-				&repo_name,
-				pr.number,
-				&pr.html_url,
-			)
-			.await?;
-
-			merge(
-				github_bot,
-				owner,
-				&repo_name,
-				pr,
-				bot_config,
-				requested_by,
-				None,
-			)
-			.await??;
-			update_companion(github_bot, &repo_name, pr, db).await?;
-		} else {
-			let pr_head_sha = pr.head_sha()?;
-			wait_to_merge(
-				github_bot,
-				owner,
-				&repo_name,
-				pr.number,
-				&pr.html_url,
-				requested_by,
-				pr_head_sha,
-				db,
-			)
-			.await?;
-		}
-	} else if body.to_lowercase().trim()
-		== AUTO_MERGE_FORCE.to_lowercase().trim()
-	{
-		log::info!(
-			"Received merge request for PR {} from user {}",
-			html_url,
-			requested_by
-		);
-
-		auth.check_org_membership(&github_bot).await?;
-
-		merge_allowed(
+		merge_or_wait(
+			if is_forced_merge {
+				MergeWaitMode::DoNotWait
+			} else {
+				MergeWaitMode::CanWait
+			},
 			github_bot,
 			owner,
 			&repo_name,
-			&pr,
-			&bot_config,
-			requested_by,
-			None,
-		)
-		.await??;
-
-		prepare_to_merge(
-			github_bot,
-			owner,
-			&repo_name,
-			pr.number,
-			&pr.html_url,
-		)
-		.await?;
-		merge(
-			github_bot,
-			owner,
-			&repo_name,
-			&pr,
+			pr,
 			bot_config,
 			requested_by,
-			None,
+			db,
+			pr.head_sha()?,
 		)
-		.await??;
-		update_companion(github_bot, &repo_name, &pr, db).await?;
+		.await?;
 	} else if body.to_lowercase().trim()
 		== AUTO_MERGE_CANCEL.to_lowercase().trim()
 	{
@@ -1637,5 +1583,61 @@ async fn handle_error(e: Error, state: &AppState) {
 				handle_error_inner(e, state).await;
 			}
 		},
+	}
+}
+
+pub async fn merge_or_wait(
+	mode: MergeWaitMode,
+	github_bot: &GithubBot,
+	owner: &str,
+	repo_name: &str,
+	pr: &PullRequest,
+	bot_config: &BotConfig,
+	requested_by: &str,
+	db: &DB,
+	head_sha: &str,
+) -> Result<()> {
+	let attempt_merge_now = match mode {
+		MergeWaitMode::CanWait => {
+			ready_to_merge(github_bot, owner, repo_name, pr).await?
+		}
+		MergeWaitMode::DoNotWait => true,
+	};
+
+	let merge_attempt = if attempt_merge_now {
+		Some(
+			merge(
+				github_bot,
+				owner,
+				repo_name,
+				pr,
+				bot_config,
+				requested_by,
+				None,
+			)
+			.await?,
+		)
+	} else {
+		None
+	};
+
+	match (mode, merge_attempt) {
+		(_, Some(Ok(()))) => {
+			update_companion(github_bot, &repo_name, &pr, db, bot_config).await
+		}
+		(MergeWaitMode::DoNotWait, Some(Err(e))) => Err(e),
+		_ => {
+			wait_to_merge(
+				github_bot,
+				owner,
+				&repo_name,
+				pr.number,
+				&pr.html_url,
+				requested_by,
+				head_sha,
+				db,
+			)
+			.await
+		}
 	}
 }

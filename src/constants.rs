@@ -64,3 +64,8 @@ pub const SUBSTRATE_TEAM_LEADS_GROUP: &str = "substrateteamleads";
 pub const CORE_DEVS_GROUP: &str = "core-devs";
 
 pub const PROCESS_FILE: &str = "Process.json";
+
+pub enum MergeWaitMode {
+	DoNotWait,
+	CanWait,
+}

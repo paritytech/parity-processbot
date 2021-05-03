@@ -21,6 +21,30 @@ pub struct PullRequest {
 	pub repository: Option<Repository>,
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct TreeObject<'a> {
+	pub path: &'a str,
+	pub content: String,
+	// file mode in the Linux format as a string e.g. "100644"
+	pub mode: String,
+}
+
+#[derive(Deserialize)]
+pub struct CreatedTree {
+	pub sha: String,
+}
+
+#[derive(Deserialize)]
+pub struct CreatedCommit {
+	pub sha: String,
+}
+
+#[derive(Deserialize)]
+pub struct CreatedRef {
+	#[serde(rename = "ref")]
+	pub ref_field: Option<String>,
+}
+
 impl HasIssueDetails for PullRequest {
 	fn get_issue_details(&self) -> Option<(String, String, i64)> {
 		if let Some(Repository {

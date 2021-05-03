@@ -94,6 +94,11 @@ pub enum Error {
 		source: tokio::io::Error,
 	},
 
+	#[snafu(display("IO: {}", source))]
+	StdIO {
+		source: std::io::Error,
+	},
+
 	/// Data requested was not found or valid.
 	#[snafu(display("Missing data"))]
 	MissingData {},
