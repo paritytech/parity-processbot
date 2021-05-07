@@ -1,55 +1,105 @@
-# 👾 Processbot
+# 👾 processbot
 
 # Commands
 
-To be posted as a comment in the Pull Request. **Your whole comment should only have the command**.
+To be posted as a comment in the Pull Request. **Your whole comment should only
+have the command**.
 
-- `bot merge` to automatically merge it once checks pass (if approvals have been
-  given).
-- `bot merge force` to attempt merge without waiting for checks (if approvals
-  have been given).
-- `bot merge cancel` to cancel a pending `bot merge`.
-- `bot compare substrate` to see a diff between current branch's Substrate.
+- `bot merge`: [if approved](#criteria-for-merge), merge once checks pass.
+- `bot merge force`: [if approved](#criteria-for-merge), merge immediately
+  while disregarding checks.
+- `bot merge cancel`: cancel a pending `bot merge`; does not affect anything
+  outside of processbot, only stops the bot from following through with the
+  merge.
+- `bot compare substrate`: see a diff between current branch's Substrate
   version and the latest Polkadot release's Substrate version.
-- `bot rebase` to merge origin/master.
-- `bot burnin` to build and deploy the PR for a burn-in test.
+- `bot rebase`: create a merge commit from origin/master into the PR.
+- `bot burnin`: build and deploy the PR for a burn-in test.
 
-Commands should all be defined in [constants.rs](./src/constants.rs).
+Note: The commands will only work if you are a member of the organization where
+this bot is installed. Organization membership is always gotten fresh from the
+the Github API at the time a comment arrives.
+
+## Relation to CI
+
+processbot categorizes CI statuses as following, ranked in descending order of
+importance:
+
+### 1. Required
+
+Required through Github branch protection rules
+
+They are meant to be blockers so can't be skipped anyhow.
+
+### 2. Important
+
+Derived from Gitlab Jobs which **do not** have `allow_failure: true`
+
+They are relevant but not blockers, thus can be skipped with `bot merge force`
+but will not pass `bot merge`. Note that the companion build system follows the
+logic of `bot merge`, thus a brittle job in this category might get in the way
+of a companion merge.
+
+### 3. Fallible
+
+Derived from Gitlab Jobs which have `allow_failure: true`
+
+Unstable statuses will have `allow_failure: true` encoded in their descriptions
+([delivered from vanity-service](https://gitlab.parity.io/parity/websites/vanity-service/-/blob/ddc0af0ec8520a99a35b9e33de57d28d37678686/service.js#L77))
+which will allow processbot to detect and disregard them.
 
 # Deployment
 
-Note: As of March 26 of 2021, the bot has been running on production with [tag 0.5.0](https://github.com/paritytech/parity-processbot/releases/tag/v0.5.0) since October 27 of 2020. Although many bugs have been reported since then, that is the current "stable" version which developers are used to. `master` has since then received commits which have not landed in production; therefore, if a "doom scenario" comes up, it's advised that you always deploy that tag instead of retagging master for the time being.
-
 The bot is automatically deployed by pushing a tag with one of the following formats
 
-- `/^v[0-9]+\.[0-9]+.*$/`, e.g. `v1.1`, will deploy it to production (cluster `parity-prod`).
+- `/^v[0-9]+\.[0-9]+.*$/`, e.g. `v1.1`, will deploy it to production (cluster
+  `parity-prod`).
 
-- `/^pre-v[0-9]+\.[0-9]+.*$/`, e.g. `pre-v0.6` will deploy to staging (cluster `parity-stg`).
-  - The staging package is deployed to a dedicated separate Github App. There's a [a (private) repository for staging](https://github.com/paritytech/polkadot-for-processbot-staging)
-which has it installed, already set up with a mirrored [a (private) project on Gitlab](https://gitlab.parity.io/parity/polkadot-for-processbot-staging) for CI.
+- `/^pre-v[0-9]+\.[0-9]+.*$/`, e.g. `pre-v0.6` will deploy to staging (cluster
+  `parity-stg`).
+  - The staging package is deployed to a dedicated separate Github App. There's
+    [a (private) repository for staging](https://github.com/paritytech/polkadot-for-processbot-staging)
+    which has it installed, already set up with a mirrored
+	[a (private) project on Gitlab](https://gitlab.parity.io/parity/polkadot-for-processbot-staging)
+	for CI.
 
-The deployment's status can be followed through [Gitlab Pipelines on the parity-processbot mirror](https://gitlab.parity.io/parity/parity-processbot/-/pipelines) ([example](https://gitlab.parity.io/parity/parity-processbot/-/jobs/867102)).
+The deployment's status can be followed through
+[Gitlab Pipelines on the parity-processbot mirror](https://gitlab.parity.io/parity/parity-processbot/-/pipelines)
+([example](https://gitlab.parity.io/parity/parity-processbot/-/jobs/867102)).
 
 ## Notes
 
-- All of the relevant configuration for deployment lives in the [./kubernetes/processbot](./kubernetes/processbot) folder. The environment variables for both staging and production are in `values*.yml`; if you add one, it also needs to be added to `templates/processbot.yaml`.
- - If any secrets need to be changed, contact the devops team.
+- All of the relevant configuration for deployment lives in the
+  [./kubernetes/processbot](./kubernetes/processbot) folder. The environment
+  variables for both staging and production are in `values*.yml`; if you add
+  one, it also needs to be added to `templates/processbot.yaml`.
+ - Secrets are managed through Gitlab.
 
 # Configuration
 
 ## Project Owners <a name="project-owners"></a>
 
-Project owners can be configured by placing a `Process.json` file in the root of your repository. **The bot always considers only the `master` branch's version of the file**. See [./Process.json](./Process.json) or [Substrate's Process.json](https://github.com/paritytech/substrate/blob/master/Process.json) for examples.
+Project owners can be configured by placing a `Process.json` file in the root
+of your repository. **The bot always considers only the `master` branch's
+version of the file**. See [./Process.json](./Process.json) or
+[Substrate's Process.json](https://github.com/paritytech/substrate/blob/master/Process.json)
+for examples.
 
-The file should have a valid JSON array of `{ "project_name": string, "owner": string, "matrix_room_id": string }` where:
+The file should have a valid JSON array of
+`{ "project_name": string, "owner": string, "matrix_room_id": string }`
+where:
 
 - `project_name` is the [Github Project](#github-project)'s name
 - `owner` is the Github Username of the project's lead
-- `matrix_room_id` is the project's room address on Matrix, like `"!yBKstWVBkwzUkPslsp:matrix.parity.io"`. It's not currently used, but needs to be defined.
+- `matrix_room_id` is the project's room address on Matrix, like
+  `"!yBKstWVBkwzUkPslsp:matrix.parity.io"`. It's not currently used, but needs to
+  be defined.
 
 ## Runtime
 
-Some of the bot's configuration (e.g. the number of required reviewers for a pull request) can be managed through environment variables defined in [./src/config.rs](./src/config.rs)
+Some of the bot's configuration (e.g. the number of required reviewers for a
+pull request) can be managed through environment variables defined in
+[./src/config.rs](./src/config.rs)
 
 # Criteria for merge
 
@@ -69,6 +119,7 @@ A Pull Request needs either
 
 For the sake of the following explanation, consider "Allowed Developers"
 to be either
+
 - [Project Owners](#project-owners)
 - [substrateteamleads](#substrateteamleads)
 
@@ -87,8 +138,8 @@ an Allowed Developer. The reasoning for this feature is as follows:
 
 ## Checks and statuses
 
-All CI statuses and checks should be green when using `bot merge` (can be
-bypassed by using `bot merge force`).
+All [Important and above](#relation-to-ci) checks should be green when using
+`bot merge` (can be bypassed by using `bot merge force`).
 
 # FAQ
 
@@ -99,17 +150,12 @@ bypassed by using `bot merge force`).
 	- https://github.com/orgs/paritytech/teams/substrateteamleads/members
 
 - What is a project column and how do I attach one? <a name="github-project"></a>
-	- A project column is necessary for Processbot to identify a [Project Owner](#project-owners).
-	- A pull request can be attached to a project column using the Github web UI (similar to attaching a label):
-
-		- No project *(cannot be recognised)*
-
+	- A project column is necessary for Processbot to identify a
+	  [Project Owner](#project-owners).
+	- A pull request can be attached to a project column using the Github UI:
+		- Having no project, it *will not be recognized*
 		![](https://github.com/paritytech/parity-processbot/blob/master/no-project.png)
-
-		- A project but no column *(cannot be recognised)*
-
+		- Having a project, but no column, it *will not be recognized*
 		![](https://github.com/paritytech/parity-processbot/blob/master/no-column.png)
-
-		- The project `parity-processbot` and column `general` *(will be recognised)*
-
+		- Having both project a column, it *will be recognized*
 		![](https://github.com/paritytech/parity-processbot/blob/master/proj-column.png)
