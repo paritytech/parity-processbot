@@ -508,7 +508,7 @@ async fn handle_comment(
 
 		auth.check_org_membership(&github_bot).await?;
 
-		merge_allowed(
+		if let Err(e) = merge_allowed(
 			github_bot,
 			owner,
 			&repo_name,
@@ -517,7 +517,26 @@ async fn handle_comment(
 			requested_by,
 			None,
 		)
-		.await??;
+		.await?
+		{
+			return match e {
+				// If the merge failure will be solved later, then register the PR for later so that it'll
+				// eventually continue processing when later statuses arrive
+				Error::MergeFailureWillBeSolvedLater {} => {
+					let _ = create_merge_request(
+						owner,
+						&repo_name,
+						pr.number,
+						&pr.html_url,
+						requested_by,
+						&pr.head_sha()?,
+						db,
+					);
+					Err(e)
+				}
+				_ => Err(e),
+			};
+		}
 
 		if ready_to_merge(github_bot, owner, &repo_name, pr).await? {
 			prepare_to_merge(
@@ -1301,7 +1320,7 @@ async fn merge(
 										"Ignoring merge failure due to pending required status; message: {}",
 										message
 									);
-									Ok(Err(Error::Skipped {}))
+									Ok(Err(Error::MergeFailureWillBeSolvedLater {}))
 								} else if let (
 									true,
 									Some(matches)
@@ -1605,14 +1624,14 @@ Approval by \"Project Owners\" is only attempted if other means defined in the [
 
 async fn handle_error(e: Error, state: &AppState) {
 	match e {
-		Error::Skipped { .. } => (),
+		Error::MergeFailureWillBeSolvedLater { .. } => (),
 		e => match e {
 			Error::WithIssue {
 				source,
 				issue: (owner, repo, number),
 				..
 			} => match *source {
-				Error::Skipped { .. } => (),
+				Error::MergeFailureWillBeSolvedLater { .. } => (),
 				e => {
 					log::error!("handle_error: {}", e);
 					let msg = handle_error_inner(e, state)
