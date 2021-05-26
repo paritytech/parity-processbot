@@ -192,8 +192,13 @@ pub enum Error {
 		err: String,
 	},
 
-	#[snafu(display("Error was skipped",))]
-	Skipped {},
+	#[snafu(display(
+		"Merge failure was skipped (will be solved later): {}",
+		msg
+	))]
+	MergeFailureWillBeSolvedLater {
+		msg: String,
+	},
 }
 
 impl Error {

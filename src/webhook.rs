@@ -508,7 +508,7 @@ async fn handle_comment(
 
 		auth.check_org_membership(&github_bot).await?;
 
-		merge_allowed(
+		if let Err(e) = merge_allowed(
 			github_bot,
 			owner,
 			&repo_name,
@@ -517,7 +517,26 @@ async fn handle_comment(
 			requested_by,
 			None,
 		)
-		.await??;
+		.await?
+		{
+			return match e {
+				// If the merge failure will be solved later, then register the PR in the database so that
+				// it'll eventually resume processing when later statuses arrive
+				Error::MergeFailureWillBeSolvedLater { .. } => {
+					let _ = create_merge_request(
+						owner,
+						&repo_name,
+						pr.number,
+						&pr.html_url,
+						requested_by,
+						&pr.head_sha()?,
+						db,
+					);
+					Err(e)
+				}
+				_ => Err(e),
+			};
+		}
 
 		if ready_to_merge(github_bot, owner, &repo_name, pr).await? {
 			prepare_to_merge(
@@ -565,7 +584,7 @@ async fn handle_comment(
 
 		auth.check_org_membership(&github_bot).await?;
 
-		merge_allowed(
+		if let Err(e) = merge_allowed(
 			github_bot,
 			owner,
 			&repo_name,
@@ -574,7 +593,24 @@ async fn handle_comment(
 			requested_by,
 			None,
 		)
-		.await??;
+		.await?
+		{
+			return Err(match e {
+				// Even if the merge failure can be solved later, it does not matter because `merge force` is
+				// supposed to be immediate. We should give up here and yield the error message.
+				Error::MergeFailureWillBeSolvedLater { msg } => Error::Merge {
+					source: Box::new(Error::Message { msg }),
+					commit_sha: pr.head_sha()?.to_owned(),
+					pr_url: pr.html_url.to_owned(),
+					owner: owner.to_string(),
+					repo_name: repo_name.to_string(),
+					pr_number: pr.number,
+					created_approval_id: None,
+				},
+				_ => e,
+			}
+			.map_issue((owner.to_string(), repo_name.to_string(), pr.number)));
+		}
 
 		prepare_to_merge(
 			github_bot,
@@ -1272,7 +1308,7 @@ async fn merge(
 				} => match *status {
 					StatusCode::METHOD_NOT_ALLOWED => {
 						match body.get("message") {
-							Some(message) => {
+							Some(msg) => {
 								// Matches the following
 								// - "Required status check ... is {pending,expected}."
 								// - "... required status checks have not succeeded: ... {pending,expected}."
@@ -1292,23 +1328,23 @@ async fn merge(
 										.unwrap();
 
 								if missing_status_matcher
-									.find(&message.to_string())
+									.find(&msg.to_string())
 									.is_some()
 								{
 									// This problem will be solved automatically when all the
 									// required statuses are delivered, thus it can be ignored here
 									log::info!(
 										"Ignoring merge failure due to pending required status; message: {}",
-										message
+										msg
 									);
-									Ok(Err(Error::Skipped {}))
+									Ok(Err(Error::MergeFailureWillBeSolvedLater { msg: msg.to_string() }))
 								} else if let (
 									true,
 									Some(matches)
 								) = (
 									created_approval_id.is_none(),
 									insufficient_approval_quota_matcher
-										.captures(&message.to_string())
+										.captures(&msg.to_string())
 								) {
 									let min_approvals_required = matches
 										.get(1)
@@ -1372,13 +1408,13 @@ async fn merge(
 									}.map_err(|e| Error::Message {
 										msg: format!(
 											"Could not recover from: `{}` due to: `{}`",
-											message,
+											msg,
 											e
 										)
 									})
 								} else {
 									Err(Error::Message {
-										msg: message.to_string(),
+										msg: msg.to_string(),
 									})
 								}
 							}
@@ -1605,14 +1641,14 @@ Approval by \"Project Owners\" is only attempted if other means defined in the [
 
 async fn handle_error(e: Error, state: &AppState) {
 	match e {
-		Error::Skipped { .. } => (),
+		Error::MergeFailureWillBeSolvedLater { .. } => (),
 		e => match e {
 			Error::WithIssue {
 				source,
 				issue: (owner, repo, number),
 				..
 			} => match *source {
-				Error::Skipped { .. } => (),
+				Error::MergeFailureWillBeSolvedLater { .. } => (),
 				e => {
 					log::error!("handle_error: {}", e);
 					let msg = handle_error_inner(e, state)
