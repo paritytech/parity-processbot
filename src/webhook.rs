@@ -508,7 +508,7 @@ async fn handle_comment(
 
 		auth.check_org_membership(&github_bot).await?;
 
-		if let Err(e) = merge_allowed(
+		merge_allowed(
 			github_bot,
 			owner,
 			&repo_name,
@@ -517,26 +517,7 @@ async fn handle_comment(
 			requested_by,
 			None,
 		)
-		.await?
-		{
-			return match e {
-				// If the merge failure will be solved later, then register the PR in the database so that
-				// it'll eventually resume processing when later statuses arrive
-				Error::MergeFailureWillBeSolvedLater { .. } => {
-					let _ = create_merge_request(
-						owner,
-						&repo_name,
-						pr.number,
-						&pr.html_url,
-						requested_by,
-						&pr.head_sha()?,
-						db,
-					);
-					Err(e)
-				}
-				_ => Err(e),
-			};
-		}
+		.await??;
 
 		if ready_to_merge(github_bot, owner, &repo_name, pr).await? {
 			prepare_to_merge(
@@ -548,7 +529,7 @@ async fn handle_comment(
 			)
 			.await?;
 
-			merge(
+			match merge(
 				github_bot,
 				owner,
 				&repo_name,
@@ -557,7 +538,25 @@ async fn handle_comment(
 				requested_by,
 				None,
 			)
-			.await??;
+			.await?
+			{
+				// If the merge failure will be solved later, then register the PR in the database so that
+				// it'll eventually resume processing when later statuses arrive
+				Err(Error::MergeFailureWillBeSolvedLater { msg }) => {
+					let _ = create_merge_request(
+						owner,
+						&repo_name,
+						pr.number,
+						&pr.html_url,
+						requested_by,
+						&pr.head_sha()?,
+						db,
+					);
+					return Err(Error::MergeFailureWillBeSolvedLater { msg });
+				}
+				Err(e) => return Err(e),
+				_ => (),
+			}
 			update_companion(github_bot, &repo_name, pr, db).await?;
 		} else {
 			let pr_head_sha = pr.head_sha()?;
@@ -584,7 +583,7 @@ async fn handle_comment(
 
 		auth.check_org_membership(&github_bot).await?;
 
-		if let Err(e) = merge_allowed(
+		merge_allowed(
 			github_bot,
 			owner,
 			&repo_name,
@@ -593,24 +592,7 @@ async fn handle_comment(
 			requested_by,
 			None,
 		)
-		.await?
-		{
-			return Err(match e {
-				// Even if the merge failure can be solved later, it does not matter because `merge force` is
-				// supposed to be immediate. We should give up here and yield the error message.
-				Error::MergeFailureWillBeSolvedLater { msg } => Error::Merge {
-					source: Box::new(Error::Message { msg }),
-					commit_sha: pr.head_sha()?.to_owned(),
-					pr_url: pr.html_url.to_owned(),
-					owner: owner.to_string(),
-					repo_name: repo_name.to_string(),
-					pr_number: pr.number,
-					created_approval_id: None,
-				},
-				_ => e,
-			}
-			.map_issue((owner.to_string(), repo_name.to_string(), pr.number)));
-		}
+		.await??;
 
 		prepare_to_merge(
 			github_bot,
@@ -620,7 +602,8 @@ async fn handle_comment(
 			&pr.html_url,
 		)
 		.await?;
-		merge(
+
+		match merge(
 			github_bot,
 			owner,
 			&repo_name,
@@ -629,7 +612,29 @@ async fn handle_comment(
 			requested_by,
 			None,
 		)
-		.await??;
+		.await?
+		{
+			// Even if the merge failure can be solved later, it does not matter because `merge force` is
+			// supposed to be immediate. We should give up here and yield the error message.
+			Err(Error::MergeFailureWillBeSolvedLater { msg }) => {
+				return Err(Error::Merge {
+					source: Box::new(Error::Message { msg }),
+					commit_sha: pr.head_sha()?.to_owned(),
+					pr_url: pr.html_url.to_owned(),
+					owner: owner.to_string(),
+					repo_name: repo_name.to_string(),
+					pr_number: pr.number,
+					created_approval_id: None,
+				}
+				.map_issue((
+					owner.to_string(),
+					repo_name.to_string(),
+					pr.number,
+				)))
+			}
+			Err(e) => return Err(e),
+			_ => (),
+		}
 		update_companion(github_bot, &repo_name, &pr, db).await?;
 	} else if body.to_lowercase().trim()
 		== AUTO_MERGE_CANCEL.to_lowercase().trim()
