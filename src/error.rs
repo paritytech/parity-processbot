@@ -3,6 +3,9 @@ use snafu::Snafu;
 // TODO this really should be struct { repository, owner, number }
 pub type IssueDetails = (String, String, i64);
 
+// TODO this really should be struct { repository_url, repository, owner, number }
+pub type IssueDetailsWithRepositoryURL = (String, String, String, i64);
+
 #[derive(Debug, Snafu)]
 #[snafu(visibility = "pub")]
 pub enum Error {

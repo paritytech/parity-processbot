@@ -22,7 +22,7 @@ pub struct PullRequest {
 }
 
 impl HasIssueDetails for PullRequest {
-	fn get_issue_details(&self) -> Option<(String, String, i64)> {
+	fn get_issue_details(&self) -> Option<IssueDetails> {
 		if let Some(Repository {
 			owner: Some(User { login, .. }),
 			name,
@@ -77,7 +77,7 @@ pub struct Issue {
 }
 
 impl HasIssueDetails for Issue {
-	fn get_issue_details(&self) -> Option<(String, String, i64)> {
+	fn get_issue_details(&self) -> Option<IssueDetails> {
 		match self {
 			Issue {
 				number,
@@ -400,7 +400,7 @@ pub struct DetectUserCommentPullRequest {
 }
 
 impl HasIssueDetails for DetectUserCommentPullRequest {
-	fn get_issue_details(&self) -> Option<(String, String, i64)> {
+	fn get_issue_details(&self) -> Option<IssueDetails> {
 		if let DetectUserCommentPullRequest {
 			action: IssueCommentAction::Created,
 			issue:
@@ -465,7 +465,7 @@ impl HasIssueDetails for DetectUserCommentPullRequest {
 
 pub fn parse_issue_details_from_pr_html_url(
 	pr_html_url: &str,
-) -> Option<(String, String, i64)> {
+) -> Option<IssueDetails> {
 	let re = Regex::new(PR_HTML_URL_REGEX!()).unwrap();
 	let matches = re.captures(&pr_html_url)?;
 	let owner = matches.name("owner")?.as_str().to_owned();
