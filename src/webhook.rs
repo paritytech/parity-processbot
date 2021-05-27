@@ -181,42 +181,43 @@ async fn handle_payload(payload: Payload, state: &AppState) -> Result<()> {
 			action: IssueCommentAction::Created,
 			comment:
 				Comment {
-					body,
+					ref body,
 					user:
 						Some(User {
-							login,
-							type_field: Some(UserType::User),
-							..
+							ref login,
+							ref type_field,
 						}),
 					..
 				},
 			issue,
-		} => match &issue {
-			Issue {
-				number,
-				html_url,
-				repository_url: Some(repo_url),
-				pull_request: Some(_),
-				..
-			} => {
-				handle_comment(body, &login, *number, html_url, repo_url, state)
-					.await
-					.map_err(|e| match e {
-						Error::WithIssue { .. } => e,
-						e => {
-							if let Some(details) = issue.get_issue_details() {
-								e.map_issue(details)
-							} else {
-								e
-							}
+		} => match type_field {
+			Some(UserType::Bot) => Ok(()),
+			_ => match &issue {
+				WebhookIssueComment {
+					number,
+					html_url,
+					repository_url: Some(repo_url),
+					pull_request: Some(_),
+				} => handle_comment(
+					body, login, *number, html_url, repo_url, state,
+				)
+				.await
+				.map_err(|e| match e {
+					Error::WithIssue { .. } => e,
+					e => {
+						if let Some(details) = issue.get_issue_details() {
+							e.map_issue(details)
+						} else {
+							e
 						}
-					})
-			}
-			_ => Ok(()),
+					}
+				}),
+				_ => Ok(()),
+			},
 		},
-		Payload::CommitStatus {
-			sha, state: status, ..
-		} => handle_status(sha, status, state).await,
+		Payload::CommitStatus { sha, state: status } => {
+			handle_status(sha, status, state).await
+		}
 		Payload::CheckRun {
 			check_run: CheckRun {
 				status, head_sha, ..
@@ -937,7 +938,7 @@ async fn merge_allowed(
 						vec![]
 					});
 
-				let is_allowed = if team_leads
+				let relevant_approvals_count = if team_leads
 					.iter()
 					.any(|lead| lead.login == requested_by)
 				{
