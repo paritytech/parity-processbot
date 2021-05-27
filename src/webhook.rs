@@ -472,7 +472,7 @@ async fn checks_and_status(
 
 /// Parse bot commands in pull request comments. Commands are listed in README.md.
 async fn handle_comment(
-	body: String,
+	body: &str,
 	requested_by: &str,
 	number: i64,
 	html_url: &str,
@@ -946,7 +946,7 @@ async fn merge_allowed(
 						"{} merge requested by a team lead.",
 						pr.html_url
 					);
-					Ok(())
+					Ok(0)
 				} else {
 					let core_devs =
 						github_bot.core_devs(owner).await.unwrap_or_else(|e| {
@@ -970,7 +970,7 @@ async fn merge_allowed(
 						bot_config.min_reviewers
 					};
 
-					let core_approved = approved_reviews
+					let core_approvals = approved_reviews
 						.iter()
 						.filter(|review| {
 							core_devs.iter().any(|core_dev| {
@@ -981,8 +981,10 @@ async fn merge_allowed(
 									.unwrap_or(false)
 							})
 						})
-						.count() >= min_reviewers;
-					let lead_approved = approved_reviews
+						.count();
+					let core_approved = core_approvals >= min_reviewers;
+
+					let lead_approvals = approved_reviews
 						.iter()
 						.filter(|review| {
 							team_leads.iter().any(|team_lead| {
@@ -993,14 +995,22 @@ async fn merge_allowed(
 									.unwrap_or(false)
 							})
 						})
-						.count() >= 1;
+						.count();
+					let lead_approved = lead_approvals >= 1;
+
+					let relevant_approvals_count =
+						if core_approvals > lead_approvals {
+							core_approvals
+						} else {
+							lead_approvals
+						};
 
 					if core_approved || lead_approved {
 						log::info!(
 							"{} has core or team lead approval.",
 							pr.html_url
 						);
-						Ok(())
+						Ok(relevant_approvals_count)
 					} else {
 						match process::get_process(
 							github_bot, owner, repo_name, pr.number,
@@ -1030,7 +1040,7 @@ async fn merge_allowed(
 										"{} has project owner approval.",
 										pr.html_url
 									);
-									Ok(())
+									Ok(relevant_approvals_count)
 								} else {
 									errors.extend(process_warnings);
 									if process.is_empty() {
@@ -1051,32 +1061,12 @@ async fn merge_allowed(
 					}
 				};
 
-				match is_allowed {
-					Ok(_) => Ok(match min_approvals_required {
-						Some(min_approvals_required) => {
-							let has_bot_approved =
-								approved_reviews.iter().any(|review| {
-									review
-										.user
-										.as_ref()
-										.map(|user| {
-											user.type_field
-												.as_ref()
-												.map(|type_field| {
-													*type_field == UserType::Bot
-												})
-												.unwrap_or(false)
-										})
-										.unwrap_or(false)
-								});
-							// If the bot has already approved, then approving again will not make a
-							// difference.
-							if has_bot_approved {
-								Ok(None)
-							} else {
-								let relevant_approvals = approved_reviews
-									.iter()
-									.filter(|review| {
+				match relevant_approvals_count {
+					Ok(relevant_approvals_count) => {
+						Ok(match min_approvals_required {
+							Some(min_approvals_required) => {
+								let has_bot_approved =
+									approved_reviews.iter().any(|review| {
 										review
 											.user
 											.as_ref()
@@ -1085,17 +1075,18 @@ async fn merge_allowed(
 													.as_ref()
 													.map(|type_field| {
 														*type_field
-															== UserType::User
+															== UserType::Bot
 													})
 													.unwrap_or(false)
 											})
 											.unwrap_or(false)
-									})
-									.count();
-								// See if the target approval count can be reached with the bot's approval
-								let bot_approval = 1;
-								if relevant_approvals + bot_approval
-									== min_approvals_required
+									});
+
+								// If the bot has already approved, then approving again will not make a
+								// difference.
+								if !has_bot_approved
+									&& relevant_approvals_count + 1
+										== min_approvals_required
 								{
 									if team_leads.iter().any(|team_lead| {
 										team_lead.login == requested_by
@@ -1122,9 +1113,9 @@ async fn merge_allowed(
 									Ok(None)
 								}
 							}
-						}
-						_ => Ok(None),
-					}),
+							_ => Ok(None),
+						})
+					}
 					Err(e) => Err(e),
 				}
 			}
