@@ -937,6 +937,48 @@ async fn merge_allowed(
 						errors.push(msg);
 						vec![]
 					});
+				let lead_approvals = approved_reviews
+					.iter()
+					.filter(|review| {
+						team_leads.iter().any(|team_lead| {
+							review
+								.user
+								.as_ref()
+								.map(|user| user.login == team_lead.login)
+								.unwrap_or(false)
+						})
+					})
+					.count();
+
+				let core_devs =
+					github_bot.core_devs(owner).await.unwrap_or_else(|e| {
+						let msg = format!(
+							"Error getting {}: `{}`",
+							CORE_DEVS_GROUP, e
+						);
+						log::error!("{}", msg);
+						errors.push(msg);
+						vec![]
+					});
+				let core_approvals = approved_reviews
+					.iter()
+					.filter(|review| {
+						core_devs.iter().any(|core_dev| {
+							review
+								.user
+								.as_ref()
+								.map(|user| user.login == core_dev.login)
+								.unwrap_or(false)
+						})
+					})
+					.count();
+
+				let relevant_approvals_count =
+					if core_approvals > lead_approvals {
+						core_approvals
+					} else {
+						lead_approvals
+					};
 
 				let relevant_approvals_count = if team_leads
 					.iter()
@@ -946,19 +988,8 @@ async fn merge_allowed(
 						"{} merge requested by a team lead.",
 						pr.html_url
 					);
-					Ok(0)
+					Ok(relevant_approvals_count)
 				} else {
-					let core_devs =
-						github_bot.core_devs(owner).await.unwrap_or_else(|e| {
-							let msg = format!(
-								"Error getting {}: `{}`",
-								CORE_DEVS_GROUP, e
-							);
-							log::error!("{}", msg);
-							errors.push(msg);
-							vec![]
-						});
-
 					let min_reviewers = if pr
 						.labels
 						.iter()
@@ -970,40 +1001,8 @@ async fn merge_allowed(
 						bot_config.min_reviewers
 					};
 
-					let core_approvals = approved_reviews
-						.iter()
-						.filter(|review| {
-							core_devs.iter().any(|core_dev| {
-								review
-									.user
-									.as_ref()
-									.map(|user| user.login == core_dev.login)
-									.unwrap_or(false)
-							})
-						})
-						.count();
 					let core_approved = core_approvals >= min_reviewers;
-
-					let lead_approvals = approved_reviews
-						.iter()
-						.filter(|review| {
-							team_leads.iter().any(|team_lead| {
-								review
-									.user
-									.as_ref()
-									.map(|user| user.login == team_lead.login)
-									.unwrap_or(false)
-							})
-						})
-						.count();
 					let lead_approved = lead_approvals >= 1;
-
-					let relevant_approvals_count =
-						if core_approvals > lead_approvals {
-							core_approvals
-						} else {
-							lead_approvals
-						};
 
 					if core_approved || lead_approved {
 						log::info!(
