@@ -236,11 +236,11 @@ async fn update_companion_repository(
 	Ok(updated_sha)
 }
 
-fn companion_parse(body: &str) -> Option<(String, String, String, i64)> {
+fn companion_parse(body: &str) -> Option<IssueDetailsWithRepositoryURL> {
 	companion_parse_long(body).or(companion_parse_short(body))
 }
 
-fn companion_parse_long(body: &str) -> Option<(String, String, String, i64)> {
+fn companion_parse_long(body: &str) -> Option<IssueDetailsWithRepositoryURL> {
 	let re = RegexBuilder::new(COMPANION_LONG_REGEX!())
 		.case_insensitive(true)
 		.build()
@@ -258,7 +258,7 @@ fn companion_parse_long(body: &str) -> Option<(String, String, String, i64)> {
 	Some((html_url, owner, repo, number))
 }
 
-fn companion_parse_short(body: &str) -> Option<(String, String, String, i64)> {
+fn companion_parse_short(body: &str) -> Option<IssueDetailsWithRepositoryURL> {
 	let re = RegexBuilder::new(COMPANION_SHORT_REGEX!())
 		.case_insensitive(true)
 		.build()

@@ -22,7 +22,7 @@ pub struct PullRequest {
 }
 
 impl HasIssueDetails for PullRequest {
-	fn get_issue_details(&self) -> Option<(String, String, i64)> {
+	fn get_issue_details(&self) -> Option<IssueDetails> {
 		if let Some(Repository {
 			owner: Some(User { login, .. }),
 			name,
@@ -77,7 +77,7 @@ pub struct Issue {
 }
 
 impl HasIssueDetails for Issue {
-	fn get_issue_details(&self) -> Option<(String, String, i64)> {
+	fn get_issue_details(&self) -> Option<IssueDetails> {
 		match self {
 			Issue {
 				number,
@@ -208,7 +208,6 @@ pub struct RequestedReviewers {
 
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub enum UserType {
-	User,
 	Bot,
 	#[serde(other)]
 	Unknown,
@@ -347,20 +346,36 @@ pub struct CheckRun {
 	pub head_sha: String,
 }
 
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WebhookIssueComment {
+	pub number: i64,
+	pub html_url: String,
+	pub repository_url: Option<String>,
+	pub pull_request: Option<IssuePullRequest>,
+}
+
+impl HasIssueDetails for WebhookIssueComment {
+	fn get_issue_details(&self) -> Option<IssueDetails> {
+		None
+	}
+}
+
 #[derive(PartialEq, Deserialize)]
 #[serde(untagged)]
 pub enum Payload {
 	IssueComment {
 		action: IssueCommentAction,
-		issue: Issue,
+		issue: WebhookIssueComment,
 		comment: Comment,
 	},
 	CommitStatus {
+		// FIXME: This payload also has a field `repository` for the repository where the status
+		// originated from which should be used *together* with commit SHA for indexing pull requests.
+		// Currently, because merge requests are indexed purely by their head SHA into the database,
+		// there's no way to disambiguate between two different PRs in two different repositories with
+		// the same head SHA.
 		sha: String,
 		state: StatusState,
-		description: String,
-		target_url: String,
-		repository: Repository,
 	},
 	CheckRun {
 		check_run: CheckRun,
@@ -400,7 +415,7 @@ pub struct DetectUserCommentPullRequest {
 }
 
 impl HasIssueDetails for DetectUserCommentPullRequest {
-	fn get_issue_details(&self) -> Option<(String, String, i64)> {
+	fn get_issue_details(&self) -> Option<IssueDetails> {
 		if let DetectUserCommentPullRequest {
 			action: IssueCommentAction::Created,
 			issue:
@@ -411,51 +426,59 @@ impl HasIssueDetails for DetectUserCommentPullRequest {
 			comment:
 				Some(DetectUserCommentPullRequestComment { body: Some(body) }),
 			repository,
-			sender:
-				Some(User {
-					type_field: Some(UserType::User),
-					..
-				}),
+			..
 		} = self
 		{
-			let body = body.trim();
-
-			if BOT_COMMANDS.iter().find(|cmd| **cmd == body).is_some() {
-				if let Some(DetectUserCommentPullRequestRepository {
-					name: Some(name),
-					owner: Some(User { login, .. }),
+			match self.sender {
+				Some(User {
+					type_field: Some(UserType::Bot),
 					..
-				}) = repository
-				{
-					Some((login.to_owned(), name.to_owned(), *number))
-				} else {
-					None
+				}) => None,
+				_ => {
+					let body = body.trim();
+
+					if BOT_COMMANDS.iter().find(|cmd| **cmd == body).is_some() {
+						if let Some(DetectUserCommentPullRequestRepository {
+							name: Some(name),
+							owner: Some(User { login, .. }),
+							..
+						}) = repository
+						{
+							Some((login.to_owned(), name.to_owned(), *number))
+						} else {
+							None
+						}
+						.or_else(|| {
+							if let Some(
+								DetectUserCommentPullRequestRepository {
+									full_name: Some(full_name),
+									..
+								},
+							) = repository
+							{
+								parse_repository_full_name(full_name)
+									.map(|(owner, name)| (owner, name, *number))
+							} else {
+								None
+							}
+						})
+						.or_else(|| {
+							if let DetectUserCommentPullRequestPullRequest {
+								html_url: Some(html_url),
+							} = pr
+							{
+								parse_issue_details_from_pr_html_url(html_url)
+									.map(|(owner, name, _)| {
+										(owner, name, *number)
+									})
+							} else {
+								None
+							}
+						})
+					} else {
+						None
+					}
 				}
-				.or_else(|| {
-					if let Some(DetectUserCommentPullRequestRepository {
-						full_name: Some(full_name),
-						..
-					}) = repository
-					{
-						parse_repository_full_name(full_name)
-							.map(|(owner, name)| (owner, name, *number))
-					} else {
-						None
-					}
-				})
-				.or_else(|| {
-					if let DetectUserCommentPullRequestPullRequest {
-						html_url: Some(html_url),
-					} = pr
-					{
-						parse_issue_details_from_pr_html_url(html_url)
-							.map(|(owner, name, _)| (owner, name, *number))
-					} else {
-						None
-					}
-				})
-			} else {
-				None
 			}
 		} else {
 			None
@@ -465,7 +488,7 @@ impl HasIssueDetails for DetectUserCommentPullRequest {
 
 pub fn parse_issue_details_from_pr_html_url(
 	pr_html_url: &str,
-) -> Option<(String, String, i64)> {
+) -> Option<IssueDetails> {
 	let re = Regex::new(PR_HTML_URL_REGEX!()).unwrap();
 	let matches = re.captures(&pr_html_url)?;
 	let owner = matches.name("owner")?.as_str().to_owned();

@@ -99,8 +99,6 @@ spec:
               value: "300"
             - name: MATRIX_HOMESERVER
               value: "https://matrix.parity.io"
-            - name: CORE_SORTING_REPO_NAME
-              value: "core-sorting"
             - name: STATUS_FAILURE_PING
               value: "86400"
             - name: ISSUE_NOT_ADDRESSED_PING
@@ -112,8 +110,6 @@ spec:
             - name: NO_PROJECT_AUTHOR_IS_CORE_CLOSE_PR
               value: "259200"
             - name: NO_PROJECT_AUTHOR_UNKNOWN_CLOSE_PR
-              value: "900"
-            - name: PROJECT_CONFIRMATION_TIMEOUT
               value: "900"
             - name: REVIEW_REQUEST_PING
               value: "86400"
