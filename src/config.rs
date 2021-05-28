@@ -33,8 +33,6 @@ pull request author or publicly to the default channel if the author's Matrix ha
 
 `NO_PROJECT_AUTHOR_UNKNOWN_CLOSE_PR`: Seconds before closing a pull request opened by an external developer that has no project attached.
 
-`PROJECT_CONFIRMATION_TIMEOUT`: Seconds before reverting an unconfirmed change of project by a non-whitelisted developer (currently unimplemented).
-
 `MIN_REVIEWERS`: Minimum number of reviewers needed before a pull request can be accepted.
 
 `REVIEW_REQUEST_PING`: Seconds between notifications requesting reviews on a pull request, sent publicly to the relevant project room, via Matrix.
@@ -159,8 +157,6 @@ pub struct BotConfig {
 	pub no_project_author_is_core_close_pr: u64,
 	/// seconds before pr gets closed
 	pub no_project_author_unknown_close_pr: u64,
-	/// seconds before unconfirmed change gets reverted
-	pub project_confirmation_timeout: u64,
 	/// seconds between pings
 	pub review_request_ping: u64,
 	/// seconds between pings
@@ -171,8 +167,6 @@ pub struct BotConfig {
 	pub public_review_reminder_delay: u64,
 	/// mininum number of reviewers
 	pub min_reviewers: usize,
-	/// name of repo for issues without a project
-	pub core_sorting_repo_name: String,
 	/// matrix room id for sending app logs
 	pub logs_room_id: String,
 }
@@ -219,13 +213,6 @@ impl BotConfig {
 			.parse::<u64>()
 			.expect("failed parsing NO_PROJECT_AUTHOR_UNKNOWN_CLOSE_PR"),
 
-			project_confirmation_timeout: dotenv::var(
-				"PROJECT_CONFIRMATION_TIMEOUT",
-			)
-			.expect("PROJECT_CONFIRMATION_TIMEOUT")
-			.parse::<u64>()
-			.expect("failed parsing PROJECT_CONFIRMATION_TIMEOUT"),
-
 			review_request_ping: dotenv::var("REVIEW_REQUEST_PING")
 				.expect("REVIEW_REQUEST_PING")
 				.parse::<u64>()
@@ -256,9 +243,6 @@ impl BotConfig {
 				.expect("MIN_REVIEWERS")
 				.parse::<usize>()
 				.expect("failed parsing MIN_REVIEWERS"),
-
-			core_sorting_repo_name: dotenv::var("CORE_SORTING_REPO_NAME")
-				.expect("CORE_SORTING_REPO_NAME"),
 
 			logs_room_id: dotenv::var("LOGS_ROOM_ID").expect("LOGS_ROOM_ID"),
 		}
