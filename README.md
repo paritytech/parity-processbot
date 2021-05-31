@@ -114,11 +114,20 @@ A Pull Request needs either
   are defined in `Process.json`. If the PR does not belong to any project or if
   it has been approved by a project owner which is not the PR's project owner,
   then this rule will not take effect.
+  
+This criteria strictly matters only for the bot's internal logic irrespective
+of Github Repository Settings and will not trump the latter in any case. For
+instance, the rule:
 
----
+> One substrateteamleads member approval
 
-For the sake of the following explanation, consider "Allowed Developers"
-to be either
+does not imply that the pull request will be mergeable if the Github Settings
+require more approvals than that. The bot's rules work *in addition* to the
+repository's settings while still respecting them. Specifically when it comes
+to the approvals' count, however, the bot might able to help if an "Allowed
+Developer" is requesting the merge.
+
+Consider "Allowed Developers" to be either
 
 - [Project Owners](#project-owners)
 - [substrateteamleads](#substrateteamleads)
@@ -129,7 +138,8 @@ own, then the bot will try to pitch in the missing approval if the requester is
 an Allowed Developer. The reasoning for this feature is as follows:
 
 1. PR authors cannot approve their own merge requests, although Allowed
-   Developers should have the means to bypass that requirement.
+   Developers should have the means to bypass that requirement e.g. for trivial
+   or urgent changes.
 
 2. If the Allowed Developer has already approved and it's still short of one,
    they cannot "approve twice" in order to meet the quota. In that case, the
