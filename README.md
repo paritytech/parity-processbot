@@ -18,7 +18,7 @@ have the command**.
 
 Note: The commands will only work if you are a member of the organization where
 this bot is installed. Organization membership is always gotten fresh from the
-the Github API at the time a comment arrives.
+Github API at the time a comment arrives.
 
 ## Relation to CI
 
