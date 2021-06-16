@@ -18,9 +18,7 @@ spec:
         backend:
           serviceName: parity-processbot
           servicePort: {{ .Values.processbot.config.WEBHOOK_PORT }}
-  {{- if eq .Values.environment "staging" }}
   tls:
   - hosts:
     - {{ .Values.ingress.domain }}
     secretName: {{ .Values.ingress.domain }}
-  {{- end }}
