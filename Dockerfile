@@ -1,4 +1,4 @@
-FROM docker.io/paritytech/ci-linux:10a6c216-20200625
+FROM docker.io/paritytech/ci-linux:production
 
 COPY parity-processbot /usr/local/bin/parity-processbot
 

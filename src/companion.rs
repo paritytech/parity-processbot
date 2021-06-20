@@ -4,9 +4,10 @@ use snafu::ResultExt;
 use std::path::Path;
 
 use crate::{
-	cmd::*, error::*, github::*, github_bot::GithubBot, webhook::wait_to_merge,
-	Result, COMPANION_LONG_REGEX, COMPANION_PREFIX_REGEX,
-	COMPANION_SHORT_REGEX, PR_HTML_URL_REGEX,
+	cmd::*, constants::MAIN_REPO_FOR_STAGING, error::*, github::*,
+	github_bot::GithubBot, webhook::wait_to_merge, Result,
+	COMPANION_LONG_REGEX, COMPANION_PREFIX_REGEX, COMPANION_SHORT_REGEX,
+	PR_HTML_URL_REGEX,
 };
 
 async fn update_companion_repository(
@@ -16,6 +17,7 @@ async fn update_companion_repository(
 	contributor: &str,
 	contributor_repo: &str,
 	contributor_branch: &str,
+	merge_done_in: &str,
 ) -> Result<String> {
 	let token = github_bot.client.auth_key().await?;
 	let secrets_to_hide = [token.as_str()];
@@ -166,7 +168,15 @@ async fn update_companion_repository(
 	// `cargo update` should normally make changes to the lockfile with the latest SHAs from Github
 	run_cmd(
 		"cargo",
-		&["update", "-vp", "sp-io"],
+		&[
+			"update",
+			"-vp",
+			if merge_done_in == MAIN_REPO_FOR_STAGING {
+				MAIN_REPO_FOR_STAGING
+			} else {
+				"sp-io"
+			},
+		],
 		&repo_dir,
 		CommandMessage::Configured(CommandMessageConfiguration {
 			secrets_to_hide,
@@ -288,6 +298,7 @@ async fn perform_companion_update(
 	owner: &str,
 	repo: &str,
 	number: i64,
+	merge_done_in: &str,
 ) -> Result<()> {
 	let comp_pr = github_bot.pull_request(&owner, &repo, number).await?;
 
@@ -317,6 +328,7 @@ async fn perform_companion_update(
 			&contributor,
 			&contributor_repo,
 			&contributor_branch,
+			merge_done_in,
 		)
 		.await?;
 
@@ -347,14 +359,20 @@ async fn detect_then_update_companion(
 	pr: &PullRequest,
 	db: &DB,
 ) -> Result<()> {
-	if merge_done_in == "substrate" {
+	if merge_done_in == "substrate" || merge_done_in == MAIN_REPO_FOR_STAGING {
 		log::info!("Checking for companion.");
 		if let Some((html_url, owner, repo, number)) =
 			pr.body.as_ref().map(|body| companion_parse(body)).flatten()
 		{
 			log::info!("Found companion {}", html_url);
 			perform_companion_update(
-				github_bot, db, &html_url, &owner, &repo, number,
+				github_bot,
+				db,
+				&html_url,
+				&owner,
+				&repo,
+				number,
+				merge_done_in,
 			)
 			.await
 			.map_err(|e| e.map_issue((owner, repo, number)))?;
