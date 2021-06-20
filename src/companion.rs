@@ -347,7 +347,9 @@ async fn detect_then_update_companion(
 	pr: &PullRequest,
 	db: &DB,
 ) -> Result<()> {
-	if merge_done_in == "substrate" {
+	if merge_done_in == "substrate" || merge_done_in =
+		"main-for-processbot-staging"
+	{
 		log::info!("Checking for companion.");
 		if let Some((html_url, owner, repo, number)) =
 			pr.body.as_ref().map(|body| companion_parse(body)).flatten()
