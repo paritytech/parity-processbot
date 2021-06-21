@@ -500,264 +500,265 @@ async fn handle_comment(
 	let auth =
 		GithubUserAuthenticator::new(requested_by, owner, &repo_name, number);
 
-	if body.to_lowercase().trim() == AUTO_MERGE_REQUEST.to_lowercase().trim() {
-		log::info!(
-			"Received merge request for PR {} from user {}",
-			html_url,
-			requested_by
-		);
+	let cmd_lines = body
+		.lines()
+		.filter_map(|s| {
+			let line = s.trim();
+			if BOT_COMMANDS.iter().find(|cmd| cmd == &&line).is_some() {
+				Some(line.to_lowercase())
+			} else {
+				None
+			}
+		})
+		.collect::<Vec<String>>();
+	match cmd_lines.split_at(1) {
+		([], []) => (),
+		([cmd], []) => {
+			auth.check_org_membership(github_bot).await?;
 
-		auth.check_org_membership(&github_bot).await?;
+			match cmd.as_str() {
+				AUTO_MERGE_REQUEST => {
+					log::info!(
+						"Received merge request for PR {} from user {}",
+						html_url,
+						requested_by
+					);
 
-		merge_allowed(
-			github_bot,
-			owner,
-			&repo_name,
-			pr,
-			bot_config,
-			requested_by,
-			None,
-		)
-		.await??;
+					merge_allowed(
+						github_bot,
+						owner,
+						&repo_name,
+						pr,
+						bot_config,
+						requested_by,
+						None,
+					)
+					.await??;
 
-		if ready_to_merge(github_bot, owner, &repo_name, pr).await? {
-			prepare_to_merge(
-				github_bot,
-				owner,
-				&repo_name,
-				pr.number,
-				&pr.html_url,
-			)
-			.await?;
+					if ready_to_merge(github_bot, owner, &repo_name, pr).await?
+					{
+						prepare_to_merge(
+							github_bot,
+							owner,
+							&repo_name,
+							pr.number,
+							&pr.html_url,
+						)
+						.await?;
 
-			match merge(
-				github_bot,
-				owner,
-				&repo_name,
-				pr,
-				bot_config,
-				requested_by,
-				None,
-			)
-			.await?
-			{
-				// If the merge failure will be solved later, then register the PR in the database so that
-				// it'll eventually resume processing when later statuses arrive
-				Err(Error::MergeFailureWillBeSolvedLater { msg }) => {
-					let _ = create_merge_request(
+						match merge(
+							github_bot,
+							owner,
+							&repo_name,
+							pr,
+							bot_config,
+							requested_by,
+							None,
+						)
+						.await?
+						{
+							// If the merge failure will be solved later, then register the PR in the database so that
+							// it'll eventually resume processing when later statuses arrive
+							Err(Error::MergeFailureWillBeSolvedLater {
+								msg,
+							}) => {
+								let _ = create_merge_request(
+									owner,
+									&repo_name,
+									pr.number,
+									&pr.html_url,
+									requested_by,
+									&pr.head_sha()?,
+									db,
+								);
+								return Err(
+									Error::MergeFailureWillBeSolvedLater {
+										msg,
+									},
+								);
+							}
+							Err(e) => return Err(e),
+							_ => (),
+						}
+						update_companion(github_bot, &repo_name, pr, db)
+							.await?;
+					} else {
+						let pr_head_sha = pr.head_sha()?;
+						wait_to_merge(
+							github_bot,
+							owner,
+							&repo_name,
+							pr.number,
+							&pr.html_url,
+							requested_by,
+							pr_head_sha,
+							db,
+						)
+						.await?;
+					}
+				}
+				AUTO_MERGE_FORCE => {
+					log::info!(
+						"Received merge request for PR {} from user {}",
+						html_url,
+						requested_by
+					);
+
+					merge_allowed(
+						github_bot,
+						owner,
+						&repo_name,
+						&pr,
+						&bot_config,
+						requested_by,
+						None,
+					)
+					.await??;
+
+					prepare_to_merge(
+						github_bot,
 						owner,
 						&repo_name,
 						pr.number,
 						&pr.html_url,
-						requested_by,
-						&pr.head_sha()?,
-						db,
-					);
-					return Err(Error::MergeFailureWillBeSolvedLater { msg });
-				}
-				Err(e) => return Err(e),
-				_ => (),
-			}
-			update_companion(github_bot, &repo_name, pr, db).await?;
-		} else {
-			let pr_head_sha = pr.head_sha()?;
-			wait_to_merge(
-				github_bot,
-				owner,
-				&repo_name,
-				pr.number,
-				&pr.html_url,
-				requested_by,
-				pr_head_sha,
-				db,
-			)
-			.await?;
-		}
-	} else if body.to_lowercase().trim()
-		== AUTO_MERGE_FORCE.to_lowercase().trim()
-	{
-		log::info!(
-			"Received merge request for PR {} from user {}",
-			html_url,
-			requested_by
-		);
+					)
+					.await?;
 
-		auth.check_org_membership(&github_bot).await?;
-
-		merge_allowed(
-			github_bot,
-			owner,
-			&repo_name,
-			&pr,
-			&bot_config,
-			requested_by,
-			None,
-		)
-		.await??;
-
-		prepare_to_merge(
-			github_bot,
-			owner,
-			&repo_name,
-			pr.number,
-			&pr.html_url,
-		)
-		.await?;
-
-		match merge(
-			github_bot,
-			owner,
-			&repo_name,
-			&pr,
-			bot_config,
-			requested_by,
-			None,
-		)
-		.await?
-		{
-			// Even if the merge failure can be solved later, it does not matter because `merge force` is
-			// supposed to be immediate. We should give up here and yield the error message.
-			Err(Error::MergeFailureWillBeSolvedLater { msg }) => {
-				return Err(Error::Merge {
-					source: Box::new(Error::Message { msg }),
-					commit_sha: pr.head_sha()?.to_owned(),
-					pr_url: pr.html_url.to_owned(),
-					owner: owner.to_string(),
-					repo_name: repo_name.to_string(),
-					pr_number: pr.number,
-					created_approval_id: None,
-				}
-				.map_issue((
-					owner.to_string(),
-					repo_name.to_string(),
-					pr.number,
-				)))
-			}
-			Err(e) => return Err(e),
-			_ => (),
-		}
-		update_companion(github_bot, &repo_name, &pr, db).await?;
-	} else if body.to_lowercase().trim()
-		== AUTO_MERGE_CANCEL.to_lowercase().trim()
-	{
-		let pr_head_sha = pr.head_sha()?;
-
-		log::info!(
-			"Received merge cancel for PR {} from user {}",
-			html_url,
-			requested_by
-		);
-		log::info!("Deleting merge request for {}", html_url);
-		db.delete(pr_head_sha.as_bytes()).context(Db)?;
-		let _ = github_bot
-			.create_issue_comment(
-				owner,
-				&repo_name,
-				pr.number,
-				"Merge cancelled.",
-			)
-			.await
-			.map_err(|e| {
-				log::error!("Error posting comment: {}", e);
-			});
-	} else if repo_name == "polkadot"
-		&& body.to_lowercase().trim()
-			== COMPARE_RELEASE_REQUEST.to_lowercase().trim()
-	{
-		let pr_head_sha = pr.head_sha()?;
-
-		log::info!(
-			"Received diff request for PR {} from user {}",
-			html_url,
-			requested_by
-		);
-		let rel = github_bot.latest_release(owner, &repo_name).await?;
-		let release_tag =
-			github_bot.tag(owner, &repo_name, &rel.tag_name).await?;
-		let release_substrate_commit = github_bot
-			.substrate_commit_from_polkadot_commit(&release_tag.object.sha)
-			.await?;
-		let branch_substrate_commit = github_bot
-			.substrate_commit_from_polkadot_commit(pr_head_sha)
-			.await?;
-		let link = github_bot.diff_url(
-			owner,
-			"substrate",
-			&release_substrate_commit,
-			&branch_substrate_commit,
-		);
-
-		log::info!("Posting link to substrate diff: {}", &link);
-		let _ = github_bot
-			.create_issue_comment(owner, &repo_name, number, &link)
-			.await
-			.map_err(|e| {
-				log::error!("Error posting comment: {}", e);
-			});
-	} else if body.to_lowercase().trim() == REBASE.to_lowercase().trim() {
-		log::info!("Rebase {} requested by {}", html_url, requested_by);
-		{
-			if let PullRequest {
-				head:
-					Some(Head {
-						ref_field: Some(head_branch),
-						repo:
-							Some(HeadRepo {
-								name: head_repo,
-								owner:
-									Some(User {
-										login: head_owner, ..
-									}),
-								..
-							}),
-						..
-					}),
-				..
-			} = pr.clone()
-			{
-				let _ = github_bot
-					.create_issue_comment(
+					match merge(
+						github_bot,
 						owner,
 						&repo_name,
-						pr.number,
-						"Rebasing.",
+						&pr,
+						bot_config,
+						requested_by,
+						None,
 					)
-					.await
-					.map_err(|e| {
-						log::error!("Error posting comment: {}", e);
+					.await?
+					{
+						// Even if the merge failure can be solved later, it does not matter because `merge force` is
+						// supposed to be immediate. We should give up here and yield the error message.
+						Err(Error::MergeFailureWillBeSolvedLater { msg }) => {
+							return Err(Error::Merge {
+								source: Box::new(Error::Message { msg }),
+								commit_sha: pr.head_sha()?.to_owned(),
+								pr_url: pr.html_url.to_owned(),
+								owner: owner.to_string(),
+								repo_name: repo_name.to_string(),
+								pr_number: pr.number,
+								created_approval_id: None,
+							}
+							.map_issue((
+								owner.to_string(),
+								repo_name.to_string(),
+								pr.number,
+							)))
+						}
+						Err(e) => return Err(e),
+						_ => (),
+					}
+					update_companion(github_bot, &repo_name, &pr, db).await?;
+				}
+				AUTO_MERGE_CANCEL => {
+					let pr_head_sha = pr.head_sha()?;
+
+					log::info!(
+						"Received merge cancel for PR {} from user {}",
+						html_url,
+						requested_by
+					);
+					log::info!("Deleting merge request for {}", html_url);
+					db.delete(pr_head_sha.as_bytes()).context(Db)?;
+					let _ = github_bot
+						.create_issue_comment(
+							owner,
+							&repo_name,
+							pr.number,
+							"Merge cancelled.",
+						)
+						.await
+						.map_err(|e| {
+							log::error!("Error posting comment: {}", e);
+						});
+				}
+				REBASE => {
+					log::info!(
+						"Rebase {} requested by {}",
+						html_url,
+						requested_by
+					);
+					{
+						if let PullRequest {
+							head:
+								Some(Head {
+									ref_field: Some(head_branch),
+									repo:
+										Some(HeadRepo {
+											name: head_repo,
+											owner:
+												Some(User {
+													login: head_owner, ..
+												}),
+											..
+										}),
+									..
+								}),
+							..
+						} = pr.clone()
+						{
+							let _ = github_bot
+								.create_issue_comment(
+									owner,
+									&repo_name,
+									pr.number,
+									"Rebasing.",
+								)
+								.await
+								.map_err(|e| {
+									log::error!("Error posting comment: {}", e);
+								});
+							rebase(
+								github_bot,
+								owner,
+								&repo_name,
+								&head_owner,
+								&head_repo,
+								&head_branch,
+							)
+							.await
+						} else {
+							Err(Error::Message {
+								msg: format!("PR is missing some API data"),
+							})
+						}
+					}
+					.map_err(|e| Error::Rebase {
+						source: Box::new(e),
+					})?;
+				}
+				BURNIN_REQUEST => {
+					handle_burnin_request(
+						github_bot,
+						&state.gitlab_bot,
+						&state.matrix_bot,
+						owner,
+						requested_by,
+						&repo_name,
+						&pr,
+					)
+					.await?;
+				}
+				_ => {
+					return Err(Error::Message {
+						msg: format!("Command is not recognized: {}", cmd),
 					});
-				rebase(
-					github_bot,
-					owner,
-					&repo_name,
-					&head_owner,
-					&head_repo,
-					&head_branch,
-				)
-				.await
-			} else {
-				Err(Error::Message {
-					msg: format!("PR is missing some API data"),
-				})
+				}
 			}
 		}
-		.map_err(|e| Error::Rebase {
-			source: Box::new(e),
-		})?;
-	} else if body.to_lowercase().trim() == BURNIN_REQUEST.to_lowercase().trim()
-	{
-		auth.check_org_membership(github_bot).await?;
-
-		handle_burnin_request(
-			github_bot,
-			&state.gitlab_bot,
-			&state.matrix_bot,
-			owner,
-			requested_by,
-			&repo_name,
-			&pr,
-		)
-		.await?;
+		_ => {
+			return Err(Error::Message {
+				msg: format!("Only one command is allowed by comment. Multiple commands were detected: {:?}", cmd_lines),
+			})
+		}
 	}
 
 	Ok(())
