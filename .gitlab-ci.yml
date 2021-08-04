@@ -90,6 +90,26 @@ dockerize-processbot:
 .deploy-k8s:                       &deploy-k8s
   image:                           paritytech/kubetools:3.5.3
   interruptible:                   true
+  variables:
+    VAULT_SERVER_URL:              "https://vault.parity-mgmt-vault.parity.io"
+    VAULT_AUTH_PATH:               "gitlab-parity-io-jwt"
+    VAULT_AUTH_ROLE:               "cicd_gitlab_parity_${CI_PROJECT_NAME}"
+  secrets:
+    BAMBOO_TOKEN:
+      vault:                       cicd/gitlab/$CI_PROJECT_PATH/BAMBOO_TOKEN@kv
+      file:                        false
+    GITLAB_PRIVATE_TOKEN:
+      vault:                       cicd/gitlab/$CI_PROJECT_PATH/GITLAB_PRIVATE_TOKEN@kv
+      file:                        false
+    MATRIX_ACCESS_TOKEN:
+      vault:                       cicd/gitlab/$CI_PROJECT_PATH/MATRIX_ACCESS_TOKEN@kv
+      file:                        false
+    PROCESSBOT_KEY:
+      vault:                       cicd/gitlab/$CI_PROJECT_PATH/$CI_ENVIRONMENT_NAME/PROCESSBOT_KEY@kv
+      file:                        false
+    WEBHOOK_SECRET:
+      vault:                       cicd/gitlab/$CI_PROJECT_PATH/$CI_ENVIRONMENT_NAME/WEBHOOK_SECRET@kv
+      file:                        false
   script:
     - helm upgrade processbot kubernetes/processbot
       --install
