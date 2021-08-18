@@ -60,11 +60,6 @@ spec:
                   secretKeyRef:
                       name: env-secrets
                       key: MATRIX_ACCESS_TOKEN
-            - name: BAMBOO_TOKEN
-              valueFrom:
-                  secretKeyRef:
-                      name: env-secrets
-                      key: BAMBOO_TOKEN
             - name: WEBHOOK_SECRET
               valueFrom:
                   secretKeyRef:
@@ -89,8 +84,6 @@ spec:
               value: {{ quote .Values.processbot.config.GITHUB_APP_ID }}
             - name: DB_PATH
               value: /usr/local/share/db
-            - name: BAMBOO_TICK_SECS
-              value: "7200"
             - name: MATRIX_SILENT
               value: "false"
             - name: MATRIX_DEFAULT_CHANNEL_ID
@@ -99,8 +92,6 @@ spec:
               value: "300"
             - name: MATRIX_HOMESERVER
               value: "https://matrix.parity.io"
-            - name: STATUS_FAILURE_PING
-              value: "86400"
             - name: ISSUE_NOT_ADDRESSED_PING
               value: "86400"
             - name: ISSUE_NOT_ASSIGNED_TO_PR_AUTHOR_PING

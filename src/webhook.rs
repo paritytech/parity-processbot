@@ -11,20 +11,17 @@ use std::{collections::HashMap, sync::Arc};
 use tokio::sync::Mutex;
 
 use crate::{
-	auth::GithubUserAuthenticator, companion::*, config::BotConfig,
-	constants::*, error::*, github::*, github_bot::GithubBot, gitlab_bot::*,
-	matrix_bot::MatrixBot, performance, process, rebase::*, vanity_service,
-	Result, Status,
+	auth::GithubUserAuthenticator, companion::*, constants::*, error::*,
+	github::*, github_bot::GithubBot, gitlab_bot::*, performance, process,
+	rebase::*, vanity_service, Result, Status,
 };
 
 /// This data gets passed along with each webhook to the webhook handler.
 pub struct AppState {
 	pub db: DB,
 	pub github_bot: GithubBot,
-	pub matrix_bot: MatrixBot,
 	pub gitlab_bot: GitlabBot,
 
-	pub bot_config: BotConfig,
 	pub webhook_secret: String,
 }
 
@@ -375,7 +372,6 @@ async fn get_latest_checks_state(
 /// Check that no commit has been pushed since the merge request was received.  Query checks and
 /// statuses and if they are green, attempt merge.
 async fn checks_and_status(
-	bot_config: &BotConfig,
 	github_bot: &GithubBot,
 	db: &DB,
 	commit_sha: &str,
@@ -744,126 +740,16 @@ async fn handle_comment(
 		.map_err(|e| Error::Rebase {
 			source: Box::new(e),
 		})?;
-	} else if body.to_lowercase().trim() == BURNIN_REQUEST.to_lowercase().trim()
-	{
-		auth.check_org_membership(github_bot).await?;
-
-		handle_burnin_request(
-			github_bot,
-			&state.gitlab_bot,
-			&state.matrix_bot,
-			owner,
-			requested_by,
-			&repo_name,
-			&pr,
-		)
-		.await?;
 	}
 
 	Ok(())
 }
 
-async fn handle_burnin_request(
-	github_bot: &GithubBot,
-	gitlab_bot: &GitlabBot,
-	matrix_bot: &MatrixBot,
-	owner: &str,
-	requested_by: &str,
-	repo_name: &str,
-	pr: &PullRequest,
-) -> Result<()> {
-	let make_job_link =
-		|url| format!("<a href=\"{}\">CI job for burn-in deployment</a>", url);
-
-	let unexpected_error_msg = "Starting CI job for burn-in deployment failed with an unexpected error; see logs.".to_string();
-	let mut matrix_msg: Option<String> = None;
-
-	let pr_head_sha = pr.head_sha()?;
-
-	let msg = match gitlab_bot.build_artifact(pr_head_sha) {
-		Ok(job) => {
-			let ci_job_link = make_job_link(job.url);
-
-			match job.status {
-				JobStatus::Started => {
-					format!("{} was started successfully.", ci_job_link)
-				}
-				JobStatus::AlreadyRunning => {
-					format!("{} is already running.", ci_job_link)
-				}
-				JobStatus::Finished => format!(
-					"{} already ran and finished with status `{}`.",
-					ci_job_link, job.status_raw,
-				),
-				JobStatus::Unknown => format!(
-					"{} has unexpected status `{}`.",
-					ci_job_link, job.status_raw,
-				),
-			}
-		}
-		Err(e) => {
-			log::error!("handle_burnin_request: {}", e);
-			match e {
-				Error::GitlabJobNotFound { commit_sha } => format!(
-					"No matching CI job was found for commit `{}`",
-					commit_sha
-				),
-				Error::StartingGitlabJobFailed { url, status, body } => {
-					let ci_job_link = make_job_link(url);
-
-					matrix_msg = Some(format!(
-						"Starting {} failed with HTTP status {} and body: {}",
-						ci_job_link, status, body,
-					));
-
-					format!(
-						"Starting {} failed with HTTP status {}",
-						ci_job_link, status,
-					)
-				}
-				Error::GitlabApi {
-					method,
-					url,
-					status,
-					body,
-				} => {
-					matrix_msg = Some(format!(
-						"Request {} {} failed with reponse status {} and body: {}",
-						method, url, status, body,
-					));
-
-					unexpected_error_msg
-				}
-				_ => unexpected_error_msg,
-			}
-		}
-	};
-
-	github_bot
-		.create_issue_comment(owner, &repo_name, pr.number, &msg)
-		.await?;
-
-	matrix_bot.send_html_to_default(
-		format!(
-		"Received burn-in request for <a href=\"{}\">{}#{}</a> from {}<br />\n{}",
-		pr.html_url, repo_name, pr.number, requested_by, matrix_msg.unwrap_or(msg),
-	)
-		.as_str(),
-	)?;
-
-	Ok(())
-}
-
-/// Check if the pull request is mergeable and approved.
-/// Errors related to core-devs and substrateteamleads API requests are ignored
-/// because the merge might succeed regardless of them, thus it does not make
-/// sense to fail this scenario completely if the request fails for some reason.
 async fn merge_allowed(
 	github_bot: &GithubBot,
 	owner: &str,
 	repo_name: &str,
 	pr: &PullRequest,
-	bot_config: &BotConfig,
 	requested_by: &str,
 	min_approvals_required: Option<usize>,
 ) -> Result<Result<Option<String>>> {
@@ -914,16 +800,6 @@ async fn merge_allowed(
 						}
 					}
 				}
-				let approved_reviews = latest_reviews
-					.values()
-					.filter_map(|(_, review)| {
-						if review.state == Some(ReviewState::Approved) {
-							Some(review)
-						} else {
-							None
-						}
-					})
-					.collect::<Vec<_>>();
 
 				let team_leads = github_bot
 					.substrate_team_leads(owner)
@@ -937,18 +813,6 @@ async fn merge_allowed(
 						errors.push(msg);
 						vec![]
 					});
-				let lead_approvals = approved_reviews
-					.iter()
-					.filter(|review| {
-						team_leads.iter().any(|team_lead| {
-							review
-								.user
-								.as_ref()
-								.map(|user| user.login == team_lead.login)
-								.unwrap_or(false)
-						})
-					})
-					.count();
 
 				let core_devs =
 					github_bot.core_devs(owner).await.unwrap_or_else(|e| {
@@ -960,162 +824,64 @@ async fn merge_allowed(
 						errors.push(msg);
 						vec![]
 					});
-				let core_approvals = approved_reviews
+
+				let approvals = latest_reviews
 					.iter()
 					.filter(|review| {
-						core_devs.iter().any(|core_dev| {
+						review.user.as_ref().map(|user| {
 							review
-								.user
+								.state
 								.as_ref()
-								.map(|user| user.login == core_dev.login)
-								.unwrap_or(false)
+								.map(|state| *state == ReviewState::Approved)
+								.unwrap_or(false) && (team_leads
+								.iter()
+								.any(|team_lead| team_lead.login == user.login)
+								|| core_devs.iter().any(|core_dev| {
+									core_dev.login == user.login
+								}))
 						})
 					})
-					.count();
+					.len();
 
-				let relevant_approvals_count =
-					if core_approvals > lead_approvals {
-						core_approvals
-					} else {
-						lead_approvals
-					};
-
-				let relevant_approvals_count = if team_leads
-					.iter()
-					.any(|lead| lead.login == requested_by)
-				{
-					log::info!(
-						"{} merge requested by a team lead.",
-						pr.html_url
-					);
-					Ok(relevant_approvals_count)
-				} else {
-					let min_reviewers = if pr
-						.labels
-						.iter()
-						.find(|label| label.name.contains("insubstantial"))
-						.is_some()
-					{
-						1
-					} else {
-						bot_config.min_reviewers
-					};
-
-					let core_approved = core_approvals >= min_reviewers;
-					let lead_approved = lead_approvals >= 1;
-
-					if core_approved || lead_approved {
-						log::info!(
-							"{} has core or team lead approval.",
-							pr.html_url
-						);
-						Ok(relevant_approvals_count)
-					} else {
-						match process::get_process(
-							github_bot, owner, repo_name, pr.number,
-						)
-						.await
-						{
-							Ok((process, process_warnings)) => {
-								let project_owner_approved = approved_reviews
-									.iter()
-									.rev()
-									.any(|review| {
-										review
-											.user
-											.as_ref()
-											.map(|user| {
-												process.is_owner(&user.login)
-											})
-											.unwrap_or(false)
-									});
-								let project_owner_requested =
-									process.is_owner(requested_by);
-
-								if project_owner_approved
-									|| project_owner_requested
-								{
-									log::info!(
-										"{} has project owner approval.",
-										pr.html_url
-									);
-									Ok(relevant_approvals_count)
-								} else {
-									errors.extend(process_warnings);
-									if process.is_empty() {
-										Err(Error::ProcessInfo {
-											errors: Some(errors),
-										})
-									} else {
-										Err(Error::Approval {
-											errors: Some(errors),
-										})
-									}
-								}
-							}
-							Err(e) => Err(Error::ProcessFile {
-								source: Box::new(e),
-							}),
-						}
-					}
+				let min_approvals_required = match repo_name {
+					"substrate" => 2,
+					_ => 1,
 				};
 
-				match relevant_approvals_count {
-					Ok(relevant_approvals_count) => {
-						Ok(match min_approvals_required {
-							Some(min_approvals_required) => {
-								let has_bot_approved =
-									approved_reviews.iter().any(|review| {
-										review
-											.user
+				let has_bot_approved = latest_reviews.iter().any(|review| {
+					review
+						.state
+						.as_ref()
+						.map(|state| {
+							*state == ReviewState::Approved
+								&& review
+									.user
+									.as_ref()
+									.map(|user| {
+										user.type_field
 											.as_ref()
-											.map(|user| {
-												user.type_field
-													.as_ref()
-													.map(|type_field| {
-														*type_field
-															== UserType::Bot
-													})
-													.unwrap_or(false)
+											.map(|type_field| {
+												*type_field == UserType::Bot
 											})
 											.unwrap_or(false)
-									});
-
-								// If the bot has already approved, then approving again will not make a
-								// difference.
-								if !has_bot_approved
-									&& relevant_approvals_count + 1
-										== min_approvals_required
-								{
-									if team_leads.iter().any(|team_lead| {
-										team_lead.login == requested_by
-									}) {
-										Ok(Some("a team lead".to_string()))
-									} else {
-										process::get_process(
-											github_bot, owner, repo_name,
-											pr.number,
-										)
-										.await
-										.map(|(process, _)| {
-											if process.is_owner(requested_by) {
-												Some(
-													"a project owner"
-														.to_string(),
-												)
-											} else {
-												None
-											}
-										})
-									}
-								} else {
-									Ok(None)
-								}
-							}
-							_ => Ok(None),
+									})
+									.unwrap_or(false)
 						})
-					}
-					Err(e) => Err(e),
+						.unwrap_or(false)
+				});
+
+				let bot_approval = 1;
+				// If the bot has already approved, then approving again will not make a difference.
+				if !has_bot_approved
+					&& approvals + bot_approval == min_approvals_required
+				// Only attempt to pitch in the missing approval for team leads
+					&& team_leads
+						.iter()
+						.any(|team_lead| team_lead.login == requested_by)
+				{
+					Ok(Some("a team lead".to_string()))
+				} else {
+					Ok(None)
 				}
 			}
 			Err(e) => Err(e),
@@ -1284,7 +1050,6 @@ async fn merge(
 	owner: &str,
 	repo_name: &str,
 	pr: &PullRequest,
-	bot_config: &BotConfig,
 	requested_by: &str,
 	created_approval_id: Option<i64>,
 ) -> Result<Result<()>> {

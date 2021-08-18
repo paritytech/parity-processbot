@@ -101,9 +101,6 @@ dockerize-processbot:
   image:                           paritytech/kubetools:3.5.3
   interruptible:                   true
   secrets:
-    BAMBOO_TOKEN:
-      vault:                       cicd/gitlab/$CI_PROJECT_PATH/BAMBOO_TOKEN@kv
-      file:                        false
     GITLAB_PRIVATE_TOKEN:
       vault:                       cicd/gitlab/$CI_PROJECT_PATH/GITLAB_PRIVATE_TOKEN@kv
       file:                        false
@@ -123,7 +120,6 @@ dockerize-processbot:
       --values kubernetes/processbot/values-${CI_ENVIRONMENT_NAME}.yaml
       --set dockerTag=${CI_COMMIT_REF_NAME}
       --set processbot.secret.PROCESSBOT_KEY=${PROCESSBOT_KEY}
-      --set processbot.secret.BAMBOO_TOKEN=${BAMBOO_TOKEN}
       --set processbot.secret.MATRIX_ACCESS_TOKEN=${MATRIX_ACCESS_TOKEN}
       --set processbot.secret.WEBHOOK_SECRET=${WEBHOOK_SECRET}
       --set processbot.secret.GITLAB_PRIVATE_TOKEN=${GITLAB_PRIVATE_TOKEN}
@@ -136,7 +132,7 @@ deploy-staging:
   tags:
     - kubernetes-parity-build
   only:
-    - /^pre-v[0-9]+\.[0-9]+.*$/
+    - /^stg-[0-9]+\.[0-9]+.*$/
 
 deploy-production:
   stage:                           deploy
@@ -146,4 +142,4 @@ deploy-production:
   tags:
     - kubernetes-parity-build
   only:
-    - /^v[0-9]+\.[0-9]+.*$/
+    - /^v-[0-9]+\.[0-9]+.*$/
