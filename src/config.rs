@@ -1,4 +1,3 @@
-#[derive(Debug, Clone)]
 pub struct Config {
 	pub installation_login: String,
 	pub webhook_secret: String,

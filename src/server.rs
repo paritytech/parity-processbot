@@ -1,4 +1,4 @@
-use crate::webhook::*;
+use crate::{error::handle_error, webhook::handle_webhook, AppState};
 use anyhow::{Context, Result};
 use async_std::pin::Pin;
 use futures_util::FutureExt;
@@ -95,8 +95,35 @@ impl std::error::Error for Error {
 	}
 }
 
-/// Initializes the metrics context, and starts an HTTP server
-/// to serve metrics.
+fn handle_request(req: Request<Body>, state: Arc<Mutex<AppState>>) {
+	let state = Arc::clone(&state);
+
+	let result = match req.uri().path() {
+		"/webhook" => match handle_webhook(req, state).await {
+			Ok(_) => Response::builder()
+				.status(StatusCode::OK)
+				.body(Body::from(""))
+				.ok()
+				.context(Message {
+					msg: format!("Error building response"),
+				}),
+			Err(e) => Err(e),
+		},
+		_ => Ok(Response::builder()
+			.status(StatusCode::NOT_FOUND)
+			.body(Body::from("Not found."))
+			.ok()
+			.context(Message {
+				msg: format!("Error building response"),
+			})),
+	};
+
+	match result.flatten() {
+		Ok(response) => response,
+		Err(error) => handle_error(e, state).await,
+	}
+}
+
 pub async fn init_server(
 	addr: SocketAddr,
 	state: Arc<Mutex<AppState>>,
@@ -111,9 +138,8 @@ pub async fn init_server(
 		let state = Arc::clone(&state);
 		async move {
 			Ok::<_, hyper::Error>(service_fn(move |req: Request<Body>| {
-				let state = Arc::clone(&state);
-				webhook(req, state)
-			}))
+				handle_request(req, Arc::clone(&state))
+			}));
 		}
 	});
 

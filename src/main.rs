@@ -4,9 +4,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 mod logging;
 
-use parity_processbot::{
-	config::Config, github_bot, gitlab_bot, server::*, webhook::*,
-};
+use parity_processbot::{config::Config, github_bot, server::*, webhook::*};
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {

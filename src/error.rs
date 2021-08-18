@@ -1,18 +1,21 @@
+use crate::AppState;
 use snafu::Snafu;
 
-pub mod http_error;
-
+#[derive(Debug)]
 pub struct IssueDetails {
-	repository: string,
-	owner: string,
+	owner: String,
+	repo: String,
 	number: usize,
 }
 
+#[derive(Debug)]
 pub struct IssueDetailsWithRepositoryURL {
-	details: IssueDetails,
-	repository_url: String,
+	issue: IssueDetails,
+	repo_url: String,
 }
 
+// This enum is exclusive for unactionable errors which should stop the webhook payload from being
+// processed at once.
 #[derive(Debug, Snafu)]
 #[snafu(visibility = "pub")]
 pub enum Error {
@@ -26,10 +29,6 @@ pub enum Error {
 	Merge {
 		source: Box<Error>,
 		commit_sha: String,
-		pr_url: String,
-		owner: String,
-		repo_name: String,
-		pr_number: usize,
 		created_approval_id: Option<usize>,
 	},
 
@@ -74,17 +73,6 @@ pub enum Error {
 		source: serde_json::Error,
 	},
 
-	#[snafu(display("Base64: {}", source))]
-	Base64 {
-		source: base64::DecodeError,
-	},
-
-	#[snafu(display("Status code: {}\nBody:\n{:#?}", status, body))]
-	Curl {
-		status: curl_sys::CURLcode,
-		body: Option<String>,
-	},
-
 	Jwt {
 		source: jsonwebtoken::errors::Error,
 	},
@@ -92,16 +80,6 @@ pub enum Error {
 	#[snafu(display("Bincode: {}", source))]
 	Bincode {
 		source: bincode::Error,
-	},
-
-	#[snafu(display("Failed parsing URL: {}", source))]
-	ParseUrl {
-		source: url::ParseError,
-	},
-
-	#[snafu(display("URL {} cannot be base", url))]
-	UrlCannotBeBase {
-		url: String,
 	},
 
 	#[snafu(display(
@@ -131,11 +109,112 @@ impl Error {
 	}
 }
 
-impl From<curl::Error> for Error {
-	fn from(value: curl::Error) -> Self {
-		Error::Curl {
-			status: value.code(),
-			body: value.extra_description().map(ToOwned::to_owned),
+async fn handle_error_inner(err: Error, state: &AppState) -> Option<String> {
+	match err {
+		Error::Merge {
+			source,
+			commit_sha,
+			created_approval_id,
+		} => {
+			let _ = state.db.delete(commit_sha.as_bytes()).map_err(|e| {
+				log::error!("Error deleting merge request from db: {}", e);
+			});
+			let github_bot = &state.github_bot;
+			if let Some(created_approval_id) = created_approval_id {
+				let _ =
+					github_bot
+						.clear_bot_approval(
+							&owner,
+							&repo_name,
+							pr_number,
+							created_approval_id,
+						)
+						.await
+						.map_err(|e| {
+							log::error!("Failed to cleanup a bot review in {} due to: {}", pr_url, e)
+						});
+			}
+			match *source {
+				Error::Response { body, status } => Some(format!(
+					"Merge failed with response status: {} and body: `{}`",
+					status, body
+				)),
+				Error::Http { source, .. } => Some(format!(
+					"Merge failed due to network error:\n\n{}",
+					source
+				)),
+				Error::Message { .. } => {
+					Some(format!("Merge failed: {}", *source))
+				}
+				_ => Some("Merge failed due to unexpected error".to_string()),
+			}
 		}
+		Error::Approval { errors } => Some(format!(
+			"Error: Approval criteria was not satisfied.\n\n{}\n\n{}",
+			display_errors_along_the_way(errors),
+			TROUBLESHOOT_MSG
+		)),
+		Error::HeadChanged { ref expected, .. } => {
+			let _ = state.db.delete(expected.as_bytes()).map_err(|e| {
+				log::error!("Error deleting merge request from db: {}", e);
+			});
+			Some(format!("Merge aborted: {}", err))
+		}
+		Error::ChecksFailed { ref commit_sha } => {
+			let _ = state.db.delete(commit_sha.as_bytes()).map_err(|e| {
+				log::error!("Error deleting merge request from db: {}", e);
+			});
+			Some(format!("Merge aborted: {}", err))
+		}
+		Error::Response {
+			body: serde_json::Value::Object(m),
+			..
+		} => Some(format!("Response error: `{}`", m["message"])),
+		Error::OrganizationMembership { .. }
+		| Error::CompanionUpdate { .. }
+		| Error::Message { .. }
+		| Error::Rebase { .. } => Some(format!("Error: {}", err)),
+		_ => None,
+	}
+}
+
+async fn handle_error(e: Error, state: &AppState) {
+	match e {
+		Error::Skipped { .. } => (),
+		e => match e {
+			Error::WithIssue {
+				source,
+				issue: IssueDetails {
+					owner,
+					repo,
+					number,
+				},
+				..
+			} => match *source {
+				Error::Skipped { .. } => (),
+				e => {
+					log::error!("handle_error: {}", e);
+					let msg = handle_error_inner(e, state)
+						.await
+						.unwrap_or_else(|| {
+							format!(
+								"Unexpected error (at {} server time).",
+								chrono::Utc::now().to_string()
+							)
+						});
+					let _ = state
+						.github_bot
+						.create_issue_comment(&owner, &repo, number, &msg)
+						.await
+						.map_err(|e| {
+							log::error!("Error posting comment: {}", e);
+						});
+				}
+			},
+			_ => {
+				log::error!("handle_error: {}", e);
+				handle_error_inner(e, state).await;
+			}
+		},
 	}
 }

@@ -265,7 +265,14 @@ fn companion_parse_long(body: &str) -> Option<IssueDetailsWithRepositoryURL> {
 		.to_owned()
 		.parse::<usize>()
 		.ok()?;
-	Some((html_url, owner, repo, number))
+	Some(IssueDetailsWithRepositoryURL {
+		issue: IssueDetails {
+			owner,
+			repo,
+			number,
+		},
+		repo_url: html_url,
+	})
 }
 
 fn companion_parse_short(body: &str) -> Option<IssueDetailsWithRepositoryURL> {
@@ -288,7 +295,14 @@ fn companion_parse_short(body: &str) -> Option<IssueDetailsWithRepositoryURL> {
 		repo = repo,
 		number = number
 	);
-	Some((html_url, owner, repo, number))
+	Some(IssueDetailsWithRepositoryURL {
+		issue: IssueDetails {
+			owner,
+			repo,
+			number,
+		},
+		repo_url: html_url,
+	})
 }
 
 async fn perform_companion_update(

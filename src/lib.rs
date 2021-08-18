@@ -1,4 +1,3 @@
-mod auth;
 pub mod cmd;
 mod macros;
 #[macro_use]
@@ -9,9 +8,7 @@ pub mod error;
 #[macro_use]
 pub mod github;
 pub mod github_bot;
-pub mod gitlab_bot;
 pub mod http;
-pub mod performance;
 pub mod rebase;
 pub mod server;
 pub mod vanity_service;
@@ -23,4 +20,10 @@ pub enum Status {
 	Success,
 	Pending,
 	Failure,
+}
+
+pub struct AppState {
+	pub db: DB,
+	pub github_bot: GithubBot,
+	pub webhook_secret: String,
 }
