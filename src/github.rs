@@ -1,12 +1,10 @@
-pub mod merge_requests;
+pub mod merge_request;
 pub mod status;
-pub mod utils;
 
 use crate::{constants::BOT_COMMANDS, error::*, Result, PR_HTML_URL_REGEX};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use snafu::OptionExt;
-use utils::*;
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PullRequest {
@@ -150,8 +148,6 @@ pub struct Repository {
 	pub full_name: Option<String>,
 	pub owner: Option<User>,
 	pub html_url: String,
-	pub issues_url: Option<String>,
-	pub pulls_url: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -307,13 +303,6 @@ struct DetectUserCommentPullRequestPullRequest {
 }
 
 #[derive(Deserialize)]
-struct DetectUserCommentPullRequestRepository {
-	pub name: Option<String>,
-	pub full_name: Option<String>,
-	pub owner: Option<User>,
-}
-
-#[derive(Deserialize)]
 struct DetectUserCommentPullRequestIssue {
 	pub pull_request: Option<DetectUserCommentPullRequestPullRequest>,
 	pub number: usize,
@@ -328,7 +317,7 @@ struct DetectUserCommentPullRequestComment {
 pub struct DetectUserCommentPullRequest {
 	action: IssueCommentAction,
 	issue: Option<DetectUserCommentPullRequestIssue>,
-	repository: Option<DetectUserCommentPullRequestRepository>,
+	repository: Option<Repository>,
 	sender: Option<User>,
 	comment: Option<DetectUserCommentPullRequestComment>,
 }
@@ -357,43 +346,26 @@ impl HasIssueDetails for DetectUserCommentPullRequest {
 					let body = body.trim();
 
 					if BOT_COMMANDS.iter().find(|cmd| **cmd == body).is_some() {
-						if let Some(DetectUserCommentPullRequestRepository {
-							name: Some(name),
+						if let Some(Repository {
+							name: name,
 							owner: Some(User { login, .. }),
 							..
 						}) = repository
 						{
-							Some((login.to_owned(), name.to_owned(), *number))
+							Some(IssueDetails {
+								owner: login.to_owned(),
+								repo: name.to_owned(),
+								number: *number,
+							})
+						} else if let Some(html_url) = pr.html_url.as_ref() {
+							get_issue_details_fallback(
+								repository.as_ref(),
+								&html_url,
+								*number,
+							)
 						} else {
 							None
 						}
-						.or_else(|| {
-							if let Some(
-								DetectUserCommentPullRequestRepository {
-									full_name: Some(full_name),
-									..
-								},
-							) = repository
-							{
-								parse_repository_full_name(full_name)
-									.map(|(owner, name)| (owner, name, *number))
-							} else {
-								None
-							}
-						})
-						.or_else(|| {
-							if let DetectUserCommentPullRequestPullRequest {
-								html_url: Some(html_url),
-							} = pr
-							{
-								parse_issue_details_from_pr_html_url(html_url)
-									.map(|(owner, name, _)| {
-										(owner, name, *number)
-									})
-							} else {
-								None
-							}
-						})
 					} else {
 						None
 					}
@@ -402,28 +374,6 @@ impl HasIssueDetails for DetectUserCommentPullRequest {
 		} else {
 			None
 		}
-	}
-}
-
-fn get_issue_details_fallback(
-	repo: Option<&Repository>,
-	html_url: &str,
-	number: usize,
-) -> Option<IssueDetails> {
-	if let Some(Repository {
-		full_name: Some(full_name),
-		..
-	}) = repo.as_ref()
-	{
-		parse_repository_full_name(full_name).map(|(owner, name)| {
-			IssueDetails {
-				owner,
-				repo: name,
-				number,
-			}
-		})
-	} else {
-		parse_issue_details_from_pr_html_url(html_url)
 	}
 }
 
@@ -480,4 +430,63 @@ impl HasIssueDetails for Issue {
 			}
 		}
 	}
+}
+
+fn get_issue_details_fallback(
+	repo: Option<&Repository>,
+	html_url: &str,
+	number: usize,
+) -> Option<IssueDetails> {
+	if let Some(Repository {
+		full_name: Some(full_name),
+		..
+	}) = repo.as_ref()
+	{
+		parse_repository_full_name(full_name).map(|(owner, name)| {
+			IssueDetails {
+				owner,
+				repo: name,
+				number,
+			}
+		})
+	} else {
+		parse_issue_details_from_pr_html_url(html_url)
+	}
+}
+
+pub fn parse_issue_details_from_pr_html_url(
+	pr_html_url: &str,
+) -> Option<IssueDetails> {
+	let re = Regex::new(PR_HTML_URL_REGEX!()).unwrap();
+	let matches = re.captures(&pr_html_url)?;
+	let owner = matches.name("owner")?.as_str().to_owned();
+	let repo = matches.name("repo")?.as_str().to_owned();
+	let number = matches
+		.name("number")?
+		.as_str()
+		.to_owned()
+		.parse::<usize>()
+		.ok()?;
+	Some(IssueDetails {
+		owner,
+		repo,
+		number,
+	})
+}
+
+pub fn parse_repository_full_name(full_name: &str) -> Option<(String, String)> {
+	let parts: Vec<&str> = full_name.split("/").collect();
+	parts
+		.get(0)
+		.map(|owner| {
+			parts.get(1).map(|repo_name| {
+				Some((owner.to_string(), repo_name.to_string()))
+			})
+		})
+		.flatten()
+		.flatten()
+}
+
+pub fn owner_from_html_url(url: &str) -> Option<&str> {
+	url.split("/").skip(3).next()
 }

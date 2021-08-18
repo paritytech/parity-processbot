@@ -11,9 +11,9 @@ use std::{collections::HashMap, sync::Arc};
 use tokio::sync::Mutex;
 
 use crate::{
-	auth::GithubUserAuthenticator, companion::*, constants::*, error::*,
-	github::*, github_bot::GithubBot, rebase::*, vanity_service, Result,
-	Status,
+	auth::GithubUserAuthenticator, companion::*, constants::*,
+	error::MergeError, github::merge_request::merge, github::*,
+	github_bot::GithubBot, rebase::*, vanity_service, Result, Status,
 };
 
 /// Check the SHA1 signature on a webhook payload.
@@ -24,6 +24,83 @@ fn verify(
 ) -> Result<(), ring::error::Unspecified> {
 	let key = hmac::Key::new(hmac::HMAC_SHA1_FOR_LEGACY_USE_ONLY, secret);
 	hmac::verify(&key, msg, signature)
+}
+
+async fn handle_payload(payload: Payload, state: &AppState) -> Result<()> {
+	match payload {
+		Payload::IssueComment {
+			action: IssueCommentAction::Created,
+			comment:
+				Comment {
+					ref body,
+					user:
+						Some(User {
+							ref login,
+							ref type_field,
+						}),
+					..
+				},
+			issue,
+		} => match type_field {
+			Some(UserType::Bot) => Ok(()),
+			_ => match &issue {
+				WebhookIssueComment {
+					number,
+					html_url,
+					repository_url: Some(repo_url),
+					pull_request: Some(_),
+				} => handle_comment(
+					body, login, *number, html_url, repo_url, state,
+				)
+				.await
+				.map_err(|e| match e {
+					Error::WithIssue { .. } => e,
+					e => {
+						if let Some(details) = issue.get_issue_details() {
+							e.map_issue(details)
+						} else {
+							e
+						}
+					}
+				}),
+				_ => Ok(()),
+			},
+		},
+		Payload::CommitStatus { sha, state: status } => {
+			handle_status(sha, status, state).await
+		}
+		Payload::CheckRun {
+			check_run: CheckRun {
+				status, head_sha, ..
+			},
+			..
+		} => handle_check(status, head_sha, state).await,
+		_ => Ok(()),
+	}
+}
+
+async fn handle_check(
+	status: CheckRunStatus,
+	commit_sha: String,
+	state: &AppState,
+) -> Result<()> {
+	if status == CheckRunStatus::Completed {
+		check_statuses(&state.github_bot, &state.db, &commit_sha).await
+	} else {
+		Ok(())
+	}
+}
+
+async fn handle_status(
+	commit_sha: String,
+	status: StatusState,
+	state: &AppState,
+) -> Result<()> {
+	if status == StatusState::Pending {
+		Ok(())
+	} else {
+		check_statuses(&state.github_bot, &state.db, &commit_sha).await
+	}
 }
 
 pub async fn handle_webhook(
@@ -105,142 +182,6 @@ pub async fn handle_webhook(
 	}
 }
 
-async fn handle_payload(payload: Payload, state: &AppState) -> Result<()> {
-	match payload {
-		Payload::IssueComment {
-			action: IssueCommentAction::Created,
-			comment:
-				Comment {
-					ref body,
-					user:
-						Some(User {
-							ref login,
-							ref type_field,
-						}),
-					..
-				},
-			issue,
-		} => match type_field {
-			Some(UserType::Bot) => Ok(()),
-			_ => match &issue {
-				WebhookIssueComment {
-					number,
-					html_url,
-					repository_url: Some(repo_url),
-					pull_request: Some(_),
-				} => handle_comment(
-					body, login, *number, html_url, repo_url, state,
-				)
-				.await
-				.map_err(|e| match e {
-					Error::WithIssue { .. } => e,
-					e => {
-						if let Some(details) = issue.get_issue_details() {
-							e.map_issue(details)
-						} else {
-							e
-						}
-					}
-				}),
-				_ => Ok(()),
-			},
-		},
-		Payload::CommitStatus { sha, state: status } => {
-			handle_status(sha, status, state).await
-		}
-		Payload::CheckRun {
-			check_run: CheckRun {
-				status, head_sha, ..
-			},
-			..
-		} => handle_check(status, head_sha, state).await,
-		_ => Ok(()),
-	}
-}
-
-async fn handle_check(
-	status: CheckRunStatus,
-	commit_sha: String,
-	state: &AppState,
-) -> Result<()> {
-	if status == CheckRunStatus::Completed {
-		check_statuses(&state.github_bot, &state.db, &commit_sha).await
-	} else {
-		Ok(())
-	}
-}
-
-async fn handle_status(
-	commit_sha: String,
-	status: StatusState,
-	state: &AppState,
-) -> Result<()> {
-	if status == StatusState::Pending {
-		Ok(())
-	} else {
-		check_statuses(&state.github_bot, &state.db, &commit_sha).await
-	}
-}
-
-async fn get_latest_statuses_state(
-	github_bot: &GithubBot,
-	owner: &str,
-	owner_repo: &str,
-	commit_sha: &str,
-	html_url: &str,
-) -> Result<Status> {
-	let status = github_bot.status(&owner, &owner_repo, &commit_sha).await?;
-	log::info!("{:?}", status);
-
-	// Since Github only considers the latest instance of each status, we should abide by the same
-	// rule. Each instance is uniquely identified by "context".
-	let mut latest_statuses: HashMap<String, (usize, StatusState)> =
-		HashMap::new();
-	for s in status.statuses {
-		if s.description
-			.as_ref()
-			.map(|description| {
-				match serde_json::from_str::<vanity_service::JobInformation>(
-					description,
-				) {
-					Ok(info) => info.build_allow_failure.unwrap_or(false),
-					_ => false,
-				}
-			})
-			.unwrap_or(false)
-		{
-			continue;
-		}
-		if latest_statuses
-			.get(&s.context)
-			.map(|(prev_id, _)| prev_id < &(&s).id)
-			.unwrap_or(true)
-		{
-			latest_statuses.insert(s.context, (s.id, s.state));
-		}
-	}
-	log::info!("{:?}", latest_statuses);
-
-	Ok(
-		if latest_statuses
-			.values()
-			.all(|(_, state)| *state == StatusState::Success)
-		{
-			log::info!("{} has success status", html_url);
-			Status::Success
-		} else if latest_statuses
-			.values()
-			.any(|(_, state)| *state == StatusState::Pending)
-		{
-			log::info!("{} has pending status", html_url);
-			Status::Pending
-		} else {
-			log::info!("{} has failed status", html_url);
-			Status::Failure
-		},
-	)
-}
-
 async fn handle_comment(
 	body: &str,
 	requested_by: &str,
@@ -296,7 +237,7 @@ async fn handle_comment(
 			{
 				// If the merge failure will be solved later, then register the PR in the database so that
 				// it'll eventually resume processing when later statuses arrive
-				Err(Error::MergeFailureWillBeSolvedLater { msg }) => {
+				Err(MergeError::FailureWillBeSolvedLater) => {
 					let _ = register_merge_request(
 						owner,
 						&repo_name,
@@ -306,11 +247,12 @@ async fn handle_comment(
 						&pr.head_sha()?,
 						db,
 					);
-					return Err(Error::MergeFailureWillBeSolvedLater { msg });
+					return Err(Error::Skipped);
 				}
-				Err(e) => return Err(e),
+				Err(MergeError::Error(e)) => return Err(e),
 				_ => (),
 			}
+
 			update_companion(github_bot, &repo_name, pr, db).await?;
 		} else {
 			let pr_head_sha = pr.head_sha()?;
@@ -355,12 +297,11 @@ async fn handle_comment(
 			// Even if the merge failure can be solved later, it does not matter because `merge force` is
 			// supposed to be immediate. We should give up here and yield the error message.
 			Err(Error::MergeFailureWillBeSolvedLater { msg }) => {
-				return Err(Error::Merge {
+				return Err(Error::MergeAttemptFailed {
 					source: Box::new(Error::Message { msg }),
 					commit_sha: pr.head_sha()?.to_owned(),
-					pr_url: pr.html_url.to_owned(),
 					owner: owner.to_string(),
-					repo_name: repo_name.to_string(),
+					repo: repo_name.to_string(),
 					pr_number: pr.number,
 					created_approval_id: None,
 				}
@@ -443,84 +384,8 @@ async fn handle_comment(
 					msg: format!("PR is missing some API data"),
 				})
 			}
-		}
-		.map_err(|e| Error::Rebase {
-			source: Box::new(e),
-		})?;
+		}?;
 	}
 
 	Ok(())
-}
-
-/// Create a merge request, add it to the database, and post a comment stating the merge is
-/// pending.
-pub async fn wait_to_merge(
-	github_bot: &GithubBot,
-	owner: &str,
-	repo_name: &str,
-	number: usize,
-	html_url: &str,
-	requested_by: &str,
-	commit_sha: &str,
-	db: &DB,
-) -> Result<()> {
-	log::info!("{} checks incomplete.", html_url);
-	register_merge_request(
-		owner,
-		repo_name,
-		number,
-		html_url,
-		requested_by,
-		commit_sha,
-		db,
-	)
-	.await?;
-	log::info!("Waiting for commit status.");
-	let _ = github_bot
-		.create_issue_comment(
-			owner,
-			&repo_name,
-			number,
-			"Waiting for commit status.",
-		)
-		.await
-		.map_err(|e| {
-			log::error!("Error posting comment: {}", e);
-		});
-	Ok(())
-}
-
-/// Post a comment stating the merge will be attempted.
-async fn prepare_to_merge(
-	github_bot: &GithubBot,
-	owner: &str,
-	repo_name: &str,
-	number: usize,
-	html_url: &str,
-) -> Result<()> {
-	log::info!("{} checks successful; trying merge.", html_url);
-	let _ = github_bot
-		.create_issue_comment(owner, &repo_name, number, "Trying merge.")
-		.await
-		.map_err(|e| {
-			log::error!("Error posting comment: {}", e);
-		});
-	Ok(())
-}
-
-const TROUBLESHOOT_MSG: &str = "Merge failed. Check out the [criteria for merge](https://github.com/paritytech/parity-processbot#criteria-for-merge).";
-
-fn display_errors_along_the_way(errors: Option<Vec<String>>) -> String {
-	errors
-		.map(|errors| {
-			if errors.len() == 0 {
-				"".to_string()
-			} else {
-				format!(
-					"The following errors *might* have affected the outcome of this attempt:\n{}",
-					errors.iter().map(|e| format!("- {}", e)).join("\n")
-				)
-			}
-		})
-		.unwrap_or_else(|| "".to_string())
 }

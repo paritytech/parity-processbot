@@ -15,14 +15,11 @@ pub struct GithubBot {
 impl GithubBot {
 	pub async fn new(
 		private_key: impl Into<Vec<u8>>,
-		installation_login: &str,
+		installation_login: String,
 		base_url: &str,
 		base_html_url: &str,
 	) -> Result<Self> {
-		let client = http::Client::new(
-			private_key.into(),
-			installation_login.to_owned(),
-		);
+		let client = http::Client::new(private_key.into(), installation_login);
 
 		Ok(Self {
 			client,

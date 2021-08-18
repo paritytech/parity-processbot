@@ -289,7 +289,7 @@ pub async fn merge(
 										"Ignoring merge failure due to pending required status; message: {}",
 										msg
 									);
-									Ok(Err(Error::MergeFailureWillBeSolvedLater { msg: msg.to_string() }))
+									Ok(Err(MergeError::MergeFailureWillBeSolvedLater { msg: msg.to_string() }))
 								} else if let (
 									true,
 									Some(matches)
@@ -383,7 +383,7 @@ Pull Request Merge Endpoint responded with unexpected body: `{}`",
 				},
 				_ => Err(e),
 			}
-			.map_err(|e| Error::Merge {
+			.map_err(|e| Error::MergeAttemptFailed {
 				source: Box::new(e),
 				commit_sha: pr_head_sha.to_string(),
 				pr_url: pr.url.to_string(),
@@ -398,4 +398,57 @@ Pull Request Merge Endpoint responded with unexpected body: `{}`",
 	.map_err(|e| {
 		e.map_issue((owner.to_string(), repo_name.to_string(), pr.number))
 	})
+}
+
+pub async fn wait_to_merge(
+	github_bot: &GithubBot,
+	owner: &str,
+	repo_name: &str,
+	number: usize,
+	html_url: &str,
+	requested_by: &str,
+	commit_sha: &str,
+	db: &DB,
+) -> Result<()> {
+	log::info!("{} checks incomplete.", html_url);
+	register_merge_request(
+		owner,
+		repo_name,
+		number,
+		html_url,
+		requested_by,
+		commit_sha,
+		db,
+	)
+	.await?;
+	log::info!("Waiting for commit status.");
+	let _ = github_bot
+		.create_issue_comment(
+			owner,
+			&repo_name,
+			number,
+			"Waiting for commit status.",
+		)
+		.await
+		.map_err(|e| {
+			log::error!("Error posting comment: {}", e);
+		});
+	Ok(())
+}
+
+async fn prepare_to_merge(
+	github_bot: &GithubBot,
+	owner: &str,
+	repo_name: &str,
+	number: usize,
+	html_url: &str,
+) -> Result<()> {
+	log::info!("{} checks successful; trying merge.", html_url);
+	let _ = github_bot
+		.create_issue_comment(owner, &repo_name, number, "Trying merge.")
+		.await
+		.map_err(|e| {
+			log::error!("Error posting comment: {}", e);
+		});
+	Ok(())
 }

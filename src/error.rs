@@ -1,17 +1,11 @@
-use crate::AppState;
+use crate::types::{AppState, IssueDetails, IssueDetailsWithRepositoryURL};
 use snafu::Snafu;
 
-#[derive(Debug)]
-pub struct IssueDetails {
-	owner: String,
-	repo: String,
-	number: usize,
-}
-
-#[derive(Debug)]
-pub struct IssueDetailsWithRepositoryURL {
-	issue: IssueDetails,
-	repo_url: String,
+#[derive(Debug, Snafu)]
+#[snafu(visibility = "pub")]
+pub enum MergeError {
+	FailureWillBeSolvedLater,
+	Error(Error),
 }
 
 // This enum is exclusive for unactionable errors which should stop the webhook payload from being
@@ -25,11 +19,14 @@ pub enum Error {
 		issue: IssueDetails,
 	},
 
-	#[snafu(display("Error merging: {}", source))]
-	Merge {
+	#[snafu(display("Merge attempt failed: {}", source))]
+	MergeAttemptFailed {
 		source: Box<Error>,
 		commit_sha: String,
 		created_approval_id: Option<usize>,
+		owner: string,
+		repo: string,
+		pr_number: usize,
 	},
 
 	#[snafu(display("Error getting organization membership: {}", source))]
@@ -94,7 +91,12 @@ pub enum Error {
 		err: String,
 	},
 
-	Skipped {},
+	UnregisterPullRequest {
+		commit_sha: String,
+		message: String,
+	},
+
+	Skipped,
 }
 
 impl Error {
@@ -109,12 +111,30 @@ impl Error {
 	}
 }
 
+fn display_errors_along_the_way(errors: Option<Vec<String>>) -> String {
+	errors
+		.map(|errors| {
+			if errors.len() == 0 {
+				"".to_string()
+			} else {
+				format!(
+					"The following errors *might* have affected the outcome of this attempt:\n{}",
+					errors.iter().map(|e| format!("- {}", e)).join("\n")
+				)
+			}
+		})
+		.unwrap_or_else(|| "".to_string())
+}
+
 async fn handle_error_inner(err: Error, state: &AppState) -> Option<String> {
 	match err {
-		Error::Merge {
+		Error::MergeAttemptFailed {
 			source,
 			commit_sha,
 			created_approval_id,
+			owner,
+			repo,
+			pr_number
 		} => {
 			let _ = state.db.delete(commit_sha.as_bytes()).map_err(|e| {
 				log::error!("Error deleting merge request from db: {}", e);
@@ -125,7 +145,7 @@ async fn handle_error_inner(err: Error, state: &AppState) -> Option<String> {
 					github_bot
 						.clear_bot_approval(
 							&owner,
-							&repo_name,
+							&repo,
 							pr_number,
 							created_approval_id,
 						)
@@ -150,15 +170,14 @@ async fn handle_error_inner(err: Error, state: &AppState) -> Option<String> {
 			}
 		}
 		Error::Approval { errors } => Some(format!(
-			"Error: Approval criteria was not satisfied.\n\n{}\n\n{}",
+			"Error: Approval criteria was not satisfied.\n\n{}\n\nMerge failed. Check out the [criteria for merge](https://github.com/paritytech/parity-processbot#criteria-for-merge).",
 			display_errors_along_the_way(errors),
-			TROUBLESHOOT_MSG
 		)),
-		Error::HeadChanged { ref expected, .. } => {
+		Error::UnregisterPullRequest { commit_sha, message } => {
 			let _ = state.db.delete(expected.as_bytes()).map_err(|e| {
 				log::error!("Error deleting merge request from db: {}", e);
 			});
-			Some(format!("Merge aborted: {}", err))
+			Some(format!("Merge aborted: {}", message))
 		}
 		Error::ChecksFailed { ref commit_sha } => {
 			let _ = state.db.delete(commit_sha.as_bytes()).map_err(|e| {
@@ -178,8 +197,8 @@ async fn handle_error_inner(err: Error, state: &AppState) -> Option<String> {
 	}
 }
 
-async fn handle_error(e: Error, state: &AppState) {
-	match e {
+async fn handle_error(err: Error, state: &AppState) {
+	match err {
 		Error::Skipped { .. } => (),
 		e => match e {
 			Error::WithIssue {
