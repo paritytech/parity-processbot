@@ -5,7 +5,7 @@ pub struct GithubUserAuthenticator {
 	username: String,
 	org: String,
 	repo_name: String,
-	pr_number: i64,
+	pr_number: usize,
 }
 
 impl GithubUserAuthenticator {
@@ -13,7 +13,7 @@ impl GithubUserAuthenticator {
 		username: &str,
 		org: &str,
 		repo_name: &str,
-		pr_number: i64,
+		pr_number: usize,
 	) -> Self {
 		Self {
 			username: username.to_string(),
@@ -27,35 +27,6 @@ impl GithubUserAuthenticator {
 		&self,
 		github_bot: &GithubBot,
 	) -> Result<()> {
-		let is_member = github_bot
-			.org_member(&self.org, &self.username)
-			.await
-			.map_err(|e| {
-				Error::OrganizationMembership {
-					source: Box::new(e),
-				}
-				.map_issue((
-					self.org.clone(),
-					self.repo_name.clone(),
-					self.pr_number,
-				))
-			})?;
-
-		if !is_member {
-			Err(Error::OrganizationMembership {
-				source: Box::new(Error::Message {
-					msg: format!(
-						"{} is not a member of {}; aborting.",
-						self.username, self.org
-					),
-				}),
-			}
-			.map_issue((
-				self.org.clone(),
-				self.repo_name.clone(),
-				self.pr_number,
-			)))?;
-		}
-		Ok(())
+		github_bot.org_membership(&self.org, &self.username)
 	}
 }

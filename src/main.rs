@@ -5,7 +5,7 @@ use tokio::sync::Mutex;
 mod logging;
 
 use parity_processbot::{
-	config::MainConfig, github_bot, gitlab_bot, server::*, webhook::*,
+	config::Config, github_bot, gitlab_bot, server::*, webhook::*,
 };
 
 #[tokio::main]
@@ -17,7 +17,7 @@ async fn main() -> std::io::Result<()> {
 }
 
 async fn run() -> anyhow::Result<()> {
-	let config = MainConfig::from_env();
+	let config = Config::from_env();
 	env_logger::from_env(env_logger::Env::default().default_filter_or("info"))
 		.format(logging::gke::format)
 		.init();
@@ -31,19 +31,9 @@ async fn run() -> anyhow::Result<()> {
 	)
 	.await?;
 
-	log::info!("Connecting to Gitlab https://{}", config.gitlab_hostname);
-	let gitlab_bot = gitlab_bot::GitlabBot::new_with_token(
-		&config.gitlab_hostname,
-		&config.gitlab_project,
-		&config.gitlab_job_name,
-		&config.gitlab_private_token,
-	)?;
-
 	let app_state = Arc::new(Mutex::new(AppState {
 		db: db,
 		github_bot: github_bot,
-		matrix_bot: matrix_bot,
-		gitlab_bot: gitlab_bot,
 		webhook_secret: config.webhook_secret,
 	}));
 
@@ -53,22 +43,4 @@ async fn run() -> anyhow::Result<()> {
 	);
 
 	init_server(socket, app_state).await
-}
-
-#[cfg(test)]
-mod tests {
-	use regex::Regex;
-
-	#[test]
-	fn test_replace_whitespace_in_toml_key() {
-		let mut s = String::from("[Smart Contracts Ok]\nwhitelist = []");
-		let re = Regex::new(
-			r"^\[((?:[[:word:]]|[[:punct:]])*)[[:blank:]]((?:[[:word:]]|[[:punct:]])*)",
-		)
-		.unwrap();
-		while re.captures_iter(&s).count() > 0 {
-			s = dbg!(re.replace_all(&s, "[$1-$2").to_string());
-		}
-		assert_eq!(&s, "[Smart-Contracts-Ok]\nwhitelist = []");
-	}
 }

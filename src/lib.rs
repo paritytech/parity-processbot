@@ -12,7 +12,6 @@ pub mod github_bot;
 pub mod gitlab_bot;
 pub mod http;
 pub mod performance;
-pub mod process;
 pub mod rebase;
 pub mod server;
 pub mod vanity_service;

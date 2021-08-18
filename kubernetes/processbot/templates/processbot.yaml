@@ -46,86 +46,29 @@ spec:
         imagePullPolicy: Always
         image: paritytech/processbot:{{ .Values.dockerTag }}
         volumeMounts:
-        - name: processbot-key-volume
-          mountPath: "/etc/processbot-key"
-          readOnly: true
         - name: database
-          mountPath: /usr/local/share/db
+          mountPath: {{ quote .Values.processbot.config.DB_PATH }}
         ports:
         - name: backend
           containerPort: {{ .Values.processbot.config.WEBHOOK_PORT }}
         env:
-            - name: MATRIX_ACCESS_TOKEN
-              valueFrom:
-                  secretKeyRef:
-                      name: env-secrets
-                      key: MATRIX_ACCESS_TOKEN
             - name: WEBHOOK_SECRET
               valueFrom:
                   secretKeyRef:
                       name: env-secrets
                       key: WEBHOOK_SECRET
-            - name: GITLAB_PRIVATE_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: env-secrets
-                  key: GITLAB_PRIVATE_TOKEN
             - name: RUST_BACKTRACE
               value: full
             - name: RUST_LOG
               value: debug
             - name: INSTALLATION_LOGIN
               value: {{ .Values.orgName }}
-            - name: PRIVATE_KEY_PATH
-              value: "/etc/processbot-key/PROCESSBOT_KEY"
             - name: WEBHOOK_PORT
               value: {{ quote .Values.processbot.config.WEBHOOK_PORT }}
             - name: GITHUB_APP_ID
               value: {{ quote .Values.processbot.config.GITHUB_APP_ID }}
             - name: DB_PATH
-              value: /usr/local/share/db
-            - name: MATRIX_SILENT
-              value: "false"
-            - name: MATRIX_DEFAULT_CHANNEL_ID
-              value: "!ZXvnxSiXstTeRmkMGk:matrix.parity.io"
-            - name: MAIN_TICK_SECS
-              value: "300"
-            - name: MATRIX_HOMESERVER
-              value: "https://matrix.parity.io"
-            - name: ISSUE_NOT_ADDRESSED_PING
-              value: "86400"
-            - name: ISSUE_NOT_ASSIGNED_TO_PR_AUTHOR_PING
-              value: "86400"
-            - name: NO_PROJECT_AUTHOR_IS_CORE_PING
-              value: "28800"
-            - name: NO_PROJECT_AUTHOR_IS_CORE_CLOSE_PR
-              value: "259200"
-            - name: NO_PROJECT_AUTHOR_UNKNOWN_CLOSE_PR
-              value: "900"
-            - name: REVIEW_REQUEST_PING
-              value: "86400"
-            - name: PRIVATE_REVIEW_REMINDER_PING
-              value: "43200"
-            - name: PUBLIC_REVIEW_REMINDER_PING
-              value: "86400"
-            - name: PUBLIC_REVIEW_REMINDER_DELAY
-              value: "259200"
-            - name: MIN_REVIEWERS
-              value: "2"
-            - name: LOGS_ROOM_ID
-              value: "!ZXvnxSiXstTeRmkMGk:matrix.parity.io"
-            - name: TEST_REPO_NAME
-              value: test-repo
-            - name: TEST_INSTALLATION_LOGIN
-              value: sjeohp-test-org
-            - name: ENVIRONMENT
-              value: {{ .Values.environment }}
-            - name: GITLAB_HOSTNAME
-              value: gitlab.parity.io
-            - name: GITLAB_PROJECT
-              value: {{ .Values.processbot.config.GITLAB_PROJECT }}
-            - name: GITLAB_JOB_NAME
-              value: build-linux-release-pr
+              value: {{ quote .Values.processbot.config.DB_PATH }}
 
 
 ---

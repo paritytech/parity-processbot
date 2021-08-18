@@ -1,19 +1,24 @@
 use std::borrow::Cow;
 use std::time::SystemTime;
 
-use crate::{error, github, Result};
+use crate::{error as e, github, Result};
 
 use chrono::{DateTime, Duration, Utc};
-use hyperx::header::TypedHeaders;
 use reqwest::{header, IntoUrl, Method, RequestBuilder, Response};
 use serde::Serialize;
 use snafu::{OptionExt, ResultExt};
 
-#[derive(Default)]
+pub struct ClientOptions {
+	pub private_key: String,
+	pub installation_login: String,
+	pub base_url: String,
+	pub base_html_url: String,
+}
 pub struct Client {
-	pub client: reqwest::Client,
 	private_key: Vec<u8>,
 	installation_login: String,
+	base_url: String,
+	base_html_url: String,
 }
 
 macro_rules! impl_methods_with_body {
@@ -29,7 +34,7 @@ macro_rules! impl_methods_with_body {
 					.await?
 					.json::<T>()
 					.await
-					.context(error::Http)
+					.context(e::Http)
 			}
 
 			pub async fn $method_response_fn<'b, I, B>(
@@ -66,8 +71,6 @@ macro_rules! impl_methods_with_body {
 	}
 }
 
-/// Checks the response's status and maps into an `Err` branch if
-/// not successful.
 async fn handle_response(response: Response) -> Result<Response> {
 	log::debug!("response: {:?}", &response);
 
@@ -93,11 +96,18 @@ async fn handle_response(response: Response) -> Result<Response> {
 
 /// HTTP util methods.
 impl Client {
-	pub fn new(private_key: Vec<u8>, installation_login: String) -> Self {
+	pub fn new(options: ClientOptions) -> Self {
+		let ClientOptions {
+			private_key,
+			installation_login,
+			base_url,
+			base_html_url,
+		} = options;
 		Self {
 			private_key: private_key.into(),
 			installation_login,
-			..Self::default()
+			base_url,
+			base_html_url,
 		}
 	}
 
@@ -117,7 +127,6 @@ impl Client {
 	}
 
 	pub async fn auth_key(&self) -> Result<String> {
-		log::debug!("auth_key");
 		lazy_static::lazy_static! {
 			static ref TOKEN_CACHE: parking_lot::Mutex<Option<(DateTime<Utc>, String)>> = {
 				parking_lot::Mutex::new(None)
@@ -138,23 +147,24 @@ impl Client {
 		}
 
 		let installations: Vec<github::Installation> = self
-			.jwt_get(&format!(
-				"{}/app/installations",
-				crate::github_bot::GithubBot::BASE_URL
-			))
+			.jwt_get(&format!("{}/app/installations", self.base_url))
 			.await?;
 
 		let installation = installations
 			.iter()
 			.find(|inst| inst.account.login == self.installation_login)
-			.context(error::MissingData)?;
+			.context(e::Message {
+				msg: format!(
+					"Did not find installation login for {}",
+					self.installation_login
+				),
+			})?;
 
 		let install_token: github::InstallationToken = self
 			.jwt_post(
 				&format!(
 					"{}/app/installations/{}/access_tokens",
-					crate::github_bot::GithubBot::BASE_URL,
-					installation.id
+					self.base_url, installation.id
 				),
 				&serde_json::json!({}),
 			)
@@ -304,58 +314,6 @@ impl Client {
 			.status()
 			.as_u16();
 		Ok(res)
-	}
-
-	/// Get a single entry from a resource in GitHub. TODO fix
-	/*
-	pub async fn get_with_params<'b, I, T, P>(
-		&self,
-		url: I,
-		params: P,
-	) -> Result<T>
-	where
-		I: Into<Cow<'b, str>> + Clone,
-		T: serde::de::DeserializeOwned,
-		P: Serialize + Clone,
-	{
-		self.get_response(url, params)
-			.await?
-			.json::<T>()
-			.await
-			.context(error::Http)
-	}
-	*/
-
-	//	/// Sends a `GET` request to `url`, supplying the relevant headers for
-	//	/// authenication and feature detection.
-	pub async fn get_response<'b, I, P>(
-		&self,
-		url: I,
-		params: P,
-	) -> Result<Response>
-	where
-		I: Into<Cow<'b, str>> + Clone,
-		P: Serialize + Clone,
-	{
-		log::debug!("get_response");
-		// retry up to 5 times if request times out
-		let mut retries = 0;
-		'retry: loop {
-			let res = self
-				.execute(
-					self.client.get(&*url.clone().into()).json(&params.clone()),
-				)
-				.await;
-			// retry if timeout
-			if let Err(error::Error::Http { source: e, .. }) = res.as_ref() {
-				if e.is_timeout() && retries < 5 {
-					log::debug!("Request timed out; retrying");
-					retries += 1;
-					continue 'retry;
-				}
-			}
-			return res;
-		}
 	}
 
 	// Originally adapted from:

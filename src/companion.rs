@@ -263,7 +263,7 @@ fn companion_parse_long(body: &str) -> Option<IssueDetailsWithRepositoryURL> {
 		.name("number")?
 		.as_str()
 		.to_owned()
-		.parse::<i64>()
+		.parse::<usize>()
 		.ok()?;
 	Some((html_url, owner, repo, number))
 }
@@ -280,7 +280,7 @@ fn companion_parse_short(body: &str) -> Option<IssueDetailsWithRepositoryURL> {
 		.name("number")?
 		.as_str()
 		.to_owned()
-		.parse::<i64>()
+		.parse::<usize>()
 		.ok()?;
 	let html_url = format!(
 		"https://github.com/{owner}/{repo}/pull/{number}",
@@ -297,7 +297,7 @@ async fn perform_companion_update(
 	html_url: &str,
 	owner: &str,
 	repo: &str,
-	number: i64,
+	number: usize,
 	merge_done_in: &str,
 ) -> Result<()> {
 	let comp_pr = github_bot.pull_request(&owner, &repo, number).await?;
