@@ -491,7 +491,7 @@ pub struct AppState {
 }
 
 impl AppState {
-	pub async fn check_statuses(&self, commit_sha: &str) {
+	pub async fn check_statuses(&self, commit_sha: &str) -> Result<()> {
 		self.github_bot.check_statuses(self.db, commit_sha)
 	}
 }
