@@ -2,9 +2,9 @@ use crate::{error, github, Result};
 
 use snafu::{OptionExt, ResultExt};
 
-use super::GithubBot;
+use super::Bot;
 
-impl GithubBot {
+impl Bot {
 	pub async fn pull_request(
 		&self,
 		owner: &str,

@@ -11,187 +11,41 @@ use std::{collections::HashMap, sync::Arc};
 use tokio::sync::Mutex;
 
 use crate::{
-	auth::GithubUserAuthenticator, companion::*, constants::*,
-	error::MergeError, github::merge_request::merge, github::*,
-	github_bot::GithubBot, rebase::*, vanity_service, Result, Status,
+	companion::*, constants::*, error::MergeError, github::GithubBot,
+	rebase::*, types::*, vanity_service, Result, Status,
 };
 
-/// Check the SHA1 signature on a webhook payload.
-fn verify(
-	secret: &[u8],
-	msg: &[u8],
-	signature: &[u8],
-) -> Result<(), ring::error::Unspecified> {
-	let key = hmac::Key::new(hmac::HMAC_SHA1_FOR_LEGACY_USE_ONLY, secret);
-	hmac::verify(&key, msg, signature)
-}
-
-async fn handle_payload(payload: Payload, state: &AppState) -> Result<()> {
-	match payload {
-		Payload::IssueComment {
-			action: IssueCommentAction::Created,
-			comment:
-				Comment {
-					ref body,
-					user:
-						Some(User {
-							ref login,
-							ref type_field,
-						}),
-					..
-				},
-			issue,
-		} => match type_field {
-			Some(UserType::Bot) => Ok(()),
-			_ => match &issue {
-				WebhookIssueComment {
-					number,
-					html_url,
-					repository_url: Some(repo_url),
-					pull_request: Some(_),
-				} => handle_comment(
-					body, login, *number, html_url, repo_url, state,
-				)
-				.await
-				.map_err(|e| match e {
-					Error::WithIssue { .. } => e,
-					e => {
-						if let Some(details) = issue.get_issue_details() {
-							e.map_issue(details)
-						} else {
-							e
-						}
-					}
-				}),
-				_ => Ok(()),
-			},
-		},
-		Payload::CommitStatus { sha, state: status } => {
-			handle_status(sha, status, state).await
-		}
-		Payload::CheckRun {
-			check_run: CheckRun {
-				status, head_sha, ..
-			},
-			..
-		} => handle_check(status, head_sha, state).await,
-		_ => Ok(()),
-	}
-}
-
-async fn handle_check(
+async fn process_checks(
 	status: CheckRunStatus,
-	commit_sha: String,
 	state: &AppState,
+	commit_sha: String,
 ) -> Result<()> {
 	if status == CheckRunStatus::Completed {
-		check_statuses(&state.github_bot, &state.db, &commit_sha).await
-	} else {
-		Ok(())
+		return state.check_statuses(commit_sha).await;
 	}
+
+	Ok(())
 }
 
-async fn handle_status(
-	commit_sha: String,
-	status: StatusState,
-	state: &AppState,
-) -> Result<()> {
-	if status == StatusState::Pending {
-		Ok(())
-	} else {
-		check_statuses(&state.github_bot, &state.db, &commit_sha).await
-	}
-}
-
-pub async fn handle_webhook(
-	req: Request<Body>,
-	state: Arc<Mutex<AppState>>,
-) -> Result<()> {
-	// Lock here so that the webhooks are processed in the same order they were received; effectively
-	// the webhooks will be processed serially
-	let state = &*state.lock().await;
-
-	let sig = req
-		.headers()
-		.get("x-hub-signature")
-		.context(Message {
-			msg: format!("Missing x-hub-signature"),
-		})?
-		.to_str()
-		.ok()
-		.context(Message {
-			msg: format!("Error parsing x-hub-signature"),
-		})?
-		.to_string();
-	log::info!("Lock acquired for {:?}", sig);
-
-	let mut msg_bytes = vec![];
-	while let Some(item) = req.body_mut().next().await {
-		msg_bytes.extend_from_slice(&item.ok().context(Message {
-			msg: format!("Error getting bytes from request body"),
-		})?);
-	}
-
-	verify(
-		state.webhook_secret.trim().as_bytes(),
-		&msg_bytes,
-		&sig_bytes,
-	)
-	.ok()
-	.context(Message {
-		msg: format!("Validation signature does not match"),
-	})?;
-
-	log::info!("Parsing payload {}", String::from_utf8_lossy(&msg_bytes));
-	match serde_json::from_slice::<Payload>(&msg_bytes) {
-		Ok(payload) => handle_payload(payload, state).await,
-		Err(err) => {
-			// If this comment was originated from a Bot, then acting on it might make the bot
-			// to respond to itself recursively, as happened on
-			// https://github.com/paritytech/substrate/pull/8409. Therefore we'll only act on
-			// this error if it's known for sure it has been initiated only by a User comment.
-			let pr_details = serde_json::from_slice::<
-				DetectUserCommentPullRequest,
-			>(&msg_bytes)
-			.ok()
-			.map(|detected| detected.get_issue_details())
-			.flatten();
-
-			if let Some(pr_details) = pr_details {
-				Err(Error::Message {
-					msg: format!(
-						"Webhook event parsing failed due to:
-	```
-	{}
-	```
-	Payload:
-	```
-	{}
-	```
-	                ",
-						err.to_string(),
-						String::from_utf8_lossy(&msg_bytes)
-					),
-				}
-				.map_issue(pr_details))
-			} else {
-				log::info!("Ignoring payload parsing error",);
-				Ok(())
-			}
-		}
-	}
-}
-
-async fn handle_comment(
-	body: &str,
-	requested_by: &str,
+struct ProcessCommentArgs<'a> {
+	body: &'a str,
+	html_url: &'a str,
+	repo_url: &'a str,
+	requested_by: &'a str,
 	number: usize,
-	html_url: &str,
-	repo_url: &str,
+}
+async fn process_comment<'a>(
+	args: ProcessCommentArgs<'a>,
 	state: &AppState,
 ) -> Result<()> {
-	let db = &state.db;
-	let github_bot = &state.github_bot;
+	let ProcessCommentArgs {
+		body,
+		html_url,
+		repo_url,
+		requested_by,
+		number,
+	} = args;
+	let AppState { db, github_bot, .. } = state;
 
 	let owner = owner_from_html_url(html_url).context(Message {
 		msg: format!("Failed parsing owner in url: {}", html_url),
@@ -388,4 +242,149 @@ async fn handle_comment(
 	}
 
 	Ok(())
+}
+
+async fn process_status(
+	commit_sha: String,
+	status: StatusState,
+	state: &AppState,
+) -> Result<()> {
+	if status == StatusState::Pending {
+		return Ok(());
+	}
+
+	check_statuses(&state.github_bot, &state.db, &commit_sha).await
+}
+
+async fn process_payload(payload: Payload, state: &AppState) -> Result<()> {
+	match payload {
+		Payload::IssueComment {
+			action: IssueCommentAction::Created,
+			comment:
+				Comment {
+					ref body,
+					user:
+						Some(User {
+							ref login,
+							ref type_field,
+						}),
+					..
+				},
+			issue,
+		} => match type_field {
+			Some(UserType::Bot) => Ok(()),
+			_ => match &issue {
+				WebhookIssueComment {
+					number,
+					html_url,
+					repository_url: Some(repo_url),
+					pull_request: Some(_),
+				} => process_comment(
+					body, login, *number, html_url, repo_url, state,
+				)
+				.await
+				.map_err(|e| match e {
+					Error::WithIssue { .. } => e,
+					e => {
+						if let Some(details) = issue.get_issue_details() {
+							e.map_issue(details)
+						} else {
+							e
+						}
+					}
+				}),
+				_ => Ok(()),
+			},
+		},
+		Payload::CommitStatus { sha, state: status } => {
+			process_status(sha, status, state).await
+		}
+		Payload::CheckRun {
+			check_run: CheckRun {
+				status, head_sha, ..
+			},
+			..
+		} => process_checks(status, state, head_sha).await,
+		_ => Ok(()),
+	}
+}
+
+pub async fn handle_request(
+	req: Request<Body>,
+	state: Arc<Mutex<AppState>>,
+) -> Result<()> {
+	// Lock here so that the webhooks are processed in the same order they were received; effectively
+	// the webhooks will be processed serially
+	let state = &*state.lock().await;
+
+	let sig = req
+		.headers()
+		.get("x-hub-signature")
+		.context(Message {
+			msg: format!("Missing x-hub-signature"),
+		})?
+		.to_str()
+		.ok()
+		.context(Message {
+			msg: format!("Error parsing x-hub-signature"),
+		})?
+		.to_string();
+	log::info!("Lock acquired for {:?}", sig);
+
+	let mut msg_bytes = vec![];
+	while let Some(item) = req.body_mut().next().await {
+		msg_bytes.extend_from_slice(&item.ok().context(Message {
+			msg: format!("Error getting bytes from request body"),
+		})?);
+	}
+
+	let key = hmac::Key::new(hmac::HMAC_SHA1_FOR_LEGACY_USE_ONLY, secret);
+	hmac::verify(
+		state.webhook_secret.trim().as_bytes(),
+		&msg_bytes,
+		&sig_bytes,
+	)
+	.ok()
+	.context(Message {
+		msg: format!("Validation signature does not match"),
+	})?;
+
+	log::info!("Parsing payload {}", String::from_utf8_lossy(&msg_bytes));
+	match serde_json::from_slice::<Payload>(&msg_bytes) {
+		Ok(payload) => process_payload(payload, state).await,
+		Err(err) => {
+			// If this comment was originated from a Bot, then acting on it might make the bot
+			// to respond to itself recursively, as happened on
+			// https://github.com/paritytech/substrate/pull/8409. Therefore we'll only act on
+			// this error if it's known for sure it has been initiated only by a User comment.
+			let pr_details = serde_json::from_slice::<
+				DetectUserCommentPullRequest,
+			>(&msg_bytes)
+			.ok()
+			.map(|detected| detected.get_issue_details())
+			.flatten();
+
+			if let Some(pr_details) = pr_details {
+				Err(Error::Message {
+					msg: format!(
+						"Webhook event parsing failed due to:
+	```
+	{}
+	```
+	Payload:
+	```
+	{}
+	```
+	                ",
+						err.to_string(),
+						String::from_utf8_lossy(&msg_bytes)
+					),
+				}
+				.map_issue(pr_details))
+			} else {
+				log::info!("Ignoring payload parsing error",);
+				Ok(())
+			}
+		}
+	}
 }

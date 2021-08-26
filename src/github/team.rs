@@ -1,8 +1,8 @@
 use crate::{github, Result};
 
-use super::GithubBot;
+use super::Bot;
 
-impl GithubBot {
+impl Bot {
 	pub async fn team(&self, owner: &str, slug: &str) -> Result<github::Team> {
 		let url = format!(
 			"{base_url}/orgs/{owner}/teams/{slug}",

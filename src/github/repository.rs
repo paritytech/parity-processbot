@@ -1,8 +1,8 @@
 use crate::{github, Result};
 
-use super::GithubBot;
+use super::Bot;
 
-impl GithubBot {
+impl Bot {
 	pub async fn repository<A>(
 		&self,
 		owner: &str,

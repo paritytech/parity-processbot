@@ -2,11 +2,11 @@ use crate::{error, github, Result};
 
 use snafu::{OptionExt, ResultExt};
 
-use super::GithubBot;
+use super::Bot;
 
 use regex::Regex;
 
-impl GithubBot {
+impl Bot {
 	/// Adds a comment to an issue.
 	pub async fn create_issue_comment(
 		&self,

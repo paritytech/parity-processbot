@@ -1,13 +1,6 @@
 use crate::types::{AppState, IssueDetails, IssueDetailsWithRepositoryURL};
 use snafu::Snafu;
 
-#[derive(Debug, Snafu)]
-#[snafu(visibility = "pub")]
-pub enum MergeError {
-	FailureWillBeSolvedLater,
-	Error(Error),
-}
-
 // This enum is exclusive for unactionable errors which should stop the webhook payload from being
 // processed at once.
 #[derive(Debug, Snafu)]
@@ -111,6 +104,12 @@ impl Error {
 	}
 }
 
+#[derive(Debug, Snafu)]
+pub enum MergeError {
+	FailureWillBeSolvedLater,
+	Error(Error),
+}
+
 fn display_errors_along_the_way(errors: Option<Vec<String>>) -> String {
 	errors
 		.map(|errors| {
@@ -126,7 +125,7 @@ fn display_errors_along_the_way(errors: Option<Vec<String>>) -> String {
 		.unwrap_or_else(|| "".to_string())
 }
 
-async fn handle_error_inner(err: Error, state: &AppState) -> Option<String> {
+async fn process_error(err: Error, state: &AppState) -> Option<String> {
 	match err {
 		Error::MergeAttemptFailed {
 			source,
@@ -213,9 +212,8 @@ async fn handle_error(err: Error, state: &AppState) {
 				Error::Skipped { .. } => (),
 				e => {
 					log::error!("handle_error: {}", e);
-					let msg = handle_error_inner(e, state)
-						.await
-						.unwrap_or_else(|| {
+					let msg =
+						process_error(e, state).await.unwrap_or_else(|| {
 							format!(
 								"Unexpected error (at {} server time).",
 								chrono::Utc::now().to_string()
@@ -232,8 +230,10 @@ async fn handle_error(err: Error, state: &AppState) {
 			},
 			_ => {
 				log::error!("handle_error: {}", e);
-				handle_error_inner(e, state).await;
+				process_error(e, state).await;
 			}
 		},
 	}
 }
+
+pub type Result<T, E = Error> = std::result::Result<T, E>;

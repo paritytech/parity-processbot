@@ -4,10 +4,9 @@ use snafu::ResultExt;
 use std::path::Path;
 
 use crate::{
-	cmd::*, constants::MAIN_REPO_FOR_STAGING, error::*, github::*,
-	github_bot::GithubBot, webhook::wait_to_merge, Result,
-	COMPANION_LONG_REGEX, COMPANION_PREFIX_REGEX, COMPANION_SHORT_REGEX,
-	PR_HTML_URL_REGEX,
+	cmd::*, constants::MAIN_REPO_FOR_STAGING, error::*, github_bot::GithubBot,
+	types::*, webhook::wait_to_merge, Result, COMPANION_LONG_REGEX,
+	COMPANION_PREFIX_REGEX, COMPANION_SHORT_REGEX, PR_HTML_URL_REGEX,
 };
 
 async fn update_companion_repository(
@@ -398,7 +397,6 @@ async fn detect_then_update_companion(
 	Ok(())
 }
 
-/// Check for a Polkadot companion and update it if found.
 pub async fn update_companion(
 	github_bot: &GithubBot,
 	merge_done_in: &str,

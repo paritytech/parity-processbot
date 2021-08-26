@@ -1,8 +1,6 @@
-use crate::Result;
+use crate::{crate::github::Bot, types::Result};
 
-use super::GithubBot;
-
-impl GithubBot {
+impl Bot {
 	/// Returns statuses for a reference.
 	pub async fn status(
 		&self,

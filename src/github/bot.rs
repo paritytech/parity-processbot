@@ -1,23 +1,17 @@
 use crate::self::http;
 
-mod commit;
-mod issue;
-mod organization;
-mod pull_request;
-mod repository;
-mod review;
-mod team;
-
-pub struct GithubBot {
+pub struct Bot {
 	pub client: http::Client,
+	pub base_url: String,
+	pub base_html_url: String,
 }
 
-impl GithubBot {
+impl Bot {
 	pub async fn new(
 		private_key: impl Into<Vec<u8>>,
 		installation_login: String,
-		base_url: &str,
-		base_html_url: &str,
+		base_url: String,
+		base_html_url: String,
 	) -> Result<Self> {
 		let client = http::Client::new(private_key.into(), installation_login);
 

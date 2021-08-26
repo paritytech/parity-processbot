@@ -4,7 +4,7 @@ pub const AUTO_MERGE_FORCE: &str = "bot merge force";
 pub const AUTO_MERGE_CANCEL: &str = "bot merge cancel";
 pub const REBASE: &str = "bot rebase";
 // NOTE: Put all commands here, otherwise the bot will not detect them
-pub const BOT_COMMANDS: [&str; 6] = [
+pub const BOT_COMMANDS: [&str; 4] = [
 	AUTO_MERGE_REQUEST,
 	AUTO_MERGE_FORCE,
 	AUTO_MERGE_CANCEL,
