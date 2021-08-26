@@ -10,10 +10,7 @@ use snafu::{OptionExt, ResultExt};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::Mutex;
 
-use crate::{
-	constants::*, error::MergeError, github::GithubBot, types::*,
-	vanity_service,
-};
+use crate::{constants::*, error::*, github::*, types::*};
 
 async fn process_checks(
 	status: CheckRunStatus,
@@ -32,6 +29,7 @@ struct ProcessCommentArgs<'a> {
 	html_url: &'a str,
 	repo_url: &'a str,
 	requested_by: &'a str,
+	login: &'a str,
 	number: &'a usize,
 }
 async fn process_comment<'a>(
@@ -47,9 +45,10 @@ async fn process_comment<'a>(
 	} = args;
 	let AppState { db, github_bot, .. } = state;
 
-	let owner = parse_owner_from_html_url(html_url).context(Message {
-		msg: format!("Failed parsing owner in url: {}", html_url),
-	})?;
+	let owner =
+		parse_owner_from_html_url(html_url).context(Error::Message {
+			msg: format!("Failed parsing owner in url: {}", html_url),
+		})?;
 
 	let repo_name =
 		repo_url.rsplit('/').next().map(|s| s.to_string()).context(
@@ -59,7 +58,7 @@ async fn process_comment<'a>(
 		)?;
 
 	// Fetch the pr to get all fields (eg. mergeable).
-	let pr = &github_bot.pull_request(owner, &repo_name, number).await?;
+	let pr = github_bot.pull_request(owner, &repo_name, number).await?;
 
 	let auth =
 		GithubUserAuthenticator::new(requested_by, owner, &repo_name, number);
@@ -325,12 +324,12 @@ pub async fn handle_request(
 	let sig = req
 		.headers()
 		.get("x-hub-signature")
-		.context(Message {
+		.context(Error::Message {
 			msg: format!("Missing x-hub-signature"),
 		})?
 		.to_str()
 		.ok()
-		.context(Message {
+		.context(Error::Message {
 			msg: format!("Error parsing x-hub-signature"),
 		})?
 		.to_string();
@@ -338,21 +337,20 @@ pub async fn handle_request(
 
 	let mut msg_bytes = vec![];
 	while let Some(item) = req.body_mut().next().await {
-		msg_bytes.extend_from_slice(&item.ok().context(Message {
+		msg_bytes.extend_from_slice(&item.ok().context(Error::Message {
 			msg: format!("Error getting bytes from request body"),
 		})?);
 	}
 
-	let key = hmac::Key::new(hmac::HMAC_SHA1_FOR_LEGACY_USE_ONLY, secret);
-	hmac::verify(
+	let key = hmac::Key::new(
+		hmac::HMAC_SHA1_FOR_LEGACY_USE_ONLY,
 		state.webhook_secret.trim().as_bytes(),
-		&msg_bytes,
-		&sig_bytes,
-	)
-	.ok()
-	.context(Message {
-		msg: format!("Validation signature does not match"),
-	})?;
+	);
+	hmac::verify(&key, &msg_bytes, &sig_bytes).ok().context(
+		Error::Message {
+			msg: format!("Validation signature does not match"),
+		},
+	)?;
 
 	log::info!("Parsing payload {}", String::from_utf8_lossy(&msg_bytes));
 	match serde_json::from_slice::<Payload>(&msg_bytes) {

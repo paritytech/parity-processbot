@@ -190,8 +190,9 @@ impl Bot {
 								Ok(status) => match status {
 									Status::Success => Ok(true),
 									Status::Failure => {
-										Err(Error::ChecksFailed {
+										Err(Error::UnregisterPullRequest {
 											commit_sha: pr_head_sha.to_string(),
+											message: "Statuses failed",
 										})
 									}
 									_ => Ok(false),
@@ -199,8 +200,9 @@ impl Bot {
 								Err(e) => Err(e),
 							}
 						}
-						Status::Failure => Err(Error::ChecksFailed {
+						Status::Failure => Err(Error::UnregisterPullRequest {
 							commit_sha: pr_head_sha.to_string(),
+							message: "Statuses failed",
 						}),
 						_ => Ok(false),
 					},

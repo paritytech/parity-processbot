@@ -1,7 +1,6 @@
 use crate::{error::handle_error, webhook::handle_webhook, AppState};
-use anyhow::{Context, Result};
+use anyhow::Result;
 use async_std::pin::Pin;
-use futures_util::FutureExt;
 use futures_util::{
 	io::{AsyncRead, AsyncWrite},
 	stream::Stream,
@@ -101,7 +100,7 @@ fn handle_request(req: Request<Body>, state: Arc<Mutex<AppState>>) {
 				.status(StatusCode::OK)
 				.body(Body::from(""))
 				.ok()
-				.context(Message {
+				.context(crate::error::Error::Message {
 					msg: format!("Error building response"),
 				}),
 			Err(e) => Err(e),
@@ -110,7 +109,7 @@ fn handle_request(req: Request<Body>, state: Arc<Mutex<AppState>>) {
 			.status(StatusCode::NOT_FOUND)
 			.body(Body::from("Not found."))
 			.ok()
-			.context(Message {
+			.context(crate::error::Error::Message {
 				msg: format!("Error building response"),
 			})),
 	};

@@ -30,9 +30,9 @@ impl Bot {
 				Ok(pr) => match pr.head_sha() {
 					Ok(pr_head_sha) => {
 						if commit_sha != pr_head_sha {
-							Err(Error::HeadChanged {
-								expected: commit_sha.to_string(),
-								actual: pr_head_sha.to_owned(),
+							Err(Error::UnregisterPullRequest {
+							  commit_sha,
+								message: "HEAD commit changed before the merge could happen",
 							})
 						} else {
 							match get_latest_statuses_state(
@@ -66,19 +66,21 @@ impl Bot {
 												)
 												.await
 											}
-											Status::Failure => {
-												Err(Error::ChecksFailed {
+											Status::Failure => Err(
+												Error::UnregisterPullRequest {
 													commit_sha: commit_sha
 														.to_string(),
-												})
-											}
+													message: "Statuses failed",
+												},
+											),
 											_ => Ok(()),
 										},
 										Err(e) => Err(e),
 									},
 									Status::Failure => {
-										Err(Error::ChecksFailed {
+										Err(Error::UnregisterPullRequest {
 											commit_sha: commit_sha.to_string(),
+											message: "Statuses failed",
 										})
 									}
 									_ => Ok(()),

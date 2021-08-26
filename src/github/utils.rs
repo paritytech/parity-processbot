@@ -33,7 +33,7 @@ pub fn parse_repository_full_name(full_name: &str) -> Option<(String, String)> {
 		.flatten()
 }
 
-pub fn owner_from_html_url(url: &str) -> Option<&str> {
+pub fn parse_owner_from_html_url(url: &str) -> Option<&str> {
 	url.split("/").skip(3).next()
 }
 

@@ -1,10 +1,10 @@
 use crate::types::{AppState, IssueDetails, IssueDetailsWithRepositoryURL};
+use itertools::Itertools;
 use snafu::Snafu;
 
 // This enum is exclusive for unactionable errors which should stop the webhook payload from being
 // processed at once.
 #[derive(Debug, Snafu)]
-#[snafu(visibility = "pub")]
 pub enum Error {
 	#[snafu(display("WithIssue: {}", source))]
 	WithIssue {
@@ -178,12 +178,6 @@ async fn process_error(err: Error, state: &AppState) -> Option<String> {
 			});
 			Some(format!("Merge aborted: {}", message))
 		}
-		Error::ChecksFailed { ref commit_sha } => {
-			let _ = state.db.delete(commit_sha.as_bytes()).map_err(|e| {
-				log::error!("Error deleting merge request from db: {}", e);
-			});
-			Some(format!("Merge aborted: {}", err))
-		}
 		Error::Response {
 			body: serde_json::Value::Object(m),
 			..
@@ -236,4 +230,4 @@ async fn handle_error(err: Error, state: &AppState) {
 	}
 }
 
-pub type Result<T, E = Error> = std::result::Result<T, E>;
+pub type Result<T, E = error::Error> = std::result::Result<T, E>;

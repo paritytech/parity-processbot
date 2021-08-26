@@ -18,6 +18,8 @@ pub mod utils;
 pub use bot::Bot;
 pub use bot::Bot as GithubBot;
 
+pub use utils::*;
+
 pub struct WaitToMergeArgs<'a> {
 	owner: &'a str,
 	repo_name: &'a str,
