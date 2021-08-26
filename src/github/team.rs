@@ -20,14 +20,22 @@ impl Bot {
 	}
 
 	pub async fn core_devs(&self, owner: &str) -> Result<Vec<User>> {
-		self.team(owner, CORE_DEVS_GROUP)
-			.and_then(|team| self.team_members(team.id))
-			.await
+		let team = self
+			.team(TeamArgs {
+				owner,
+				slug: CORE_DEVS_GROUP,
+			})
+			.await?;
+		self.team_members(team.id).await
 	}
 
 	pub async fn substrate_team_leads(&self, owner: &str) -> Result<Vec<User>> {
-		self.team(owner, SUBSTRATE_TEAM_LEADS_GROUP)
-			.and_then(|team| self.team_members(team.id))
-			.await
+		let team = self
+			.team(TeamArgs {
+				owner,
+				slug: SUBSTRATE_TEAM_LEADS_GROUP,
+			})
+			.await?;
+		self.team_members(team.id).await
 	}
 }

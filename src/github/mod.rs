@@ -5,7 +5,6 @@ mod commit;
 mod companion;
 mod http;
 mod issue;
-mod merge_request;
 mod organization;
 mod pull_request;
 mod rebase;
@@ -23,7 +22,7 @@ pub use utils::*;
 pub struct WaitToMergeArgs<'a> {
 	owner: &'a str,
 	repo_name: &'a str,
-	number: usize,
+	number: &'a usize,
 	html_url: &'a str,
 	requested_by: &'a str,
 	head_sha: &'a str,
@@ -33,7 +32,7 @@ pub struct PrepareToMergeArgs<'a> {
 	owner: &'a str,
 	repo_name: &'a str,
 	html_url: &'a str,
-	number: usize,
+	number: &'a usize,
 }
 
 pub struct MergeArgs<'a> {
@@ -55,8 +54,8 @@ pub struct MergeAllowedArgs<'a> {
 pub struct CreateIssueCommentArgs<'a> {
 	owner: &'a str,
 	repo_name: &'a str,
-	issue_number: &'a str,
 	body: &'a str,
+	number: &'a usize,
 }
 
 pub struct StatusArgs<'a> {
@@ -78,34 +77,34 @@ pub struct PerformCompanionUpdateArgs<'a> {
 	html_url: &'a str,
 	owner: &'a str,
 	repo: &'a str,
-	number: usize,
+	number: &'a usize,
 	merge_done_in: &'a str,
 }
 
 pub struct PullRequestArgs<'a> {
 	owner: &'a str,
 	repo_name: &'a str,
-	pull_number: usize,
+	number: &'a usize,
 }
 
 pub struct MergePullRequestArgs<'a> {
 	owner: &'a str,
 	repo_name: &'a str,
 	head_sha: &'a str,
-	number: usize,
+	number: &'a usize,
 }
 
 pub struct ApproveMergeRequestArgs<'a> {
 	owner: &'a str,
 	repo_name: &'a str,
-	pr_number: usize,
+	pr_number: &'a usize,
 }
 
 pub struct ClearBotApprovalArgs<'a> {
 	owner: &'a str,
 	repo_name: &'a str,
-	pr_number: usize,
-	review_id: usize,
+	pr_number: &'a usize,
+	review_id: &'a usize,
 }
 
 pub struct IsReadyToMergeArgs<'a> {
@@ -142,4 +141,11 @@ pub struct GetLatestChecksArgs<'a> {
 pub struct TeamArgs<'a> {
 	owner: &'a str,
 	slug: &'a str,
+}
+
+pub struct GetLatestStatusesStateArgs<'a> {
+	owner: &'a str,
+	owner_repo: &'a str,
+	commit_sha: &'a str,
+	html_url: &'a str,
 }

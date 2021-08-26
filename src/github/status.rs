@@ -3,13 +3,51 @@ use super::*;
 use crate::{error::*, types::*};
 
 impl Bot {
+	pub async fn status<'a>(
+		&self,
+		args: StatusArgs<'a>,
+	) -> Result<CombinedStatus> {
+		let StatusArgs {
+			owner,
+			repo_name,
+			sha,
+		} = args;
+		let url = format!(
+			"{base_url}/repos/{owner}/{repo}/commits/{sha}/status",
+			base_url = self.base_url,
+			owner = owner,
+			repo = repo_name,
+			sha = sha
+		);
+		self.client.get(url).await
+	}
+
+	pub async fn check_runs<'a>(
+		&self,
+		args: StatusArgs<'a>,
+	) -> Result<CheckRuns> {
+		let StatusArgs {
+			owner,
+			repo_name,
+			sha,
+		} = args;
+		let url = format!(
+			"{base_url}/repos/{owner}/{repo}/commits/{sha}/check-runs",
+			base_url = self.base_url,
+			owner = owner,
+			repo = repo_name,
+			sha = sha
+		);
+		self.client.get(url).await
+	}
+
 	pub async fn check_statuses(
 		&self,
 		db: &DB,
 		commit_sha: &str,
 	) -> Result<()> {
 		if let Some(pr_bytes) = db.get(commit_sha.as_bytes()).context(Db)? {
-			let m = bincode::deserialize(&pr_bytes).context(Bincode)?;
+			let m = bincode::deserialize(&pr_bytes).context(error::Bincode)?;
 			log::info!("Deserialized merge request: {:?}", m);
 			let MergeRequest {
 				owner,
@@ -17,6 +55,7 @@ impl Bot {
 				number,
 				html_url,
 				requested_by,
+				head_sha,
 			} = m;
 
 			// Wait a bit for all the statuses to settle; some missing status might be
@@ -26,13 +65,20 @@ impl Bot {
 			tokio::time::delay_for(std::time::Duration::from_millis(2048))
 				.await;
 
-			match self.pull_request(&owner, &repo_name, number).await {
+			match self
+				.pull_request(PullRequestArgs {
+					owner,
+					repo_name,
+					number,
+				})
+				.await
+			{
 				Ok(pr) => match pr.head_sha() {
 					Ok(pr_head_sha) => {
-						if commit_sha != pr_head_sha {
+						if head_sha != pr_head_sha {
 							Err(Error::UnregisterPullRequest {
-							  commit_sha,
-								message: "HEAD commit changed before the merge could happen",
+							  commit_sha: head_sha,
+								message: "HEAD commit changed before the merge could happen".to_string(),
 							})
 						} else {
 							match get_latest_statuses_state(
@@ -70,7 +116,8 @@ impl Bot {
 												Error::UnregisterPullRequest {
 													commit_sha: commit_sha
 														.to_string(),
-													message: "Statuses failed",
+													message: "Statuses failed"
+														.to_string(),
 												},
 											),
 											_ => Ok(()),
@@ -80,7 +127,8 @@ impl Bot {
 									Status::Failure => {
 										Err(Error::UnregisterPullRequest {
 											commit_sha: commit_sha.to_string(),
-											message: "Statuses failed",
+											message: "Statuses failed"
+												.to_string(),
 										})
 									}
 									_ => Ok(()),
@@ -143,6 +191,74 @@ impl Bot {
 			} else {
 				log::info!("{} has pending checks", html_url);
 				Status::Pending
+			},
+		)
+	}
+
+	pub async fn get_latest_statuses_state<'a>(
+		&self,
+		args: GetLatestStatusesStateArgs<'a>,
+	) -> Result<Status> {
+		let GetLatestStatusesStateArgs {
+			owner,
+			owner_repo,
+			commit_sha,
+			html_url,
+		} = args;
+		let status = self
+			.status(StatusArgs {
+				owner,
+				owner_repo,
+				commit_sha,
+			})
+			.await?;
+		log::info!("{:?}", status);
+
+		// Since Github only considers the latest instance of each status, we should abide by the same
+		// rule. Each instance is uniquely identified by "context".
+		let mut latest_statuses: HashMap<String, (i64, StatusState)> =
+			HashMap::new();
+		for s in status.statuses {
+			if s.description
+				.as_ref()
+				.map(|description| {
+					match serde_json::from_str::<vanity_service::JobInformation>(
+						description,
+					) {
+						Ok(info) => info.build_allow_failure.unwrap_or(false),
+						_ => false,
+					}
+				})
+				.unwrap_or(false)
+			{
+				continue;
+			}
+			if latest_statuses
+				.get(&s.context)
+				.map(|(prev_id, _)| prev_id < &(&s).id)
+				.unwrap_or(true)
+			{
+				latest_statuses.insert(s.context, (s.id, s.state));
+			}
+		}
+		log::info!("{:?}", latest_statuses);
+
+		Ok(
+			if latest_statuses
+				.values()
+				.all(|(_, state)| *state == StatusState::Success)
+			{
+				log::info!("{} has success status", html_url);
+				Status::Success
+			} else if latest_statuses
+				.values()
+				.any(|(_, state)| *state == StatusState::Pending)
+			{
+				log::info!("{} has pending status", html_url);
+				Status::Pending
+			} else {
+				log::info!("{} has failed status", html_url);
+				Status::Failure
 			},
 		)
 	}

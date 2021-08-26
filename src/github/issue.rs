@@ -9,15 +9,15 @@ impl Bot {
 		let CreateIssueCommentArgs {
 			owner,
 			repo_name,
-			issue_number,
+			number,
 			comment: body,
 		} = args;
 		let url = format!(
-			"{base}/repos/{owner}/{repo}/issues/{issue_number}/comments",
+			"{base}/repos/{owner}/{repo}/issues/{number}/comments",
 			base = self.base_url,
 			owner = owner,
 			repo = repo_name,
-			issue_number = issue_number
+			number = number
 		);
 		self.client
 			.post_response(&url, &serde_json::json!({ "body": body }))

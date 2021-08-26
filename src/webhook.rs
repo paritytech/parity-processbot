@@ -14,10 +14,10 @@ use crate::{constants::*, error::*, github::*, types::*};
 async fn process_checks(
 	status: CheckRunStatus,
 	state: &AppState,
-	commit_sha: String,
+	commit_sha: &str,
 ) -> Result<()> {
 	if status == CheckRunStatus::Completed {
-		return state.check_statuses(commit_sha).await;
+		return state.check_statuses(&commit_sha).await;
 	}
 
 	Ok(())
@@ -88,7 +88,7 @@ async fn process_comment<'a>(
 				.prepare_to_merge(PrepareToMergeArgs {
 					owner,
 					repo_name,
-					number: pr.number,
+					number: &pr.number,
 					html_url: &pr.html_url,
 				})
 				.await?;
@@ -158,15 +158,12 @@ async fn process_comment<'a>(
 			.await??;
 
 		github_bot
-			.prepare_to_merge(
-				github_bot,
-				PrepareToMergeArgs {
-					owner,
-					repo_name,
-					number: pr.number,
-					html_url: &pr.html_url,
-				},
-			)
+			.prepare_to_merge(PrepareToMergeArgs {
+				owner,
+				repo_name,
+				number: &pr.number,
+				html_url: &pr.html_url,
+			})
 			.await?;
 
 		match merge(github_bot, owner, &repo_name, &pr, requested_by, None)
@@ -178,7 +175,7 @@ async fn process_comment<'a>(
 			Err(MergeError::FailureWillBeSolvedLater) => {
 				Err(Error::MergeAttemptFailed {
 					source: Box::new(Error::Message {
-						msg: "Pull request is not mergeable",
+						msg: "Pull request is not mergeable".to_string(),
 					}),
 					commit_sha: pr.head_sha()?.to_owned(),
 					owner: owner.to_string(),
@@ -186,11 +183,11 @@ async fn process_comment<'a>(
 					pr_number: pr.number,
 					created_approval_id: None,
 				}
-				.map_issue((
-					owner.to_string(),
-					repo_name.to_string(),
-					pr.number,
-				)))
+				.map_issue(IssueDetails {
+					owner: owner.to_string(),
+					repo: repo_name.to_string(),
+					number: pr.number,
+				}))
 			}
 			Err(MergeError::Error(e)) => Err(e),
 		}?;
@@ -212,7 +209,7 @@ async fn process_comment<'a>(
 			.create_issue_comment(CreateIssueCommentArgs {
 				owner,
 				repo_name: &repo_name,
-				number: pr.number,
+				number: &pr.number,
 				body: "Merge cancelled.",
 			})
 			.await?;
@@ -241,7 +238,7 @@ async fn process_comment<'a>(
 					.create_issue_comment(CreateIssueCommentArgs {
 						owner,
 						repo_name,
-						number: pr.number,
+						number: &pr.number,
 						body: "Rebasing.",
 					})
 					.await?;
@@ -307,6 +304,7 @@ async fn process_payload(payload: Payload, state: &AppState) -> Result<()> {
 						number,
 						html_url,
 						repo_url,
+						requested_by: login,
 					},
 					state,
 				)
@@ -332,7 +330,7 @@ async fn process_payload(payload: Payload, state: &AppState) -> Result<()> {
 				status, head_sha, ..
 			},
 			..
-		} => process_checks(status, state, head_sha).await,
+		} => process_checks(status, state, &head_sha).await,
 		_ => Ok(()),
 	}
 }

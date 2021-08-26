@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::time::SystemTime;
 
-use crate::{error as e, github, Result};
+use crate::{error::*, types::*};
 
 use chrono::{DateTime, Duration, Utc};
 use reqwest::{header, IntoUrl, Method, RequestBuilder, Response};
@@ -34,7 +34,7 @@ macro_rules! impl_methods_with_body {
 					.await?
 					.json::<T>()
 					.await
-					.context(e::Http)
+					.context(Error::Http)
 			}
 
 			pub async fn $method_response_fn<'b, I, B>(
@@ -56,7 +56,7 @@ macro_rules! impl_methods_with_body {
 					)
 					.await;
 					// retry if timeout
-					if let Err(error::Error::Http { source: e, .. }) = res.as_ref() {
+					if let Err(Error::Http { source: e, .. }) = res.as_ref() {
 						if e.is_timeout() && retries < 5 {
 							log::debug!("Request timed out; retrying");
 							retries += 1;
@@ -78,19 +78,18 @@ async fn handle_response(response: Response) -> Result<Response> {
 	if status.is_success() {
 		Ok(response)
 	} else {
-		let text = response.text().await.context(error::Http)?;
+		let text = response.text().await.context(Http)?;
 
 		// Try to decode the response error as JSON otherwise store
 		// it as plain text in a JSON object.
-		let body = if let Ok(value) =
-			serde_json::from_str(&text).context(error::Json)
+		let body = if let Ok(value) = serde_json::from_str(&text).context(Json)
 		{
 			value
 		} else {
 			serde_json::json!({ "error_message": text })
 		};
 
-		error::Response { status, body }.fail()
+		Response { status, body }.fail()
 	}
 }
 
@@ -152,14 +151,14 @@ impl Client {
 		let installation = installations
 			.iter()
 			.find(|inst| inst.account.login == self.installation_login)
-			.context(e::Message {
+			.context(Error::Message {
 				msg: format!(
 					"Did not find installation login for {}",
 					self.installation_login
 				),
 			})?;
 
-		let install_token: github::InstallationToken = self
+		let install_token: InstallationToken = self
 			.jwt_post(
 				&format!(
 					"{}/app/installations/{}/access_tokens",
@@ -204,13 +203,10 @@ impl Client {
 			.header(header::USER_AGENT, "parity-processbot/0.0.1")
 			.timeout(std::time::Duration::from_secs(10))
 			.build()
-			.context(error::Http)?;
+			.context(Http)?;
 
 		log::debug!("request: {:?}", &request);
-		handle_response(
-			self.client.execute(request).await.context(error::Http)?,
-		)
-		.await
+		handle_response(self.client.execute(request).await.context(Http)?).await
 	}
 
 	fn create_jwt(&self) -> Result<String> {
@@ -236,7 +232,7 @@ impl Client {
 			&jsonwebtoken::EncodingKey::from_rsa_pem(&self.private_key)
 				.expect("private key should be RSA pem"),
 		)
-		.context(error::Jwt)
+		.context(Jwt)
 	}
 
 	async fn jwt_execute(&self, builder: RequestBuilder) -> Result<Response> {
@@ -251,7 +247,7 @@ impl Client {
 			.timeout(std::time::Duration::from_secs(10))
 			.send()
 			.await
-			.context(error::Http)?;
+			.context(Http)?;
 
 		handle_response(response).await
 	}
@@ -265,7 +261,7 @@ impl Client {
 			.await?
 			.json::<T>()
 			.await
-			.context(error::Http)
+			.context(Http)
 	}
 
 	pub async fn jwt_post<T>(
@@ -281,7 +277,7 @@ impl Client {
 			.await?
 			.json::<T>()
 			.await
-			.context(error::Http)
+			.context(Http)
 	}
 
 	pub async fn get<'b, I, T>(&self, url: I) -> Result<T>
@@ -294,7 +290,7 @@ impl Client {
 			.await?
 			.json::<T>()
 			.await
-			.context(error::Http);
+			.context(Http);
 		res
 	}
 
@@ -342,8 +338,7 @@ impl Client {
 				.map(str::to_owned)
 				.map(Cow::Owned);
 
-			let mut body =
-				response.json::<Vec<T>>().await.context(error::Http)?;
+			let mut body = response.json::<Vec<T>>().await.context(Http)?;
 			entities.append(&mut body);
 		}
 
