@@ -1,25 +1,59 @@
-use super::bot::Bot;
-use crate::types::*;
+use super::*;
+use crate::{types::*, utils::*};
 
-struct UpdateCompanionRepositoryArgs<'a> {
-	owner: &'a str,
-	repo: &'a str,
-	contributor: &'a str,
-	contributor_repo: &'a str,
-	contributor_branch: &'a str,
-	merge_done_in: &'a str,
+async fn detect_then_update_companion(
+	&self,
+	pr: &PullRequest,
+	db: &DB,
+	merge_done_in: &str,
+) -> Result<()> {
+	if merge_done_in == "substrate" || merge_done_in == MAIN_REPO_FOR_STAGING {
+		log::info!("Checking for companion.");
+
+		if let Some(IssueDetailsWithRepositoryURL {
+			issue: IssueDetails {
+				owner,
+				repo,
+				number,
+			},
+			html_url,
+		}) = pr.body.as_ref().map(parse_companion_description).flatten()
+		{
+			log::info!("Found companion {}", html_url);
+			perform_companion_update(
+				self,
+				db,
+				PerformCompanionUpdateArgs {
+					html_url,
+					owner,
+					repo,
+					number,
+					merge_done_in,
+				},
+			)
+			.await
+			.map_err(|e| e.map_issue((owner, repo, number)))?;
+		} else {
+			log::info!("No companion found.");
+		}
+	}
+
+	Ok(())
 }
 
 impl Bot {
-	async fn update_companion_repository(
+	async fn update_companion_repository<'a>(
 		&self,
-		owner: &str,
-		owner_repo: &str,
-		contributor: &str,
-		contributor_repo: &str,
-		contributor_branch: &str,
-		merge_done_in: &str,
+		args: UpdateCompanionRepositoryArgs<'a>,
 	) -> Result<String> {
+		let UpdateCompanionRepositoryArgs {
+			owner,
+			owner_repo,
+			contributor,
+			contributor_repo,
+			contributor_branch,
+			merge_done_in,
+		} = args;
 		let token = self.client.auth_key().await?;
 		let secrets_to_hide = [token.as_str()];
 		let secrets_to_hide = Some(&secrets_to_hide[..]);
@@ -250,15 +284,18 @@ impl Bot {
 		Ok(updated_sha)
 	}
 
-	async fn perform_companion_update(
+	async fn perform_companion_update<'a>(
 		&self,
 		db: &DB,
-		html_url: &str,
-		owner: &str,
-		repo: &str,
-		number: usize,
-		merge_done_in: &str,
+		args: PerformCompanionUpdateArgs<'a>,
 	) -> Result<()> {
+		let PerformCompanionUpdateArgs {
+			html_url,
+			owner,
+			repo,
+			number,
+			merge_done_in,
+		} = args;
 		let comp_pr = self.pull_request(&owner, &repo, number).await?;
 
 		if let PullRequest {
@@ -313,39 +350,6 @@ impl Bot {
 		Ok(())
 	}
 
-	async fn detect_then_update_companion(
-		&self,
-		merge_done_in: &str,
-		pr: &PullRequest,
-		db: &DB,
-	) -> Result<()> {
-		if merge_done_in == "substrate"
-			|| merge_done_in == MAIN_REPO_FOR_STAGING
-		{
-			log::info!("Checking for companion.");
-			if let Some((html_url, owner, repo, number)) =
-				pr.body.as_ref().map(|body| companion_parse(body)).flatten()
-			{
-				log::info!("Found companion {}", html_url);
-				perform_companion_update(
-					self,
-					db,
-					&html_url,
-					&owner,
-					&repo,
-					number,
-					merge_done_in,
-				)
-				.await
-				.map_err(|e| e.map_issue((owner, repo, number)))?;
-			} else {
-				log::info!("No companion found.");
-			}
-		}
-
-		Ok(())
-	}
-
 	pub async fn update_companion(
 		&self,
 		merge_done_in: &str,
@@ -369,93 +373,5 @@ impl Bot {
 					}
 				}
 			})
-	}
-}
-
-#[cfg(test)]
-mod tests {
-	use super::bot::Bot;
-
-	#[test]
-	fn test_companion_parse() {
-		// Extra params should not be included in the parsed URL
-		assert_eq!(
-			companion_parse(
-				"companion: https://github.com/paritytech/polkadot/pull/1234?extra_params=true"
-			),
-			Some((
-				"https://github.com/paritytech/polkadot/pull/1234".to_owned(),
-				"paritytech".to_owned(),
-				"polkadot".to_owned(),
-				1234
-			))
-		);
-
-		// Should be case-insensitive on the "companion" marker
-		for companion_marker in &["Companion", "companion"] {
-			// Long version should work even if the body has some other content around the
-			// companion text
-			assert_eq!(
-				companion_parse(&format!(
-					"
-					Companion line is in the middle
-					{}: https://github.com/paritytech/polkadot/pull/1234
-					Final line
-					",
-					companion_marker
-				)),
-				Some((
-					"https://github.com/paritytech/polkadot/pull/1234"
-						.to_owned(),
-					"paritytech".to_owned(),
-					"polkadot".to_owned(),
-					1234
-				))
-			);
-
-			// Short version should work even if the body has some other content around the
-			// companion text
-			assert_eq!(
-				companion_parse(&format!(
-					"
-					Companion line is in the middle
-					{}: paritytech/polkadot#1234
-			        Final line
-					",
-					companion_marker
-				)),
-				Some((
-					"https://github.com/paritytech/polkadot/pull/1234"
-						.to_owned(),
-					"paritytech".to_owned(),
-					"polkadot".to_owned(),
-					1234
-				))
-			);
-		}
-
-		// Long version should not be detected if "companion: " and the expression are not both in
-		// the same line
-		assert_eq!(
-			companion_parse(
-				"
-				I want to talk about companion: but NOT reference it
-				I submitted it in https://github.com/paritytech/polkadot/pull/1234
-				"
-			),
-			None
-		);
-
-		// Short version should not be detected if "companion: " and the expression are not both in
-		// the same line
-		assert_eq!(
-			companion_parse(
-				"
-				I want to talk about companion: but NOT reference it
-				I submitted it in paritytech/polkadot#1234
-				"
-			),
-			None
-		);
 	}
 }

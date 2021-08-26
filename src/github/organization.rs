@@ -1,13 +1,13 @@
-use crate::{github, Result};
+use super::*;
 
-use super::Bot;
+use crate::error::*;
 
 impl Bot {
-	pub async fn org_membership(
+	pub async fn org_membership<'a>(
 		&self,
-		org: &str,
-		username: &str,
+		args: OrgMembershipArgs<'a>,
 	) -> Result<bool> {
+		let OrgMembershipArgs { org, username } = args;
 		let url = &format!(
 			"{base_url}/orgs/{org}/members/{username}",
 			base_url = self.base_url,

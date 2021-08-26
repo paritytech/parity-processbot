@@ -1,20 +1,17 @@
-use crate::{error, github, Result};
-
-use snafu::{OptionExt, ResultExt};
-
-use super::Bot;
-
-use regex::Regex;
+use super::*;
+use crate::{error::*, types::*};
 
 impl Bot {
-	/// Adds a comment to an issue.
-	pub async fn create_issue_comment(
+	pub async fn create_issue_comment<'a>(
 		&self,
-		owner: &str,
-		repo_name: &str,
-		issue_number: usize,
-		comment: &str,
+		args: CreateIssueCommentArgs<'a>,
 	) -> Result<()> {
+		let CreateIssueCommentArgs {
+			owner,
+			repo_name,
+			issue_number,
+			comment,
+		} = args;
 		let url = format!(
 			"{base}/repos/{owner}/{repo}/issues/{issue_number}/comments",
 			base = self.base_url,

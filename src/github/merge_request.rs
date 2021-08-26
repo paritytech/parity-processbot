@@ -1,34 +1,5 @@
-use super::bot::Bot;
-use crate::{error::*, types::*};
-
-struct WaitToMergeArgs<'a> {
-	owner: &'a str,
-	repo_name: &'a str,
-	number: usize,
-	html_url: &'a str,
-	requested_by: &'a str,
-	commit_sha: &'a str,
-}
-struct PrepareToMergeArgs<'a> {
-	owner: &'a str,
-	repo_name: &'a str,
-	html_url: &'a str,
-	number: usize,
-}
-struct MergeArgs<'a> {
-	owner: &'a str,
-	repo_name: &'a str,
-	pr: &'a PullRequest,
-	requested_by: &'a str,
-	created_approval_id: Option<usize>,
-}
-struct MergeAllowedArgs<'a> {
-	owner: &'a str,
-	repo_name: &'a str,
-	pr: &'a PullRequest,
-	requested_by: &'a str,
-	min_approvals_required: Option<usize>,
-}
+use super::*;
+use crate::{db::*, error::*, types::*};
 
 impl Bot {
 	pub async fn merge_allowed<'a>(
@@ -185,12 +156,15 @@ impl Bot {
 		})
 	}
 
-	pub async fn is_ready_to_merge(
+	pub async fn is_ready_to_merge<'a>(
 		&self,
-		owner: &str,
-		repo_name: &str,
-		pr: &PullRequest,
+		args: IsReadyToMergeArgs<'a>,
 	) -> Result<bool> {
+		let IsReadyToMergeArgs {
+			owner,
+			repo_name,
+			pr,
+		} = args;
 		match pr.head_sha() {
 			Ok(pr_head_sha) => {
 				match get_latest_statuses_state(
@@ -236,25 +210,12 @@ impl Bot {
 			Err(e) => Err(e),
 		}
 		.map_err(|e| {
-			e.map_issue((owner.to_string(), repo_name.to_string(), pr.number))
+			e.map_issue(IssueDetails {
+				owner: owner.to_string(),
+				repo: repo_name.to_string(),
+				number: pr.number,
+			})
 		})
-	}
-
-	pub async fn register_merge_request(
-		mr: MergeRequest,
-		db: &DB,
-	) -> Result<()> {
-		log::info!("Serializing merge request: {:?}", &mr);
-		let bytes = bincode::serialize(mr).context(Bincode).map_err(|e| {
-			e.map_issue((owner.to_string(), repo_name.to_string(), number))
-		})?;
-		log::info!("Writing merge request to db (head sha: {})", &mr.head_sha);
-		db.put(&mr.head_sha.trim().as_bytes(), bytes)
-			.context(Db)
-			.map_err(|e| {
-				e.map_issue((owner.to_string(), repo_name.to_string(), number))
-			})?;
-		Ok(())
 	}
 
 	#[async_recursion]
@@ -430,14 +391,24 @@ impl Bot {
 		args: WaitToMergeArgs<'a>,
 		state: &AppState,
 	) -> Result<()> {
-		log::info!("{} checks incomplete.", html_url);
-		self.register_merge_request(
+		let WaitToMergeArgs {
 			owner,
 			repo_name,
 			number,
 			html_url,
 			requested_by,
-			commit_sha,
+			head_sha,
+		} = args;
+		log::info!("{} checks incomplete.", html_url);
+		register_merge_request(
+			MergeRequest {
+				owner,
+				repo_name,
+				number,
+				html_url,
+				requested_by,
+				head_sha,
+			},
 			db,
 		)
 		.await?;

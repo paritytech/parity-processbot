@@ -464,7 +464,7 @@ pub struct IssueDetails {
 #[derive(Debug)]
 pub struct IssueDetailsWithRepositoryURL {
 	issue: IssueDetails,
-	repo_url: String,
+	html_url: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

@@ -1,13 +1,16 @@
-use crate::{crate::github::Bot, types::Result};
+use super::*;
+use crate::{error::*, types::*};
 
 impl Bot {
-	/// Returns statuses for a reference.
-	pub async fn status(
+	pub async fn status<'a>(
 		&self,
-		owner: &str,
-		repo_name: &str,
-		sha: &str,
+		args: StatusArgs<'a>,
 	) -> Result<CombinedStatus> {
+		let StatusArgs {
+			owner,
+			repo_name,
+			sha,
+		} = args;
 		let url = format!(
 			"{base_url}/repos/{owner}/{repo}/commits/{sha}/status",
 			base_url = self.base_url,
@@ -18,13 +21,15 @@ impl Bot {
 		self.client.get(url).await
 	}
 
-	/// Returns check runs associated for a reference.
-	pub async fn check_runs(
+	pub async fn check_runs<'a>(
 		&self,
-		owner: &str,
-		repo_name: &str,
-		sha: &str,
+		args: StatusArgs<'a>,
 	) -> Result<CheckRuns> {
+		let StatusArgs {
+			owner,
+			repo_name,
+			sha,
+		} = args;
 		let url = format!(
 			"{base_url}/repos/{owner}/{repo}/commits/{sha}/check-runs",
 			base_url = self.base_url,

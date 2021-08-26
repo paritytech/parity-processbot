@@ -1,3 +1,5 @@
+use crate::types::*;
+
 mod bot;
 mod commit;
 mod companion;
@@ -12,4 +14,104 @@ mod review;
 mod team;
 pub mod utils;
 
+pub use bot::Bot;
 pub use bot::Bot as GithubBot;
+
+pub struct WaitToMergeArgs<'a> {
+	owner: &'a str,
+	repo_name: &'a str,
+	number: usize,
+	html_url: &'a str,
+	requested_by: &'a str,
+	head_sha: &'a str,
+}
+
+pub struct PrepareToMergeArgs<'a> {
+	owner: &'a str,
+	repo_name: &'a str,
+	html_url: &'a str,
+	number: usize,
+}
+
+pub struct MergeArgs<'a> {
+	owner: &'a str,
+	repo_name: &'a str,
+	pr: &'a PullRequest,
+	requested_by: &'a str,
+	created_approval_id: Option<usize>,
+}
+
+pub struct MergeAllowedArgs<'a> {
+	owner: &'a str,
+	repo_name: &'a str,
+	pr: &'a PullRequest,
+	requested_by: &'a str,
+	min_approvals_required: Option<usize>,
+}
+
+pub struct CreateIssueCommentArgs<'a> {
+	owner: &'a str,
+	repo_name: &'a str,
+	issue_number: &'a str,
+	comment: &'a str,
+}
+
+pub struct StatusArgs<'a> {
+	owner: &'a str,
+	repo_name: &'a str,
+	sha: &'a str,
+}
+
+pub struct UpdateCompanionRepositoryArgs<'a> {
+	owner: &'a str,
+	owner_repo: &'a str,
+	contributor: &'a str,
+	contributor_repo: &'a str,
+	contributor_branch: &'a str,
+	merge_done_in: &'a str,
+}
+
+pub struct PerformCompanionUpdateArgs<'a> {
+	html_url: &'a str,
+	owner: &'a str,
+	repo: &'a str,
+	number: usize,
+	merge_done_in: &'a str,
+}
+
+pub struct PullRequestArgs<'a> {
+	owner: &'a str,
+	repo_name: &'a str,
+	pull_number: usize,
+}
+
+pub struct MergePullRequestArgs<'a> {
+	owner: &'a str,
+	repo_name: &'a str,
+	head_sha: &'a str,
+	number: usize,
+}
+
+pub struct ApproveMergeRequestArgs<'a> {
+	owner: &'a str,
+	repo_name: &'a str,
+	pr_number: usize,
+}
+
+pub struct ClearBotApprovalArgs<'a> {
+	owner: &'a str,
+	repo_name: &'a str,
+	pr_number: usize,
+	review_id: usize,
+}
+
+pub struct IsReadyToMergeArgs<'a> {
+	owner: &'a str,
+	repo_name: &'a str,
+	pr: &'a PullRequest,
+}
+
+pub struct OrgMembershipArgs<'a> {
+	org: &'a str,
+	username: &'a str,
+}

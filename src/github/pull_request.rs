@@ -1,16 +1,16 @@
-use crate::{error, github, Result};
-
-use snafu::{OptionExt, ResultExt};
-
-use super::Bot;
+use super::*;
+use crate::{error::*, types::*};
 
 impl Bot {
-	pub async fn pull_request(
+	pub async fn pull_request<'a>(
 		&self,
-		owner: &str,
-		repo_name: &str,
-		pull_number: usize,
-	) -> Result<github::PullRequest> {
+		args: PullRequestArgs<'a>,
+	) -> Result<PullRequest> {
+		let PullRequestArgs {
+			owner,
+			repo_name,
+			pull_number,
+		} = args;
 		self.client
 			.get(format!(
 				"{base_url}/repos/{owner}/{repo}/pulls/{pull_number}",
@@ -22,13 +22,16 @@ impl Bot {
 			.await
 	}
 
-	pub async fn merge_pull_request(
+	pub async fn merge_pull_request<'a>(
 		&self,
-		owner: &str,
-		repo_name: &str,
-		number: usize,
-		head_sha: &str,
+		args: MergePullRequestArgs<'a>,
 	) -> Result<()> {
+		let MergePullRequestArgs {
+			owner,
+			repo_name,
+			number,
+			head_sha,
+		} = args;
 		let url = format!(
 			"{base_url}/repos/{owner}/{repo}/pulls/{number}/merge",
 			base_url = self.base_url,
@@ -45,10 +48,13 @@ impl Bot {
 
 	pub async fn approve_merge_request(
 		&self,
-		owner: &str,
-		repo_name: &str,
-		pr_number: usize,
+		args: ApproveMergeRequestArgs<'a>,
 	) -> Result<Review> {
+		let ApproveMergeRequestArgs {
+			owner,
+			repo_name,
+			pr_number,
+		} = args;
 		let url = &format!(
 			"{}/repos/{}/{}/pulls/{}/reviews",
 			self.base_url, owner, repo_name, pr_number
@@ -57,13 +63,16 @@ impl Bot {
 		self.client.post(url, body).await
 	}
 
-	pub async fn clear_bot_approval(
+	pub async fn clear_bot_approval<'a>(
 		&self,
-		owner: &str,
-		repo_name: &str,
-		pr_number: usize,
-		review_id: usize,
+		args: ClearBotApprovalArgs<'a>,
 	) -> Result<Review> {
+		let ClearBotApprovalArgs {
+			owner,
+			repo_name,
+			pr_number,
+			review_id,
+		} = args;
 		let url = &format!(
 			"{}/repos/{}/{}/pulls/{}/reviews/{}/dismissals",
 			self.base_url, owner, repo_name, pr_number, review_id

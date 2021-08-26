@@ -37,14 +37,14 @@ pub fn owner_from_html_url(url: &str) -> Option<&str> {
 	url.split("/").skip(3).next()
 }
 
-fn parse_companion_description(
+pub fn parse_companion_description(
 	body: &str,
 ) -> Option<IssueDetailsWithRepositoryURL> {
 	parse_long_companion_description(body)
 		.or_else(|| parse_short_companion_description(body))
 }
 
-fn parse_long_companion_description(
+pub fn parse_long_companion_description(
 	body: &str,
 ) -> Option<IssueDetailsWithRepositoryURL> {
 	let re = RegexBuilder::new(COMPANION_LONG_REGEX!())
@@ -71,7 +71,7 @@ fn parse_long_companion_description(
 	})
 }
 
-fn parse_short_companion_description(
+pub fn parse_short_companion_description(
 	body: &str,
 ) -> Option<IssueDetailsWithRepositoryURL> {
 	let re = RegexBuilder::new(COMPANION_SHORT_REGEX!())

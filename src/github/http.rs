@@ -46,7 +46,7 @@ macro_rules! impl_methods_with_body {
 				I: Into<Cow<'b, str>> + Clone,
 				B: Serialize + Clone,
 			{
-				// retry up to 5 times if request times out
+				// retry up to N times if request times out
 				let mut retries = 0;
 				'retry: loop {
 					let res = self.execute(
@@ -94,7 +94,6 @@ async fn handle_response(response: Response) -> Result<Response> {
 	}
 }
 
-/// HTTP util methods.
 impl Client {
 	pub fn new(options: ClientOptions) -> Self {
 		let ClientOptions {
@@ -257,8 +256,6 @@ impl Client {
 		handle_response(response).await
 	}
 
-	/// Get a single entry from a resource in GitHub using
-	/// JWT authenication.
 	pub async fn jwt_get<T>(&self, url: impl IntoUrl) -> Result<T>
 	where
 		T: serde::de::DeserializeOwned,
@@ -271,7 +268,6 @@ impl Client {
 			.context(error::Http)
 	}
 
-	/// Posts `body` GitHub to `url` using JWT authenication.
 	pub async fn jwt_post<T>(
 		&self,
 		url: impl IntoUrl,
@@ -288,7 +284,6 @@ impl Client {
 			.context(error::Http)
 	}
 
-	/// Get a single entry from a resource in GitHub.
 	pub async fn get<'b, I, T>(&self, url: I) -> Result<T>
 	where
 		I: Into<Cow<'b, str>> + Clone,
@@ -303,7 +298,6 @@ impl Client {
 		res
 	}
 
-	/// Get a disembodied entry from a resource in GitHub.
 	pub async fn get_status<'b, I>(&self, url: I) -> Result<u16>
 	where
 		I: Into<Cow<'b, str>> + Clone,
