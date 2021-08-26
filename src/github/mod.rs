@@ -11,6 +11,7 @@ mod pull_request;
 mod rebase;
 mod repository;
 mod review;
+mod status;
 mod team;
 pub mod utils;
 
@@ -127,4 +128,16 @@ pub struct RebaseArgs<'a> {
 pub struct RepositoryArgs<'a> {
 	owner: &'a str,
 	repo_name: &'a str,
+}
+
+pub struct GetLatestChecksArgs<'a> {
+	owner: &'a str,
+	repo_name: &'a str,
+	commit_sha: &'a str,
+	html_url: &'a str,
+}
+
+pub struct TeamArgs<'a> {
+	owner: &'a str,
+	slug: &'a str,
 }

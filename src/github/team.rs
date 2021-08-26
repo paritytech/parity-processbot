@@ -1,9 +1,9 @@
-use crate::{github, Result};
-
-use super::Bot;
+use super::*;
+use crate::{error::*, types::*};
 
 impl Bot {
-	pub async fn team(&self, owner: &str, slug: &str) -> Result<github::Team> {
+	pub async fn team<'a>(&self, args: TeamArgs<'a>) -> Result<Team> {
+		let TeamArgs { owner, slug } = args;
 		let url = format!(
 			"{base_url}/orgs/{owner}/teams/{slug}",
 			base_url = self.base_url,
@@ -13,10 +13,7 @@ impl Bot {
 		self.client.get(url).await
 	}
 
-	pub async fn team_members(
-		&self,
-		team_id: usize,
-	) -> Result<Vec<github::User>> {
+	pub async fn team_members(&self, team_id: usize) -> Result<Vec<User>> {
 		self.client
 			.get_all(format!("{}/teams/{}/members", self.base_url, team_id))
 			.await

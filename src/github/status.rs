@@ -1,4 +1,6 @@
-use crate::Bot;
+use super::*;
+
+use crate::{error::*, types::*};
 
 impl Bot {
 	pub async fn check_statuses(
@@ -95,13 +97,16 @@ impl Bot {
 		Ok(())
 	}
 
-	pub async fn get_latest_checks(
+	pub async fn get_latest_checks<'a>(
 		&self,
-		owner: &str,
-		repo_name: &str,
-		commit_sha: &str,
-		html_url: &str,
+		args: GetLatestChecksArgs<'a>,
 	) -> Result<Status> {
+		let GetLatestChecksArgs {
+			owner,
+			repo_name,
+			commit_sha,
+			html_url,
+		} = args;
 		let checks = self.check_runs(&owner, &repo_name, commit_sha).await?;
 		log::info!("{:?}", checks);
 
