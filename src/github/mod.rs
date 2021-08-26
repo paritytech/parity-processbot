@@ -115,3 +115,16 @@ pub struct OrgMembershipArgs<'a> {
 	org: &'a str,
 	username: &'a str,
 }
+
+pub struct RebaseArgs<'a> {
+	base_owner: &'a str,
+	base_repo: &'a str,
+	head_owner: &'a str,
+	head_repo: &'a str,
+	branch: &'a str,
+}
+
+pub struct RepositoryArgs<'a> {
+	owner: &'a str,
+	repo_name: &'a str,
+}
