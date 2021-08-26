@@ -1,7 +1,6 @@
 use async_recursion::async_recursion;
 use futures::StreamExt;
 use hyper::{Body, Request, Response, StatusCode};
-use itertools::Itertools;
 use regex::RegexBuilder;
 use ring::hmac;
 use rocksdb::DB;
@@ -29,7 +28,6 @@ struct ProcessCommentArgs<'a> {
 	html_url: &'a str,
 	repo_url: &'a str,
 	requested_by: &'a str,
-	login: &'a str,
 	number: &'a usize,
 }
 async fn process_comment<'a>(
@@ -50,15 +48,18 @@ async fn process_comment<'a>(
 			msg: format!("Failed parsing owner in url: {}", html_url),
 		})?;
 
-	let repo_name =
-		repo_url.rsplit('/').next().map(|s| s.to_string()).context(
-			Message {
-				msg: format!("Failed parsing repo name in url: {}", repo_url),
-			},
-		)?;
+	let repo_name = repo_url.rsplit('/').next().context(Message {
+		msg: format!("Failed parsing repo name in url: {}", repo_url),
+	})?;
 
 	// Fetch the pr to get all fields (eg. mergeable).
-	let pr = github_bot.pull_request(owner, &repo_name, number).await?;
+	let pr = github_bot
+		.pull_request(PullRequestArgs {
+			owner,
+			repo_name,
+			number,
+		})
+		.await?;
 
 	let auth =
 		GithubUserAuthenticator::new(requested_by, owner, &repo_name, number);
@@ -72,22 +73,37 @@ async fn process_comment<'a>(
 
 		auth.check_org_membership(&github_bot).await?;
 
-		merge_allowed(github_bot, owner, &repo_name, pr, requested_by, None)
+		github_bot
+			.merge_allowed(MergeAllowedArgs {
+				owner,
+				repo_name,
+				pr,
+				requested_by,
+				min_approvals_required: None,
+			})
 			.await??;
 
 		if is_ready_to_merge(github_bot, owner, &repo_name, pr).await? {
-			prepare_to_merge(
-				github_bot,
-				owner,
-				&repo_name,
-				pr.number,
-				&pr.html_url,
-			)
-			.await?;
+			github_bot
+				.prepare_to_merge(PrepareToMergeArgs {
+					owner,
+					repo_name,
+					number: pr.number,
+					html_url: &pr.html_url,
+				})
+				.await?;
 
-			match merge(github_bot, owner, &repo_name, pr, requested_by, None)
+			match github_bot
+				.merge(MergeArgs {
+					owner,
+					repo_name,
+					pr,
+					requested_by,
+					created_approval_id: None,
+				})
 				.await?
 			{
+				Ok(_) => (),
 				// If the merge failure will be solved later, then register the PR in the database so that
 				// it'll eventually resume processing when later statuses arrive
 				Err(MergeError::FailureWillBeSolvedLater) => {
@@ -103,7 +119,6 @@ async fn process_comment<'a>(
 					return Err(Error::Skipped);
 				}
 				Err(MergeError::Error(e)) => return Err(e),
-				_ => (),
 			}
 
 			update_companion(github_bot, &repo_name, pr, db).await?;
@@ -132,26 +147,39 @@ async fn process_comment<'a>(
 
 		auth.check_org_membership(&github_bot).await?;
 
-		merge_allowed(github_bot, owner, &repo_name, &pr, requested_by, None)
+		github_bot
+			.merge_allowed(MergeAllowedArgs {
+				owner,
+				repo_name,
+				pr,
+				requested_by,
+				min_approvals_required: None,
+			})
 			.await??;
 
-		prepare_to_merge(
-			github_bot,
-			owner,
-			&repo_name,
-			pr.number,
-			&pr.html_url,
-		)
-		.await?;
+		github_bot
+			.prepare_to_merge(
+				github_bot,
+				PrepareToMergeArgs {
+					owner,
+					repo_name,
+					number: pr.number,
+					html_url: &pr.html_url,
+				},
+			)
+			.await?;
 
 		match merge(github_bot, owner, &repo_name, &pr, requested_by, None)
 			.await?
 		{
+			Ok(_) => Ok(()),
 			// Even if the merge failure can be solved later, it does not matter because `merge force` is
 			// supposed to be immediate. We should give up here and yield the error message.
-			Err(Error::MergeFailureWillBeSolvedLater { msg }) => {
-				return Err(Error::MergeAttemptFailed {
-					source: Box::new(Error::Message { msg }),
+			Err(MergeError::FailureWillBeSolvedLater) => {
+				Err(Error::MergeAttemptFailed {
+					source: Box::new(Error::Message {
+						msg: "Pull request is not mergeable",
+					}),
 					commit_sha: pr.head_sha()?.to_owned(),
 					owner: owner.to_string(),
 					repo: repo_name.to_string(),
@@ -164,9 +192,9 @@ async fn process_comment<'a>(
 					pr.number,
 				)))
 			}
-			Err(e) => return Err(e),
-			_ => (),
-		}
+			Err(MergeError::Error(e)) => Err(e),
+		}?;
+
 		update_companion(github_bot, &repo_name, &pr, db).await?;
 	} else if body.to_lowercase().trim()
 		== AUTO_MERGE_CANCEL.to_lowercase().trim()
@@ -180,17 +208,14 @@ async fn process_comment<'a>(
 		);
 		log::info!("Deleting merge request for {}", html_url);
 		db.delete(pr_head_sha.as_bytes()).context(Db)?;
-		let _ = github_bot
-			.create_issue_comment(
+		github_bot
+			.create_issue_comment(CreateIssueCommentArgs {
 				owner,
-				&repo_name,
-				pr.number,
-				"Merge cancelled.",
-			)
-			.await
-			.map_err(|e| {
-				log::error!("Error posting comment: {}", e);
-			});
+				repo_name: &repo_name,
+				number: pr.number,
+				body: "Merge cancelled.",
+			})
+			.await?;
 	} else if body.to_lowercase().trim() == REBASE.to_lowercase().trim() {
 		log::info!("Rebase {} requested by {}", html_url, requested_by);
 		{
@@ -213,16 +238,13 @@ async fn process_comment<'a>(
 			} = pr.clone()
 			{
 				let _ = github_bot
-					.create_issue_comment(
+					.create_issue_comment(CreateIssueCommentArgs {
 						owner,
-						&repo_name,
-						pr.number,
-						"Rebasing.",
-					)
-					.await
-					.map_err(|e| {
-						log::error!("Error posting comment: {}", e);
-					});
+						repo_name,
+						number: pr.number,
+						body: "Rebasing.",
+					})
+					.await?;
 				rebase(
 					github_bot,
 					owner,
@@ -266,6 +288,7 @@ async fn process_payload(payload: Payload, state: &AppState) -> Result<()> {
 						Some(User {
 							ref login,
 							ref type_field,
+							..
 						}),
 					..
 				},
@@ -278,14 +301,15 @@ async fn process_payload(payload: Payload, state: &AppState) -> Result<()> {
 					html_url,
 					repository_url: Some(repo_url),
 					pull_request: Some(_),
-				} => process_comment(ProcessCommentArgs {
-					body,
-					login,
-					number,
-					html_url,
-					repo_url,
+				} => process_comment(
+					ProcessCommentArgs {
+						body,
+						number,
+						html_url,
+						repo_url,
+					},
 					state,
-				})
+				)
 				.await
 				.map_err(|e| match e {
 					Error::WithIssue { .. } => e,

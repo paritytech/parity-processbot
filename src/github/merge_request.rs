@@ -429,7 +429,7 @@ impl Bot {
 		Ok(())
 	}
 
-	async fn prepare_to_merge<'a>(
+	pub async fn prepare_to_merge<'a>(
 		&self,
 		args: PrepareToMergeArgs<'a>,
 	) -> Result<()> {

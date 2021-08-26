@@ -10,7 +10,7 @@ impl Bot {
 			owner,
 			repo_name,
 			issue_number,
-			comment,
+			comment: body,
 		} = args;
 		let url = format!(
 			"{base}/repos/{owner}/{repo}/issues/{issue_number}/comments",
@@ -20,7 +20,7 @@ impl Bot {
 			issue_number = issue_number
 		);
 		self.client
-			.post_response(&url, &serde_json::json!({ "body": comment }))
+			.post_response(&url, &serde_json::json!({ "body": body }))
 			.await
 			.map(|_| ())
 	}

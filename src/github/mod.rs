@@ -56,7 +56,7 @@ pub struct CreateIssueCommentArgs<'a> {
 	owner: &'a str,
 	repo_name: &'a str,
 	issue_number: &'a str,
-	comment: &'a str,
+	body: &'a str,
 }
 
 pub struct StatusArgs<'a> {
