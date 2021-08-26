@@ -1,6 +1,8 @@
-use crate::github::GithubBot;
-use crate::{constants::BOT_COMMANDS, error::*, Result, PR_HTML_URL_REGEX};
+use crate::{
+	constants::*, error::*, github::GithubBot, types::*, PR_HTML_URL_REGEX,
+};
 use regex::Regex;
+use rocksdb::DB;
 use serde::{Deserialize, Serialize};
 use snafu::OptionExt;
 
@@ -473,6 +475,7 @@ pub struct MergeRequest {
 	number: usize,
 	html_url: String,
 	requested_by: String,
+	head_sha: String,
 }
 
 pub enum Status {

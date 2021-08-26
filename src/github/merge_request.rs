@@ -1,12 +1,48 @@
+use super::bot::Bot;
+use crate::{error::*, types::*};
+
+struct WaitToMergeArgs<'a> {
+	owner: &'a str,
+	repo_name: &'a str,
+	number: usize,
+	html_url: &'a str,
+	requested_by: &'a str,
+	commit_sha: &'a str,
+}
+struct PrepareToMergeArgs<'a> {
+	owner: &'a str,
+	repo_name: &'a str,
+	html_url: &'a str,
+	number: usize,
+}
+struct MergeArgs<'a> {
+	owner: &'a str,
+	repo_name: &'a str,
+	pr: &'a PullRequest,
+	requested_by: &'a str,
+	created_approval_id: Option<usize>,
+}
+struct MergeAllowedArgs<'a> {
+	owner: &'a str,
+	repo_name: &'a str,
+	pr: &'a PullRequest,
+	requested_by: &'a str,
+	min_approvals_required: Option<usize>,
+}
+
 impl Bot {
-	pub async fn merge_allowed(
+	pub async fn merge_allowed<'a>(
 		&self,
-		owner: &str,
-		repo_name: &str,
-		pr: &PullRequest,
-		requested_by: &str,
-		min_approvals_required: Option<usize>,
+		args: MergeAllowedArgs<'a>,
 	) -> Result<Result<Option<String>>> {
+		let MergeAllowedArgs {
+			owner,
+			repo_name,
+			pr,
+			requested_by,
+			min_approvals_required,
+		} = args;
+
 		let is_mergeable = pr.mergeable.unwrap_or(false);
 
 		if let Some(min_approvals_required) = &min_approvals_required {
@@ -205,27 +241,15 @@ impl Bot {
 	}
 
 	pub async fn register_merge_request(
-		owner: &str,
-		repo_name: &str,
-		number: usize,
-		html_url: &str,
-		requested_by: &str,
-		commit_sha: &str,
+		mr: MergeRequest,
 		db: &DB,
 	) -> Result<()> {
-		let m = MergeRequest {
-			owner: owner.to_string(),
-			repo_name: repo_name.to_string(),
-			number: number,
-			html_url: html_url.to_string(),
-			requested_by: requested_by.to_string(),
-		};
-		log::info!("Serializing merge request: {:?}", m);
-		let bytes = bincode::serialize(&m).context(Bincode).map_err(|e| {
+		log::info!("Serializing merge request: {:?}", &mr);
+		let bytes = bincode::serialize(mr).context(Bincode).map_err(|e| {
 			e.map_issue((owner.to_string(), repo_name.to_string(), number))
 		})?;
-		log::info!("Writing merge request to db (head sha: {})", commit_sha);
-		db.put(commit_sha.trim().as_bytes(), bytes)
+		log::info!("Writing merge request to db (head sha: {})", &mr.head_sha);
+		db.put(&mr.head_sha.trim().as_bytes(), bytes)
 			.context(Db)
 			.map_err(|e| {
 				e.map_issue((owner.to_string(), repo_name.to_string(), number))
@@ -234,14 +258,17 @@ impl Bot {
 	}
 
 	#[async_recursion]
-	pub async fn merge(
+	pub async fn merge<'a>(
 		&self,
-		owner: &str,
-		repo_name: &str,
-		pr: &PullRequest,
-		requested_by: &str,
-		created_approval_id: Option<usize>,
+		args: MergeArgs<'a>,
 	) -> Result<Result<(), MergeError>> {
+		let MergeArgs {
+			owner,
+			repo_name,
+			pr,
+			requested_by,
+			created_approval_id,
+		} = args;
 		match pr.head_sha() {
 				Ok(pr_head_sha) => match self
 					.merge_pull_request(owner, repo_name, pr.number, pr_head_sha)
@@ -398,18 +425,13 @@ impl Bot {
 			})
 	}
 
-	pub async fn wait_to_merge(
+	pub async fn wait_to_merge<'a>(
 		&self,
-		owner: &str,
-		repo_name: &str,
-		number: usize,
-		html_url: &str,
-		requested_by: &str,
-		commit_sha: &str,
-		db: &DB,
+		args: WaitToMergeArgs<'a>,
+		state: &AppState,
 	) -> Result<()> {
 		log::info!("{} checks incomplete.", html_url);
-		register_merge_request(
+		self.register_merge_request(
 			owner,
 			repo_name,
 			number,
@@ -434,13 +456,16 @@ impl Bot {
 		Ok(())
 	}
 
-	async fn prepare_to_merge(
+	async fn prepare_to_merge<'a>(
 		&self,
-		owner: &str,
-		repo_name: &str,
-		number: usize,
-		html_url: &str,
+		args: PrepareToMergeArgs<'a>,
 	) -> Result<()> {
+		let PrepareToMergeArgs {
+			owner,
+			repo_name,
+			number,
+			html_url,
+		} = args;
 		log::info!("{} checks successful; trying merge.", html_url);
 		let _ = self
 			.create_issue_comment(owner, &repo_name, number, "Trying merge.")

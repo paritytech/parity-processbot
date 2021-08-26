@@ -11,8 +11,8 @@ use std::{collections::HashMap, sync::Arc};
 use tokio::sync::Mutex;
 
 use crate::{
-	companion::*, constants::*, error::MergeError, github::GithubBot,
-	rebase::*, types::*, vanity_service, Result, Status,
+	constants::*, error::MergeError, github::GithubBot, types::*,
+	vanity_service,
 };
 
 async fn process_checks(
@@ -32,7 +32,7 @@ struct ProcessCommentArgs<'a> {
 	html_url: &'a str,
 	repo_url: &'a str,
 	requested_by: &'a str,
-	number: usize,
+	number: &'a usize,
 }
 async fn process_comment<'a>(
 	args: ProcessCommentArgs<'a>,
@@ -47,7 +47,7 @@ async fn process_comment<'a>(
 	} = args;
 	let AppState { db, github_bot, .. } = state;
 
-	let owner = owner_from_html_url(html_url).context(Message {
+	let owner = parse_owner_from_html_url(html_url).context(Message {
 		msg: format!("Failed parsing owner in url: {}", html_url),
 	})?;
 
@@ -279,9 +279,14 @@ async fn process_payload(payload: Payload, state: &AppState) -> Result<()> {
 					html_url,
 					repository_url: Some(repo_url),
 					pull_request: Some(_),
-				} => process_comment(
-					body, login, *number, html_url, repo_url, state,
-				)
+				} => process_comment(ProcessCommentArgs {
+					body,
+					login,
+					number,
+					html_url,
+					repo_url,
+					state,
+				})
 				.await
 				.map_err(|e| match e {
 					Error::WithIssue { .. } => e,

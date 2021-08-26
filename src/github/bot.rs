@@ -1,7 +1,7 @@
-use crate::self::http;
+use super::http::Client;
 
 pub struct Bot {
-	pub client: http::Client,
+	pub client: Client,
 	pub base_url: String,
 	pub base_html_url: String,
 }
@@ -13,7 +13,7 @@ impl Bot {
 		base_url: String,
 		base_html_url: String,
 	) -> Result<Self> {
-		let client = http::Client::new(private_key.into(), installation_login);
+		let client = Client::new(private_key.into(), installation_login);
 
 		Ok(Self {
 			client,

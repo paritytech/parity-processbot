@@ -1,5 +1,7 @@
 mod bot;
 mod commit;
+mod companion;
+mod http;
 mod issue;
 mod merge_request;
 mod organization;
@@ -8,6 +10,6 @@ mod rebase;
 mod repository;
 mod review;
 mod team;
-mod utils;
+pub mod utils;
 
 pub use bot::Bot as GithubBot;
