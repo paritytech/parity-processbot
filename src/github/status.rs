@@ -73,34 +73,37 @@ impl Bot {
 				})
 				.await
 			{
-				Ok(pr) => match pr.head_sha() {
-					Ok(pr_head_sha) => {
-						if head_sha != pr_head_sha {
-							Err(Error::UnregisterPullRequest {
+				Ok(pr) => {
+					match pr.head_sha() {
+						Ok(pr_head_sha) => {
+							if head_sha != pr_head_sha {
+								Err(Error::UnregisterPullRequest {
 							  commit_sha: head_sha,
-								message: "HEAD commit changed before the merge could happen".to_string(),
+								msg: "HEAD commit changed before the merge could happen".to_string(),
 							})
-						} else {
-							let statuses_state = self
-								.get_latest_statuses_state(
-									GetLatestStatusesStateArgs {
-										owner,
-										repo_name,
-										commit_sha,
-										html_url,
-									},
-								)
-								.await;
-							match statuses_state {
-								Ok(status) => match status {
-									Status::Success => match get_latest_checks(
-										self, &owner, &repo_name, commit_sha,
-										&html_url,
+							} else {
+								let statuses_state = self
+									.get_latest_statuses_state(
+										GetLatestStatusesStateArgs {
+											owner,
+											repo_name,
+											commit_sha,
+											html_url,
+										},
 									)
-									.await
+									.await;
+								match statuses_state {
+								Ok(outcome) => match outcome {
+									Outcome::Success => match self
+										.get_latest_checks(
+												GetLatestChecksArgs {
+														owner, repo_name, commit_sha, html_url
+												}
+										)
+										.await
 									{
 										Ok(status) => match status {
-											Status::Success => {
+											Outcome::Success => {
 												merge(
 													self,
 													&owner,
@@ -118,11 +121,11 @@ impl Bot {
 												)
 												.await
 											}
-											Status::Failure => Err(
+											Outcome::Failure => Err(
 												Error::UnregisterPullRequest {
 													commit_sha: commit_sha
 														.to_string(),
-													message: "Statuses failed"
+													msg: "Statuses failed"
 														.to_string(),
 												},
 											),
@@ -130,21 +133,21 @@ impl Bot {
 										},
 										Err(e) => Err(e),
 									},
-									Status::Failure => {
+									Outcome::Failure => {
 										Err(Error::UnregisterPullRequest {
 											commit_sha: commit_sha.to_string(),
-											message: "Statuses failed"
-												.to_string(),
+											msg: "Statuses failed".to_string(),
 										})
 									}
 									_ => Ok(()),
 								},
 								Err(e) => Err(e),
 							}
+							}
 						}
+						Err(e) => Err(e),
 					}
-					Err(e) => Err(e),
-				},
+				}
 				Err(e) => Err(e),
 			}
 			.map_err(|e| {
@@ -162,14 +165,20 @@ impl Bot {
 	pub async fn get_latest_checks<'a>(
 		&self,
 		args: GetLatestChecksArgs<'a>,
-	) -> Result<Status> {
+	) -> Result<Outcome> {
 		let GetLatestChecksArgs {
 			owner,
 			repo_name,
 			commit_sha,
 			html_url,
 		} = args;
-		let checks = self.check_runs(&owner, &repo_name, commit_sha).await?;
+		let checks = self
+			.check_runs(StatusArgs {
+				owner,
+				repo_name,
+				commit_sha,
+			})
+			.await?;
 		log::info!("{:?}", checks);
 
 		// Since Github only considers the latest instance of each check, we should abide by the same
@@ -193,16 +202,16 @@ impl Bot {
 				*conclusion == Some(CheckRunConclusion::Success)
 			}) {
 				log::info!("{} has successful checks", html_url);
-				Status::Success
+				Outcome::Success
 			} else if latest_checks
 				.values()
-				.all(|(_, status, _)| *status == CheckRunStatus::Completed)
+				.all(|(_, status, _)| *status == CheckRunOutcome::Completed)
 			{
 				log::info!("{} has unsuccessful checks", html_url);
-				Status::Failure
+				Outcome::Failure
 			} else {
 				log::info!("{} has pending checks", html_url);
-				Status::Pending
+				Outcome::Pending
 			},
 		)
 	}

@@ -258,8 +258,8 @@ impl Bot {
 					)
 					.await
 				{
-					Ok(status) => match status {
-						Status::Success => {
+					Ok(outcome) => match outcome {
+						Outcome::Success => {
 							match get_latest_checks(
 								self,
 								owner,
@@ -270,11 +270,11 @@ impl Bot {
 							.await
 							{
 								Ok(status) => match status {
-									Status::Success => Ok(true),
-									Status::Failure => {
+									Outcome::Success => Ok(true),
+									Outcome::Failure => {
 										Err(Error::UnregisterPullRequest {
 											commit_sha: pr_head_sha.to_string(),
-											message: "Statuses failed",
+											msg: "Statuses failed",
 										})
 									}
 									_ => Ok(false),
@@ -282,9 +282,9 @@ impl Bot {
 								Err(e) => Err(e),
 							}
 						}
-						Status::Failure => Err(Error::UnregisterPullRequest {
+						Outcome::Failure => Err(Error::UnregisterPullRequest {
 							commit_sha: pr_head_sha.to_string(),
-							message: "Statuses failed",
+							msg: "Statuses failed",
 						}),
 						_ => Ok(false),
 					},

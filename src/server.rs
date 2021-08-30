@@ -1,10 +1,7 @@
-use crate::{
-	error::{handle_error, HttpSnafu},
-	webhook, AppState,
-};
+use crate::{error::*, webhook, AppState};
 use async_std::pin::Pin;
 use futures_util::{
-	io::{AsyncRead, AsyncWrite},
+	io::{self, AsyncRead, AsyncWrite},
 	stream::Stream,
 };
 use hyper::{
@@ -12,6 +9,7 @@ use hyper::{
 	Body, Request, Response, Server,
 };
 use reqwest::Response;
+use snafu::ResultExt;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::task::Poll;
@@ -69,69 +67,50 @@ impl tokio::io::AsyncWrite for TcpStream {
 	}
 }
 
-#[derive(Debug)]
-pub enum Error {
-	Hyper(hyper::Error),
-	Http(hyper::http::Error),
-	Io(std::io::Error),
-	PortInUse(SocketAddr),
-}
-
-impl std::fmt::Display for Error {
-	fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
-		write!(fmt, "{:?}", self)
-	}
-}
-
-impl std::error::Error for Error {
-	fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-		match self {
-			Error::Hyper(error) => Some(error),
-			Error::Http(error) => Some(error),
-			Error::Io(error) => Some(error),
-			Error::PortInUse(_) => None,
-		}
-	}
-}
-
-pub async fn init_server(addr: SocketAddr, state: Arc<Mutex<AppState>>) {
+pub async fn init_server(
+	addr: SocketAddr,
+	state: Arc<Mutex<AppState>>,
+) -> Result<()> {
 	let listener = async_std::net::TcpListener::bind(&addr)
 		.await
-		.map_err(|_| Error::PortInUse(addr))?;
-
-	log::info!("Listening on {}", addr);
+		.context(IoSnafu)?;
 
 	let service = make_service_fn(move |_| {
 		let state = Arc::clone(&state);
 		async move {
-			Ok::<_, hyper::Error>(service_fn(move |req: Request<Body>| {
-				let result = match req.uri().path() {
-					"/webhook" => {
-						match webhook::handle_request(req, state).await {
-							Ok(_) => Response::builder()
-								.status(StatusCode::OK)
-								.body(Body::from(""))
-								.context(HttpSnafu),
-							Err(e) => Err(e),
+			Ok::<_, hyper::Error>(service_fn(
+				async move |req: Request<Body>| {
+					let result = match req.uri().path() {
+						"/webhook" => {
+							match webhook::handle_request(req, state).await {
+								Ok(_) => Response::builder()
+									.status(StatusCode::OK)
+									.body(Body::from(""))
+									.context(HttpSnafu),
+								Err(e) => Err(e),
+							}
 						}
-					}
-					_ => Ok(Response::builder()
-						.status(StatusCode::NOT_FOUND)
-						.body(Body::from("Not found."))
-						.ok()
-						.context(HttpSnafu)),
-				};
+						_ => Ok(Response::builder()
+							.status(StatusCode::NOT_FOUND)
+							.body(Body::from("Not found."))
+							.context(HttpSnafu)),
+					};
 
-				match result.flatten() {
-					Ok(response) => response,
-					Err(error) => handle_error(e, state).await,
-				};
-			}));
+					match result.flatten() {
+						Ok(response) => response,
+						Err(error) => handle_error(e, state).await,
+					};
+				},
+			));
 		}
 	});
 
-	let _ = Server::builder(Incoming(listener.incoming()))
+	log::info!("Listening on {}", addr);
+
+	Server::builder(Incoming(listener.incoming()))
 		.http1_half_close(true)
 		.serve(service)
-		.await;
+		.await
+		.map(|_| ())
+		.context(HyperSnafu)
 }

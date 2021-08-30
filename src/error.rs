@@ -32,11 +32,20 @@ pub enum Error {
 		body: serde_json::Value,
 	},
 
-	#[snafu(display("Http: {}", source))]
-	Http { source: reqwest::Error },
+	#[snafu(display("Reqwest: {}", source))]
+	Reqwest { source: reqwest::Error },
+
+	#[snafu(display("Hyper: {}", source))]
+	Hyper { source: hyper::Error },
+
+	#[snafu(display("Hyper: {}", source))]
+	Http { source: hyper::http::Error },
 
 	#[snafu(display("Tokio: {}", source))]
 	Tokio { source: tokio::io::Error },
+
+	#[snafu(display("Io: {}", source))]
+	Io { source: std::io::Error },
 
 	#[snafu(display("Db: {}", source))]
 	Db { source: rocksdb::Error },
