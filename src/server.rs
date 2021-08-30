@@ -1,5 +1,7 @@
-use crate::{error::handle_error, webhook::handle_webhook, AppState};
-use anyhow::Result;
+use crate::{
+	error::{handle_error, HttpSnafu},
+	webhook, AppState,
+};
 use async_std::pin::Pin;
 use futures_util::{
 	io::{AsyncRead, AsyncWrite},
@@ -7,8 +9,9 @@ use futures_util::{
 };
 use hyper::{
 	service::{make_service_fn, service_fn},
-	Body, Request, Server,
+	Body, Request, Response, Server,
 };
+use reqwest::Response;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::task::Poll;
@@ -91,39 +94,7 @@ impl std::error::Error for Error {
 	}
 }
 
-fn handle_request(req: Request<Body>, state: Arc<Mutex<AppState>>) {
-	let state = Arc::clone(&state);
-
-	let result = match req.uri().path() {
-		"/webhook" => match handle_webhook(req, state).await {
-			Ok(_) => Response::builder()
-				.status(StatusCode::OK)
-				.body(Body::from(""))
-				.ok()
-				.context(crate::error::Error::Message {
-					msg: format!("Error building response"),
-				}),
-			Err(e) => Err(e),
-		},
-		_ => Ok(Response::builder()
-			.status(StatusCode::NOT_FOUND)
-			.body(Body::from("Not found."))
-			.ok()
-			.context(crate::error::Error::Message {
-				msg: format!("Error building response"),
-			})),
-	};
-
-	match result.flatten() {
-		Ok(response) => response,
-		Err(error) => handle_error(e, state).await,
-	}
-}
-
-pub async fn init_server(
-	addr: SocketAddr,
-	state: Arc<Mutex<AppState>>,
-) -> anyhow::Result<()> {
+pub async fn init_server(addr: SocketAddr, state: Arc<Mutex<AppState>>) {
 	let listener = async_std::net::TcpListener::bind(&addr)
 		.await
 		.map_err(|_| Error::PortInUse(addr))?;
@@ -134,15 +105,33 @@ pub async fn init_server(
 		let state = Arc::clone(&state);
 		async move {
 			Ok::<_, hyper::Error>(service_fn(move |req: Request<Body>| {
-				handle_request(req, Arc::clone(&state))
+				let result = match req.uri().path() {
+					"/webhook" => {
+						match webhook::handle_request(req, state).await {
+							Ok(_) => Response::builder()
+								.status(StatusCode::OK)
+								.body(Body::from(""))
+								.context(HttpSnafu),
+							Err(e) => Err(e),
+						}
+					}
+					_ => Ok(Response::builder()
+						.status(StatusCode::NOT_FOUND)
+						.body(Body::from("Not found."))
+						.ok()
+						.context(HttpSnafu)),
+				};
+
+				match result.flatten() {
+					Ok(response) => response,
+					Err(error) => handle_error(e, state).await,
+				};
 			}));
 		}
 	});
 
-	Server::builder(Incoming(listener.incoming()))
+	let _ = Server::builder(Incoming(listener.incoming()))
 		.http1_half_close(true)
 		.serve(service)
-		.boxed()
-		.await
-		.context(format!("Server error"))
+		.await;
 }

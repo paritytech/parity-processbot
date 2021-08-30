@@ -5,6 +5,7 @@ use snafu::Snafu;
 // This enum is exclusive for unactionable errors which should stop the webhook payload from being
 // processed at once.
 #[derive(Debug, Snafu)]
+#[snafu(visibility(pub))]
 pub enum Error {
 	#[snafu(display("WithIssue: {}", source))]
 	WithIssue {
@@ -22,15 +23,8 @@ pub enum Error {
 		pr_number: usize,
 	},
 
-	#[snafu(display("Error getting organization membership: {}", source))]
-	OrganizationMembership {
-		source: Box<Error>,
-	},
-
 	#[snafu(display("{}", msg))]
-	Message {
-		msg: String,
-	},
+	Message { msg: String },
 
 	#[snafu(display("Status code: {}\nBody:\n{:#?}", status, body,))]
 	Response {
@@ -39,38 +33,25 @@ pub enum Error {
 	},
 
 	#[snafu(display("Http: {}", source))]
-	Http {
-		source: reqwest::Error,
-	},
+	Http { source: reqwest::Error },
 
 	#[snafu(display("Tokio: {}", source))]
-	Tokio {
-		source: tokio::io::Error,
-	},
+	Tokio { source: tokio::io::Error },
 
 	#[snafu(display("Db: {}", source))]
-	Db {
-		source: rocksdb::Error,
-	},
+	Db { source: rocksdb::Error },
 
 	#[snafu(display("Utf8: {}", source))]
-	Utf8 {
-		source: std::string::FromUtf8Error,
-	},
+	Utf8 { source: std::string::FromUtf8Error },
 
 	#[snafu(display("Json: {}", source))]
-	Json {
-		source: serde_json::Error,
-	},
+	Json { source: serde_json::Error },
 
-	Jwt {
-		source: jsonwebtoken::errors::Error,
-	},
+	#[snafu(display("Jwt: {}", source))]
+	Jwt { source: jsonwebtoken::errors::Error },
 
 	#[snafu(display("Bincode: {}", source))]
-	Bincode {
-		source: bincode::Error,
-	},
+	Bincode { source: bincode::Error },
 
 	#[snafu(display(
 		"Command '{}' failed with status {:?}; output: {}",
@@ -84,11 +65,10 @@ pub enum Error {
 		err: String,
 	},
 
-	UnregisterPullRequest {
-		commit_sha: String,
-		message: String,
-	},
+	#[snafu(display("UnregisterPullRequest: {}", source))]
+	UnregisterPullRequest { commit_sha: String, msg: String },
 
+	#[snafu(display("Skipped: {}", source))]
 	Skipped,
 }
 
@@ -104,7 +84,6 @@ impl Error {
 	}
 }
 
-#[derive(Debug, Snafu)]
 pub enum MergeError {
 	FailureWillBeSolvedLater,
 	Error(Error),
@@ -182,7 +161,6 @@ async fn process_error(err: Error, state: &AppState) -> Option<String> {
 			body: serde_json::Value::Object(m),
 			..
 		} => Some(format!("Response error: `{}`", m["message"])),
-		Error::OrganizationMembership { .. }
 		| Error::CompanionUpdate { .. }
 		| Error::Message { .. }
 		| Error::Rebase { .. } => Some(format!("Error: {}", err)),

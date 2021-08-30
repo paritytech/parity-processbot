@@ -47,7 +47,7 @@ impl Bot {
 		commit_sha: &str,
 	) -> Result<()> {
 		if let Some(pr_bytes) = db.get(commit_sha.as_bytes()).context(Db)? {
-			let m = bincode::deserialize(&pr_bytes).context(error::Bincode)?;
+			let m = bincode::deserialize(&pr_bytes).context(BincodeSnafu)?;
 			log::info!("Deserialized merge request: {:?}", m);
 			let MergeRequest {
 				owner,
@@ -81,11 +81,17 @@ impl Bot {
 								message: "HEAD commit changed before the merge could happen".to_string(),
 							})
 						} else {
-							match get_latest_statuses_state(
-								self, &owner, &repo_name, commit_sha, &html_url,
-							)
-							.await
-							{
+							let statuses_state = self
+								.get_latest_statuses_state(
+									GetLatestStatusesStateArgs {
+										owner,
+										repo_name,
+										commit_sha,
+										html_url,
+									},
+								)
+								.await;
+							match statuses_state {
 								Ok(status) => match status {
 									Status::Success => match get_latest_checks(
 										self, &owner, &repo_name, commit_sha,
@@ -141,7 +147,13 @@ impl Bot {
 				},
 				Err(e) => Err(e),
 			}
-			.map_err(|e| e.map_issue((owner, repo_name, number)))?;
+			.map_err(|e| {
+				e.map_issue(IssueDetails {
+					owner,
+					repo_name,
+					number,
+				})
+			})?;
 		}
 
 		Ok(())
@@ -198,7 +210,7 @@ impl Bot {
 	pub async fn get_latest_statuses_state<'a>(
 		&self,
 		args: GetLatestStatusesStateArgs<'a>,
-	) -> Result<Status> {
+	) -> Result<Outcome> {
 		let GetLatestStatusesStateArgs {
 			owner,
 			owner_repo,
@@ -249,16 +261,16 @@ impl Bot {
 				.all(|(_, state)| *state == StatusState::Success)
 			{
 				log::info!("{} has success status", html_url);
-				Status::Success
+				Outcome::Success
 			} else if latest_statuses
 				.values()
 				.any(|(_, state)| *state == StatusState::Pending)
 			{
 				log::info!("{} has pending status", html_url);
-				Status::Pending
+				Outcome::Pending
 			} else {
 				log::info!("{} has failed status", html_url);
-				Status::Failure
+				Outcome::Failure
 			},
 		)
 	}

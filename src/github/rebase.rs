@@ -25,9 +25,9 @@ async fn rebase_inner<'a>(&self, args: RebaseArgs<'a>) -> Result<()> {
 			repo = base_repo,
 		))
 		.spawn()
-		.context(error::Tokio)?
+		.context(TokioSnafu)?
 		.await
-		.context(error::Tokio)?;
+		.context(TokioSnafu)?;
 	// add temp remote
 	log::info!("Adding temp remote.");
 	Command::new("git")
@@ -42,9 +42,9 @@ async fn rebase_inner<'a>(&self, args: RebaseArgs<'a>) -> Result<()> {
 		))
 		.current_dir(format!("./{}", base_repo))
 		.spawn()
-		.context(error::Tokio)?
+		.context(TokioSnafu)?
 		.await
-		.context(error::Tokio)?;
+		.context(TokioSnafu)?;
 	// fetch temp
 	log::info!("Fetching temp.");
 	Command::new("git")
@@ -52,9 +52,9 @@ async fn rebase_inner<'a>(&self, args: RebaseArgs<'a>) -> Result<()> {
 		.arg("temp")
 		.current_dir(format!("./{}", base_repo))
 		.spawn()
-		.context(error::Tokio)?
+		.context(TokioSnafu)?
 		.await
-		.context(error::Tokio)?;
+		.context(TokioSnafu)?;
 	// checkout temp branch
 	log::info!("Checking out head branch.");
 	let checkout = Command::new("git")
@@ -64,9 +64,9 @@ async fn rebase_inner<'a>(&self, args: RebaseArgs<'a>) -> Result<()> {
 		.arg(format!("temp/{}", branch))
 		.current_dir(format!("./{}", base_repo))
 		.spawn()
-		.context(error::Tokio)?
+		.context(TokioSnafu)?
 		.await
-		.context(error::Tokio)?;
+		.context(TokioSnafu)?;
 	if checkout.success() {
 		// merge origin master
 		log::info!("Merging master.");
@@ -77,9 +77,9 @@ async fn rebase_inner<'a>(&self, args: RebaseArgs<'a>) -> Result<()> {
 			.arg("--no-edit")
 			.current_dir(format!("./{}", base_repo))
 			.spawn()
-			.context(error::Tokio)?
+			.context(TokioSnafu)?
 			.await
-			.context(error::Tokio)?;
+			.context(TokioSnafu)?;
 		if merge_master.success() {
 			// push
 			log::info!("Pushing changes.");
@@ -89,9 +89,9 @@ async fn rebase_inner<'a>(&self, args: RebaseArgs<'a>) -> Result<()> {
 				.arg(format!("{}", branch))
 				.current_dir(format!("./{}", base_repo))
 				.spawn()
-				.context(error::Tokio)?
+				.context(TokioSnafu)?
 				.await
-				.context(error::Tokio)?;
+				.context(TokioSnafu)?;
 		} else {
 			// abort merge
 			log::info!("Aborting merge.");
@@ -100,9 +100,9 @@ async fn rebase_inner<'a>(&self, args: RebaseArgs<'a>) -> Result<()> {
 				.arg("--abort")
 				.current_dir(format!("./{}", base_repo))
 				.spawn()
-				.context(error::Tokio)?
+				.context(TokioSnafu)?
 				.await
-				.context(error::Tokio)?;
+				.context(TokioSnafu)?;
 		}
 	}
 	Ok(())
@@ -124,9 +124,9 @@ impl Bot {
 			.arg("master")
 			.current_dir(format!("./{}", base_repo))
 			.spawn()
-			.context(error::Tokio)?
+			.context(TokioSnafu)?
 			.await
-			.context(error::Tokio)?;
+			.context(TokioSnafu)?;
 		// delete temp branch
 		log::info!("Deleting head branch.");
 		Command::new("git")
@@ -135,9 +135,9 @@ impl Bot {
 			.arg(format!("{}", branch))
 			.current_dir(format!("./{}", base_repo))
 			.spawn()
-			.context(error::Tokio)?
+			.context(TokioSnafu)?
 			.await
-			.context(error::Tokio)?;
+			.context(TokioSnafu)?;
 		// remove temp remote
 		log::info!("Removing temp remote.");
 		Command::new("git")
@@ -146,9 +146,9 @@ impl Bot {
 			.arg("temp")
 			.current_dir(format!("./{}", base_repo))
 			.spawn()
-			.context(error::Tokio)?
+			.context(TokioSnafu)?
 			.await
-			.context(error::Tokio)?;
+			.context(TokioSnafu)?;
 		rebase_result
 	}
 }

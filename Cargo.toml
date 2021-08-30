@@ -19,7 +19,7 @@ reqwest = { version = "^0.10", features = ["json"] }
 rocksdb = "0.14"
 serde = { version = "^1.0", features = ["derive"] }
 serde_json = "1.0.44"
-snafu = { version = "0.6.0" }
+snafu = "0.7.0-beta.0"
 tokio = { version = "0.2", features = ["full"] }
 curl = "0.4"
 curl-sys = "0.4"
@@ -33,8 +33,6 @@ jsonwebtoken = "7.1.0"
 lazy_static = "1.4.0"
 bincode = "1.2"
 ring = "0.16"
-base16 = { version = "0.2", features = ["alloc"] }
-anyhow = "1.0"
 async-std = { version = "1.0.1", features = ["unstable"] }
 hyper = { version = "0.13.1", default-features = false, features = ["stream"] }
 serde_yaml = "0.8"

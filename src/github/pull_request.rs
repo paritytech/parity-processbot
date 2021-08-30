@@ -248,14 +248,15 @@ impl Bot {
 		} = args;
 		match pr.head_sha() {
 			Ok(pr_head_sha) => {
-				match get_latest_statuses_state(
-					self,
-					owner,
-					repo_name,
-					pr_head_sha,
-					&pr.html_url,
-				)
-				.await
+				match self
+					.get_latest_statuses_state(
+						self,
+						owner,
+						repo_name,
+						pr_head_sha,
+						&pr.html_url,
+					)
+					.await
 				{
 					Ok(status) => match status {
 						Status::Success => {

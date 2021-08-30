@@ -6,7 +6,7 @@ use crate::{error::*, types::*};
 use chrono::{DateTime, Duration, Utc};
 use reqwest::{header, IntoUrl, Method, RequestBuilder, Response};
 use serde::Serialize;
-use snafu::{OptionExt, ResultExt};
+use snafu::ResultExt;
 
 pub struct ClientOptions {
 	pub private_key: String,
@@ -34,7 +34,7 @@ macro_rules! impl_methods_with_body {
 					.await?
 					.json::<T>()
 					.await
-					.context(Error::Http)
+					.context(HttpSnafu)
 			}
 
 			pub async fn $method_response_fn<'b, I, B>(
@@ -151,7 +151,7 @@ impl Client {
 		let installation = installations
 			.iter()
 			.find(|inst| inst.account.login == self.installation_login)
-			.context(Error::Message {
+			.context(MessageSnafu {
 				msg: format!(
 					"Did not find installation login for {}",
 					self.installation_login

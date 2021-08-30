@@ -20,7 +20,44 @@ Note: The commands will only work if you are a member of the organization where
 this bot is installed. Organization membership is always gotten fresh from the
 Github API at the time a comment arrives.
 
-## Relation to CI
+All [Important and above](#relation-to-ci) checks should be green when using
+`bot merge` (can be bypassed by using `bot merge force`).
+
+# Criteria for merge
+
+A Pull Request needs either 2
+[core-dev](https://github.com/orgs/paritytech/teams/core-devs/members)
+approvals or one
+[substrateteamlead](https://github.com/orgs/paritytech/teams/substrateteamleads/members)
+approval. This criteria strictly matters only for the bot's internal
+logic irrespective of Github Repository Settings and will not trump the latter
+in any case. For instance, the rule:
+
+> One substrateteamleads member approval
+
+does not imply that the pull request will be mergeable if the Github Settings
+require more approvals than that. The bot's rules work *in addition* to the
+repository's settings while still respecting them. Specifically when it comes
+to the approvals' count, however, the bot might able to help if a
+[substrateteamlead](https://github.com/orgs/paritytech/teams/substrateteamleads/members)
+is requesting the merge.
+
+Additionally, when the bot is commanded to merge, if the PR is short of 1
+approval and the command's requester might not be able to fulfill the approval
+count on their own, then the bot will try to pitch in the missing approval if
+the requester is a
+[substrateteamlead](https://github.com/orgs/paritytech/teams/substrateteamleads/members).
+The reasoning for this feature is as follows:
+
+1. PR authors cannot approve their own merge requests, although they should
+	 have the means to bypass that requirement e.g. for trivial or urgent
+	 changes.
+
+2. If the team lead has already approved and it's still short of one, they
+	 cannot "approve twice" in order to meet the quota. In that case, the bot
+	 should contribute one approval in order to help them meet that requirement.
+
+# Relation to CI
 
 processbot categorizes CI statuses as following, ranked in descending order of
 importance:
@@ -74,52 +111,3 @@ The deployment's status can be followed through
   variables for both staging and production are in `values*.yml`; if you add
   one, it also needs to be added to `templates/processbot.yaml`.
  - Secrets are managed through Gitlab.
-
-# Configuration
-
-## Runtime
-
-Some of the bot's configuration (e.g. the number of required reviewers for a
-pull request) can be managed through environment variables defined in
-[./src/config.rs](./src/config.rs)
-
-# Criteria for merge
-
-## Approvals
-
-A Pull Request needs either 2
-[core-dev](https://github.com/orgs/paritytech/teams/core-devs/members)
-approvals or one
-[substrateteamlead](https://github.com/orgs/paritytech/teams/substrateteamleads/members)
-approval. This criteria strictly matters only for the bot's internal
-logic irrespective of Github Repository Settings and will not trump the latter
-in any case. For instance, the rule:
-
-> One substrateteamleads member approval
-
-does not imply that the pull request will be mergeable if the Github Settings
-require more approvals than that. The bot's rules work *in addition* to the
-repository's settings while still respecting them. Specifically when it comes
-to the approvals' count, however, the bot might able to help if a
-[substrateteamlead](https://github.com/orgs/paritytech/teams/substrateteamleads/members)
-is requesting the merge.
-
-Additionally, when the bot is commanded to merge, if the PR is short of 1
-approval and the command's requester might not be able to fulfill the approval
-count on their own, then the bot will try to pitch in the missing approval if
-the requester is a
-[substrateteamlead](https://github.com/orgs/paritytech/teams/substrateteamleads/members).
-The reasoning for this feature is as follows:
-
-1. PR authors cannot approve their own merge requests, although they should
-	 have the means to bypass that requirement e.g. for trivial or urgent
-	 changes.
-
-2. If the team lead has already approved and it's still short of one, they
-	 cannot "approve twice" in order to meet the quota. In that case, the bot
-	 should contribute one approval in order to help them meet that requirement.
-
-## Checks and statuses
-
-All [Important and above](#relation-to-ci) checks should be green when using
-`bot merge` (can be bypassed by using `bot merge force`).

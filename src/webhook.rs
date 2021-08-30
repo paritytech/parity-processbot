@@ -43,10 +43,9 @@ async fn process_comment<'a>(
 	} = args;
 	let AppState { db, github_bot, .. } = state;
 
-	let owner =
-		parse_owner_from_html_url(html_url).context(Error::Message {
-			msg: format!("Failed parsing owner in url: {}", html_url),
-		})?;
+	let owner = parse_owner_from_html_url(html_url).context(MessageSnafu {
+		msg: format!("Failed parsing owner in url: {}", html_url),
+	})?;
 
 	let repo_name = repo_url.rsplit('/').next().context(Message {
 		msg: format!("Failed parsing repo name in url: {}", repo_url),
@@ -346,12 +345,12 @@ pub async fn handle_request(
 	let sig = req
 		.headers()
 		.get("x-hub-signature")
-		.context(Error::Message {
+		.context(MessageSnafu {
 			msg: format!("Missing x-hub-signature"),
 		})?
 		.to_str()
 		.ok()
-		.context(Error::Message {
+		.context(MessageSnafu {
 			msg: format!("Error parsing x-hub-signature"),
 		})?
 		.to_string();
@@ -359,7 +358,7 @@ pub async fn handle_request(
 
 	let mut msg_bytes = vec![];
 	while let Some(item) = req.body_mut().next().await {
-		msg_bytes.extend_from_slice(&item.ok().context(Error::Message {
+		msg_bytes.extend_from_slice(&item.ok().context(MessageSnafu {
 			msg: format!("Error getting bytes from request body"),
 		})?);
 	}
@@ -368,11 +367,11 @@ pub async fn handle_request(
 		hmac::HMAC_SHA1_FOR_LEGACY_USE_ONLY,
 		state.webhook_secret.trim().as_bytes(),
 	);
-	hmac::verify(&key, &msg_bytes, &sig_bytes).ok().context(
-		Error::Message {
+	hmac::verify(&key, &msg_bytes, &sig_bytes)
+		.ok()
+		.context(MessageSnafu {
 			msg: format!("Validation signature does not match"),
-		},
-	)?;
+		})?;
 
 	log::info!("Parsing payload {}", String::from_utf8_lossy(&msg_bytes));
 	match serde_json::from_slice::<Payload>(&msg_bytes) {
