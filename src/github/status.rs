@@ -1,5 +1,8 @@
 use super::*;
 
+use rocksdb::DB;
+use snafu::ResultExt;
+
 use crate::{error::*, types::*};
 
 impl Bot {
@@ -46,8 +49,10 @@ impl Bot {
 		db: &DB,
 		commit_sha: &str,
 	) -> Result<()> {
-		if let Some(pr_bytes) = db.get(commit_sha.as_bytes()).context(Db)? {
-			let m = bincode::deserialize(&pr_bytes).context(BincodeSnafu)?;
+		if let Some(pr_bytes) =
+			&db.get(commit_sha.as_bytes()).context(DbSnafu)?
+		{
+			let m = bincode::deserialize(pr_bytes).context(BincodeSnafu)?;
 			log::info!("Deserialized merge request: {:?}", m);
 			let MergeRequest {
 				owner,
@@ -55,8 +60,8 @@ impl Bot {
 				number,
 				html_url,
 				requested_by,
-				head_sha,
-			} = m;
+				head_sha: saved_head_sha,
+			} = &m;
 
 			// Wait a bit for all the statuses to settle; some missing status might be
 			// delivered with a small delay right after this is triggered, thus it's
@@ -76,18 +81,18 @@ impl Bot {
 				Ok(pr) => {
 					match pr.head_sha() {
 						Ok(pr_head_sha) => {
-							if head_sha != pr_head_sha {
+							if saved_head_sha != pr_head_sha {
 								Err(Error::UnregisterPullRequest {
-							  commit_sha: head_sha,
-								msg: "HEAD commit changed before the merge could happen".to_string(),
-							})
+										commit_sha: saved_head_sha,
+										msg: "HEAD commit changed before the merge could happen".to_string(),
+								})
 							} else {
 								let statuses_state = self
 									.get_latest_statuses_state(
 										GetLatestStatusesStateArgs {
 											owner,
 											repo_name,
-											commit_sha,
+											sha: pr_head_sha,
 											html_url,
 										},
 									)
@@ -97,21 +102,18 @@ impl Bot {
 									Outcome::Success => match self
 										.get_latest_checks(
 												GetLatestChecksArgs {
-														owner, repo_name, commit_sha, html_url
+														owner, repo_name, sha: pr_head_sha, html_url
 												}
 										)
 										.await
 									{
 										Ok(status) => match status {
 											Outcome::Success => {
-												merge(
-													self,
-													&owner,
-													&repo_name,
-													&pr,
-													bot_config,
-													&requested_by,
-													None,
+											self.merge
+												(
+														MergeArgs {
+																														owner, repo_name, pr, requested_by, created_approval_id: None
+														}
 												)
 												.await??;
 												db.delete(&commit_sha)
@@ -123,7 +125,7 @@ impl Bot {
 											}
 											Outcome::Failure => Err(
 												Error::UnregisterPullRequest {
-													commit_sha: commit_sha
+													commit_sha: pr_head_sha
 														.to_string(),
 													msg: "Statuses failed"
 														.to_string(),
@@ -135,7 +137,7 @@ impl Bot {
 									},
 									Outcome::Failure => {
 										Err(Error::UnregisterPullRequest {
-											commit_sha: commit_sha.to_string(),
+											commit_sha: pr_head_sha.to_string(),
 											msg: "Statuses failed".to_string(),
 										})
 									}
@@ -151,6 +153,12 @@ impl Bot {
 				Err(e) => Err(e),
 			}
 			.map_err(|e| {
+				let MergeRequest {
+					owner,
+					repo_name,
+					number,
+					..
+				} = m;
 				e.map_issue(IssueDetails {
 					owner,
 					repo_name,
@@ -169,14 +177,14 @@ impl Bot {
 		let GetLatestChecksArgs {
 			owner,
 			repo_name,
-			commit_sha,
+			sha,
 			html_url,
 		} = args;
 		let checks = self
 			.check_runs(StatusArgs {
 				owner,
 				repo_name,
-				commit_sha,
+				sha,
 			})
 			.await?;
 		log::info!("{:?}", checks);
@@ -222,15 +230,15 @@ impl Bot {
 	) -> Result<Outcome> {
 		let GetLatestStatusesStateArgs {
 			owner,
-			owner_repo,
-			commit_sha,
+			repo_name,
+			sha,
 			html_url,
 		} = args;
 		let status = self
 			.status(StatusArgs {
 				owner,
-				owner_repo,
-				commit_sha,
+				repo_name,
+				sha,
 			})
 			.await?;
 		log::info!("{:?}", status);

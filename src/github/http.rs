@@ -203,7 +203,7 @@ impl Client {
 			.header(header::USER_AGENT, "parity-processbot/0.0.1")
 			.timeout(std::time::Duration::from_secs(10))
 			.build()
-			.context(Http)?;
+			.context(ReqwestSnafu)?;
 
 		log::debug!("request: {:?}", &request);
 		handle_response(self.client.execute(request).await.context(Http)?).await
@@ -232,7 +232,7 @@ impl Client {
 			&jsonwebtoken::EncodingKey::from_rsa_pem(&self.private_key)
 				.expect("private key should be RSA pem"),
 		)
-		.context(Jwt)
+		.context(JwtSnafu)
 	}
 
 	async fn jwt_execute(&self, builder: RequestBuilder) -> Result<Response> {
@@ -261,7 +261,7 @@ impl Client {
 			.await?
 			.json::<T>()
 			.await
-			.context(Http)
+			.context(ReqwestSnafu)
 	}
 
 	pub async fn jwt_post<T>(
@@ -277,7 +277,7 @@ impl Client {
 			.await?
 			.json::<T>()
 			.await
-			.context(Http)
+			.context(ReqwestSnafu)
 	}
 
 	pub async fn get<'b, I, T>(&self, url: I) -> Result<T>
@@ -285,13 +285,11 @@ impl Client {
 		I: Into<Cow<'b, str>> + Clone,
 		T: serde::de::DeserializeOwned + core::fmt::Debug,
 	{
-		let res = self
-			.get_response(url, serde_json::json!({}))
+		self.get_response(url, serde_json::json!({}))
 			.await?
 			.json::<T>()
 			.await
-			.context(Http);
-		res
+			.context(ReqwestSnafu)
 	}
 
 	pub async fn get_status<'b, I>(&self, url: I) -> Result<u16>

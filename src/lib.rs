@@ -7,6 +7,7 @@ pub mod constants;
 pub mod error;
 #[macro_use]
 pub mod github;
+pub mod db;
 pub mod rebase;
 pub mod server;
 pub mod types;

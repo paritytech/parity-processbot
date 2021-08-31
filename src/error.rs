@@ -19,7 +19,7 @@ pub enum Error {
 		commit_sha: String,
 		created_approval_id: Option<usize>,
 		owner: string,
-		repo: string,
+		repo_name: string,
 		pr_number: usize,
 	},
 
@@ -116,12 +116,12 @@ fn display_errors_along_the_way(errors: Option<Vec<String>>) -> String {
 async fn process_error(err: Error, state: &AppState) -> Option<String> {
 	match err {
 		Error::MergeAttemptFailed {
-			source,
-			commit_sha,
-			created_approval_id,
-			owner,
-			repo,
-			pr_number
+			ref source,
+			ref commit_sha,
+			ref created_approval_id,
+			ref owner,
+			ref repo_name,
+			ref pr_number
 		} => {
 			let _ = state.db.delete(commit_sha.as_bytes()).map_err(|e| {
 				log::error!("Error deleting merge request from db: {}", e);
@@ -131,10 +131,9 @@ async fn process_error(err: Error, state: &AppState) -> Option<String> {
 				let _ =
 					github_bot
 						.clear_bot_approval(
-							&owner,
-							&repo,
-							pr_number,
-							created_approval_id,
+								ClearBotApprovalArgs {
+										owner, repo_name, pr_number, review_id: created_approval_id
+								}
 						)
 						.await
 						.map_err(|e| {

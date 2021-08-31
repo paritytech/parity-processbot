@@ -94,7 +94,7 @@ pub struct MergePullRequestArgs<'a> {
 	number: &'a usize,
 }
 
-pub struct ApproveMergeRequestArgs<'a> {
+pub struct ApprovePullRequestArgs<'a> {
 	owner: &'a str,
 	repo_name: &'a str,
 	pr_number: &'a usize,
@@ -134,7 +134,7 @@ pub struct RepositoryArgs<'a> {
 pub struct GetLatestChecksArgs<'a> {
 	owner: &'a str,
 	repo_name: &'a str,
-	commit_sha: &'a str,
+	sha: &'a str,
 	html_url: &'a str,
 }
 
@@ -145,7 +145,7 @@ pub struct TeamArgs<'a> {
 
 pub struct GetLatestStatusesStateArgs<'a> {
 	owner: &'a str,
-	owner_repo: &'a str,
-	commit_sha: &'a str,
+	repo_name: &'a str,
+	sha: &'a str,
 	html_url: &'a str,
 }

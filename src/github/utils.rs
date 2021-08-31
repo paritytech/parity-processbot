@@ -6,7 +6,7 @@ pub fn parse_issue_details_from_pr_html_url(
 	let re = Regex::new(PR_HTML_URL_REGEX!()).unwrap();
 	let matches = re.captures(&pr_html_url)?;
 	let owner = matches.name("owner")?.as_str().to_owned();
-	let repo = matches.name("repo")?.as_str().to_owned();
+	let repo_name = matches.name("repo")?.as_str().to_owned();
 	let number = matches
 		.name("number")?
 		.as_str()
@@ -15,7 +15,7 @@ pub fn parse_issue_details_from_pr_html_url(
 		.ok()?;
 	Some(IssueDetails {
 		owner,
-		repo,
+		repo_name,
 		number,
 	})
 }
@@ -54,7 +54,7 @@ pub fn parse_long_companion_description(
 	let caps = re.captures(&body)?;
 	let html_url = caps.name("html_url")?.as_str().to_owned();
 	let owner = caps.name("owner")?.as_str().to_owned();
-	let repo = caps.name("repo")?.as_str().to_owned();
+	let repo_name = caps.name("repo")?.as_str().to_owned();
 	let number = caps
 		.name("number")?
 		.as_str()
@@ -64,7 +64,7 @@ pub fn parse_long_companion_description(
 	Some(IssueDetailsWithRepositoryURL {
 		issue: IssueDetails {
 			owner,
-			repo,
+			repo_name,
 			number,
 		},
 		repo_url: html_url,
@@ -80,7 +80,7 @@ pub fn parse_short_companion_description(
 		.unwrap();
 	let caps = re.captures(&body)?;
 	let owner = caps.name("owner")?.as_str().to_owned();
-	let repo = caps.name("repo")?.as_str().to_owned();
+	let repo_name = caps.name("repo")?.as_str().to_owned();
 	let number = caps
 		.name("number")?
 		.as_str()
@@ -96,7 +96,7 @@ pub fn parse_short_companion_description(
 	Some(IssueDetailsWithRepositoryURL {
 		issue: IssueDetails {
 			owner,
-			repo,
+			repo_name,
 			number,
 		},
 		repo_url: html_url,

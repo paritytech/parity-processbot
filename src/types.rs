@@ -1,6 +1,4 @@
-use crate::{
-	constants::*, error::*, github::GithubBot, types::*, PR_HTML_URL_REGEX,
-};
+use crate::{constants::*, error::*, github::*, types::*, PR_HTML_URL_REGEX};
 use regex::Regex;
 use rocksdb::DB;
 use serde::{Deserialize, Serialize};
@@ -24,13 +22,16 @@ impl PullRequest {
 	pub fn head_sha(&self) -> Result<&String> {
 		self.head
 			.as_ref()
-			.context(MissingField {
-				field: "pull_request.head",
+			.context(MessageSnafu {
+				msg: format!("pull_request.head is missing from {:?}", self),
 			})?
 			.sha
 			.as_ref()
-			.context(MissingField {
-				field: "pull_request.head.sha",
+			.context(MessageSnafu {
+				msg: format!(
+					"pull_request.head.sha is missing from {:?}",
+					self
+				),
 			})
 	}
 }
@@ -347,14 +348,14 @@ impl HasIssueDetails for DetectUserCommentPullRequest {
 
 					if BOT_COMMANDS.iter().find(|cmd| **cmd == body).is_some() {
 						if let Some(Repository {
-							name: name,
+							name: repo_name,
 							owner: Some(User { login, .. }),
 							..
 						}) = repository
 						{
 							Some(IssueDetails {
 								owner: login.to_owned(),
-								repo: name.to_owned(),
+								repo_name: name.to_owned(),
 								number: *number,
 							})
 						} else if let Some(html_url) = pr.html_url.as_ref() {
@@ -391,10 +392,10 @@ fn get_issue_details_fallback(
 		..
 	}) = repo.as_ref()
 	{
-		parse_repository_full_name(full_name).map(|(owner, name)| {
+		parse_repository_full_name(full_name).map(|(owner, repo_name)| {
 			IssueDetails {
 				owner,
-				repo: name,
+				repo_name,
 				number,
 			}
 		})
@@ -414,7 +415,7 @@ impl HasIssueDetails for PullRequest {
 		{
 			Some(IssueDetails {
 				owner: login.to_owned(),
-				repo: name.to_owned(),
+				repo_name: name.to_owned(),
 				number: self.number,
 			})
 		} else {
@@ -439,7 +440,7 @@ impl HasIssueDetails for Issue {
 				{
 					Some(IssueDetails {
 						owner: login.to_owned(),
-						repo: name.to_owned(),
+						repo_name: name.to_owned(),
 						number: self.number,
 					})
 				} else {
@@ -457,7 +458,7 @@ impl HasIssueDetails for Issue {
 #[derive(Debug)]
 pub struct IssueDetails {
 	owner: String,
-	repo: String,
+	repo_name: String,
 	number: usize,
 }
 
@@ -491,8 +492,8 @@ pub struct AppState {
 }
 
 impl AppState {
-	pub async fn check_statuses(&self, commit_sha: &str) -> Result<()> {
-		self.github_bot.check_statuses(self.db, commit_sha)
+	pub async fn check_statuses(&self, sha: &str) -> Result<()> {
+		self.github_bot.check_statuses(&self.db, sha)
 	}
 }
 

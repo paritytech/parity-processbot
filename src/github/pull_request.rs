@@ -48,9 +48,9 @@ impl Bot {
 
 	pub async fn approve_pull_request(
 		&self,
-		args: ApproveMergeRequestArgs<'a>,
+		args: ApprovePullRequestArgs<'a>,
 	) -> Result<Review> {
-		let ApproveMergeRequestArgs {
+		let ApprovePullRequestArgs {
 			owner,
 			repo_name,
 			pr_number,
@@ -249,13 +249,12 @@ impl Bot {
 		match pr.head_sha() {
 			Ok(pr_head_sha) => {
 				match self
-					.get_latest_statuses_state(
-						self,
+					.get_latest_statuses_state(GetLatestStatusesStateArgs {
 						owner,
 						repo_name,
-						pr_head_sha,
-						&pr.html_url,
-					)
+						sha: pr_head_sha,
+						html_url: &pr.html_url,
+					})
 					.await
 				{
 					Ok(outcome) => match outcome {
@@ -273,8 +272,8 @@ impl Bot {
 									Outcome::Success => Ok(true),
 									Outcome::Failure => {
 										Err(Error::UnregisterPullRequest {
-											commit_sha: pr_head_sha.to_string(),
-											msg: "Statuses failed",
+											commit_sha: pr_head_sha.to_owned(),
+											msg: "Statuses failed".to_owned(),
 										})
 									}
 									_ => Ok(false),
@@ -283,8 +282,8 @@ impl Bot {
 							}
 						}
 						Outcome::Failure => Err(Error::UnregisterPullRequest {
-							commit_sha: pr_head_sha.to_string(),
-							msg: "Statuses failed",
+							commit_sha: pr_head_sha.to_owned(),
+							msg: "Statuses failed".to_owned(),
 						}),
 						_ => Ok(false),
 					},
@@ -359,7 +358,7 @@ impl Bot {
 												"Ignoring merge failure due to pending required status; message: {}",
 												msg
 											);
-											Ok(Err(MergeError::MergeFailureWillBeSolvedLater { msg: msg.to_string() }))
+											Ok(Err(MergeError::MergeFailureWillBeSolvedLater))
 										} else if let (
 											true,
 											Some(matches)
@@ -389,23 +388,23 @@ impl Bot {
 														Some(requester_role) => {
 															let _ = self
 																.create_issue_comment(
-																	owner,
-																	&repo_name,
-																	pr.number,
-																	&format!(
-																		"Bot will approve on the behalf of @{}, since they are {}, in an attempt to reach the minimum approval count",
-																		requested_by,
-																		requester_role,
-																	),
+																		CreateIssueCommentArgs {
+																		owner, repo_name, number: pr.number,
+																		body: &format!(
+																			"Bot will approve on the behalf of @{}, since they are {}, in an attempt to reach the minimum approval count",
+																			requested_by,
+																			requester_role,
+																		)
+																		}
 																)
 																.await
 																.map_err(|e| {
 																	log::error!("Error posting comment: {}", e);
 																});
 															match self.approve_pull_request(
-																owner,
-																repo_name,
-																pr.number
+																	ApprovePullRequestArgs {
+																owner, repo_name, number: pr.number
+																	}
 															).await {
 																Ok(review) => merge(
 																	self,
@@ -456,7 +455,6 @@ impl Bot {
 					.map_err(|e| Error::MergeAttemptFailed {
 						source: Box::new(e),
 						commit_sha: pr_head_sha.to_string(),
-						pr_url: pr.url.to_string(),
 						owner: owner.to_string(),
 						repo_name: repo_name.to_string(),
 						pr_number: pr.number,
@@ -486,24 +484,24 @@ impl Bot {
 		log::info!("{} checks incomplete.", html_url);
 		register_merge_request(
 			MergeRequest {
-				owner,
-				repo_name,
+				owner: owner.to_owned(),
+				repo_name: repo_name.to_owned(),
 				number,
-				html_url,
-				requested_by,
-				head_sha,
+				html_url: html_url.to_owned(),
+				requested_by: requested_by.to_owned(),
+				head_sha: head_sha.to_owned(),
 			},
 			db,
 		)
 		.await?;
 		log::info!("Waiting for commit status.");
 		let _ = self
-			.create_issue_comment(
+			.create_issue_comment(CreateIssueCommentArgs {
 				owner,
-				&repo_name,
+				repo_name,
 				number,
-				"Waiting for commit status.",
-			)
+				body: "Waiting for commit status.",
+			})
 			.await
 			.map_err(|e| {
 				log::error!("Error posting comment: {}", e);
@@ -523,7 +521,12 @@ impl Bot {
 		} = args;
 		log::info!("{} checks successful; trying merge.", html_url);
 		let _ = self
-			.create_issue_comment(owner, &repo_name, number, "Trying merge.")
+			.create_issue_comment(CreateIssueCommentArgs {
+				owner,
+				repo_name,
+				number,
+				body: "Trying merge.",
+			})
 			.await
 			.map_err(|e| {
 				log::error!("Error posting comment: {}", e);

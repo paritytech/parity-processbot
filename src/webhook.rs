@@ -3,7 +3,6 @@ use futures::StreamExt;
 use hyper::{Body, Request, Response, StatusCode};
 use regex::RegexBuilder;
 use ring::hmac;
-use rocksdb::DB;
 use serde::{Deserialize, Serialize};
 use snafu::{OptionExt, ResultExt};
 use std::{collections::HashMap, sync::Arc};
@@ -14,10 +13,10 @@ use crate::{constants::*, error::*, github::*, types::*};
 async fn process_checks(
 	status: CheckRunStatus,
 	state: &AppState,
-	commit_sha: &str,
+	sha: &str,
 ) -> Result<()> {
 	if status == CheckRunStatus::Completed {
-		return state.check_statuses(&commit_sha).await;
+		return state.check_statuses(sha).await;
 	}
 
 	Ok(())
@@ -107,13 +106,15 @@ async fn process_comment<'a>(
 				// it'll eventually resume processing when later statuses arrive
 				Err(MergeError::FailureWillBeSolvedLater) => {
 					let _ = register_merge_request(
-						owner,
-						&repo_name,
-						pr.number,
-						&pr.html_url,
-						requested_by,
-						&pr.head_sha()?,
-						db,
+						state.db,
+						MergeRequest {
+							owner,
+							repo_name,
+							number: pr.number,
+							html_url: pr.html_url,
+							requested_by,
+							head_sha: pr.head_sha()?.to_owned(),
+						},
 					);
 					return Err(Error::Skipped);
 				}
@@ -184,7 +185,7 @@ async fn process_comment<'a>(
 				}
 				.map_issue(IssueDetails {
 					owner: owner.to_string(),
-					repo: repo_name.to_string(),
+					repo_name: repo_name.to_string(),
 					number: pr.number,
 				}))
 			}
@@ -203,7 +204,7 @@ async fn process_comment<'a>(
 			requested_by
 		);
 		log::info!("Deleting merge request for {}", html_url);
-		db.delete(pr_head_sha.as_bytes()).context(Db)?;
+		db.delete(pr_head_sha.as_bytes()).context(DbSnafu)?;
 		github_bot
 			.create_issue_comment(CreateIssueCommentArgs {
 				owner,
@@ -262,15 +263,15 @@ async fn process_comment<'a>(
 }
 
 async fn process_status(
-	commit_sha: String,
-	status: StatusState,
+	sha: &str,
+	status: &StatusState,
 	state: &AppState,
 ) -> Result<()> {
-	if status == StatusState::Pending {
+	if status == &StatusState::Pending {
 		return Ok(());
 	}
 
-	check_statuses(&state.github_bot, &state.db, &commit_sha).await
+	state.check_statuses(sha).await
 }
 
 async fn process_payload(payload: Payload, state: &AppState) -> Result<()> {
@@ -321,9 +322,10 @@ async fn process_payload(payload: Payload, state: &AppState) -> Result<()> {
 				_ => Ok(()),
 			},
 		},
-		Payload::CommitStatus { sha, state: status } => {
-			process_status(sha, status, state).await
-		}
+		Payload::CommitStatus {
+			ref sha,
+			state: ref status,
+		} => process_status(sha, status, state).await,
 		Payload::CheckRun {
 			check_run: CheckRun {
 				status, head_sha, ..
