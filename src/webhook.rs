@@ -1,5 +1,6 @@
 use async_recursion::async_recursion;
 use futures::StreamExt;
+use html_escape;
 use hyper::{Body, Request, Response, StatusCode};
 use itertools::Itertools;
 use regex::RegexBuilder;
@@ -1563,9 +1564,9 @@ async fn handle_error_inner(err: Error, state: &AppState) -> Option<String> {
 			}
 			match *source {
 				Error::Response {
-					body,
-					status
-				} => Some(format!("Merge failed with response status: {} and body: `{}`", status, body)),
+					ref body,
+					ref status
+				} => Some(format!("Merge failed with response status: {} and body: <pre><code>{}</code></pre>", status, html_escape::encode_safe(&body.to_string()))),
 				Error::Http { source, .. } => {
 					Some(format!("Merge failed due to network error:\n\n{}", source))
 				}
@@ -1577,9 +1578,9 @@ async fn handle_error_inner(err: Error, state: &AppState) -> Option<String> {
 		}
 		Error::ProcessFile { source } => match *source {
 			Error::Response {
-				body: serde_json::Value::Object(m),
-				..
-			} => Some(format!("Error getting {}: `{}`", PROCESS_FILE, m["message"])),
+				ref body,
+				ref status
+			} => Some(format!("Error getting {} (status code {}): <pre><code>{}</code></pre>", PROCESS_FILE, status, html_escape::encode_safe(&body.to_string()))),
 			Error::Http { source, .. } => {
 				Some(format!("Network error getting {}:\n\n{}", PROCESS_FILE, source))
 			}
@@ -1622,9 +1623,9 @@ Approval by \"Project Owners\" is only attempted if other means defined in the [
 			Some(format!("Merge aborted: {}", err))
 		}
 		Error::Response {
-			body: serde_json::Value::Object(m),
-			..
-		} => Some(format!("Response error: `{}`", m["message"])),
+			ref body,
+			ref status
+		} => Some(format!("Response error (status {}): <pre><code>{}</code></pre>", status, html_escape::encode_safe(&body.to_string()))),
 		Error::OrganizationMembership { .. }
 		| Error::CompanionUpdate { .. }
 		| Error::Message { .. }
