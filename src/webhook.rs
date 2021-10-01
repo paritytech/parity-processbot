@@ -435,7 +435,7 @@ async fn checks_and_status(
 												.await??;
 												db.delete(&commit_sha)
 													.context(Db)?;
-												update_companion(
+												merge_companions(
 													github_bot, &repo_name,
 													&pr, db,
 												)
@@ -559,7 +559,7 @@ async fn handle_comment(
 				Err(e) => return Err(e),
 				_ => (),
 			}
-			update_companion(github_bot, &repo_name, pr, db).await?;
+			merge_companions(github_bot, &repo_name, pr, db).await?;
 		} else {
 			let pr_head_sha = pr.head_sha()?;
 			wait_to_merge(
@@ -637,7 +637,7 @@ async fn handle_comment(
 			Err(e) => return Err(e),
 			_ => (),
 		}
-		update_companion(github_bot, &repo_name, &pr, db).await?;
+		merge_companions(github_bot, &repo_name, &pr, db).await?;
 	} else if body.to_lowercase().trim()
 		== AUTO_MERGE_CANCEL.to_lowercase().trim()
 	{
@@ -1639,7 +1639,6 @@ Approval by \"Project Owners\" is only attempted if other means defined in the [
 			ref status
 		} => Some(format!("Response error (status {}): <pre><code>{}</code></pre>", status, html_escape::encode_safe(&body.to_string()))),
 		Error::OrganizationMembership { .. }
-		| Error::CompanionUpdate { .. }
 		| Error::Message { .. }
 		| Error::Rebase { .. } => {
 			Some(format!("Error: {}", err))

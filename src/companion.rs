@@ -291,16 +291,20 @@ fn companion_parse_short(body: &str) -> Option<IssueDetailsWithRepositoryURL> {
 	Some((html_url, owner, repo, number))
 }
 
-async fn perform_companion_update(
+fn parse_all_companions(body: &str) -> Vec<IssueDetailsWithRepositoryURL> {
+	body.lines().filter_map(companion_parse).collect()
+}
+
+async fn update_then_merge_companion(
 	github_bot: &GithubBot,
 	db: &DB,
 	html_url: &str,
 	owner: &str,
 	repo: &str,
-	number: i64,
+	number: &i64,
 	merge_done_in: &str,
 ) -> Result<()> {
-	let comp_pr = github_bot.pull_request(&owner, &repo, number).await?;
+	let comp_pr = github_bot.pull_request(&owner, &repo, *number).await?;
 
 	if let PullRequest {
 		head:
@@ -353,61 +357,63 @@ async fn perform_companion_update(
 	Ok(())
 }
 
-async fn detect_then_update_companion(
+pub async fn merge_companions(
 	github_bot: &GithubBot,
 	merge_done_in: &str,
 	pr: &PullRequest,
 	db: &DB,
 ) -> Result<()> {
+	let mut errors: Vec<String> = vec![];
+
 	if merge_done_in == "substrate" || merge_done_in == MAIN_REPO_FOR_STAGING {
 		log::info!("Checking for companion.");
-		if let Some((html_url, owner, repo, number)) =
-			pr.body.as_ref().map(|body| companion_parse(body)).flatten()
-		{
-			log::info!("Found companion {}", html_url);
-			perform_companion_update(
-				github_bot,
-				db,
-				&html_url,
-				&owner,
-				&repo,
-				number,
-				merge_done_in,
-			)
-			.await
-			.map_err(|e| e.map_issue((owner, repo, number)))?;
+
+		if let Some(body) = pr.body.as_ref() {
+			let companions = parse_all_companions(body);
+			if companions.is_empty() {
+				log::info!("No companion found.");
+			} else {
+				let mut remaining_futures = companions
+					.iter()
+					.map(|(html_url, owner, repo, ref number)| {
+						Box::pin(async move {
+							update_then_merge_companion(
+								github_bot,
+								db,
+								&html_url,
+								&owner,
+								&repo,
+								number,
+								merge_done_in,
+							)
+							.await
+							.map_err(|err| {
+								format!("{} failed: {:?}", html_url, err)
+							})
+						})
+					})
+					.collect::<Vec<_>>();
+				while !remaining_futures.is_empty() {
+					let (result, _, next_remaining_futures) =
+						futures::future::select_all(remaining_futures).await;
+					if let Err(err_msg) = result {
+						errors.push(err_msg);
+					}
+					remaining_futures = next_remaining_futures;
+				}
+			}
 		} else {
-			log::info!("No companion found.");
+			log::info!("PR had no body: {:?}", pr);
 		}
 	}
 
-	Ok(())
-}
-
-/// Check for a Polkadot companion and update it if found.
-pub async fn update_companion(
-	github_bot: &GithubBot,
-	merge_done_in: &str,
-	pr: &PullRequest,
-	db: &DB,
-) -> Result<()> {
-	detect_then_update_companion(github_bot, merge_done_in, pr, db)
-		.await
-		.map_err(|e| match e {
-			Error::WithIssue { source, issue } => {
-				Error::CompanionUpdate { source }.map_issue(issue)
-			}
-			_ => {
-				let e = Error::CompanionUpdate {
-					source: Box::new(e),
-				};
-				if let Some(details) = pr.get_issue_details() {
-					e.map_issue(details)
-				} else {
-					e
-				}
-			}
+	if errors.is_empty() {
+		Ok(())
+	} else {
+		Err(Error::Message {
+			msg: format!("Companion update failed: {}", errors.join("\n")),
 		})
+	}
 }
 
 #[cfg(test)]
@@ -494,6 +500,27 @@ mod tests {
 				"
 			),
 			None
+		);
+	}
+
+	#[test]
+	fn test_parse_all_companions() {
+		let companion_url = "https://github.com/paritytech/polkadot/pull/1234";
+		let expected_companion = (
+			"https://github.com/paritytech/polkadot/pull/1234".to_owned(),
+			"paritytech".to_owned(),
+			"polkadot".to_owned(),
+			1234,
+		);
+		assert_eq!(
+			parse_all_companions(&format!(
+				"
+					first companion: {}
+					second companion: {}
+				",
+				companion_url, companion_url
+			)),
+			vec![expected_companion.clone(), expected_companion.clone()]
 		);
 	}
 }

@@ -31,11 +31,6 @@ pub enum Error {
 		created_approval_id: Option<i64>,
 	},
 
-	#[snafu(display("Companion update failed: {}", source))]
-	CompanionUpdate {
-		source: Box<Error>,
-	},
-
 	#[snafu(display("Rebase failed: {}", source))]
 	Rebase {
 		source: Box<Error>,
