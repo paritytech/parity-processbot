@@ -6,6 +6,14 @@ pub type IssueDetails = (String, String, i64);
 // TODO this really should be struct { repository_url, repository, owner, number }
 pub type IssueDetailsWithRepositoryURL = (String, String, String, i64);
 
+pub struct CompanionDetailsWithErrorMessage {
+	pub owner: String,
+	pub repo: String,
+	pub number: i64,
+	pub html_url: String,
+	pub msg: String,
+}
+
 #[derive(Debug, Snafu)]
 #[snafu(visibility = "pub")]
 pub enum Error {

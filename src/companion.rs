@@ -461,8 +461,15 @@ pub async fn merge_companions(
 								merge_done_in,
 							)
 							.await
-							.map_err(|err| {
-								format!("{} failed: {:?}", html_url, err)
+							.map_err(|err| CompanionDetailsWithErrorMessage {
+								owner: owner.to_owned(),
+								repo: repo.to_owned(),
+								number: *number,
+								html_url: html_url.to_owned(),
+								msg: format!(
+									"Companion update failed: {:?}",
+									err
+								),
 							})
 						})
 					})
@@ -470,8 +477,21 @@ pub async fn merge_companions(
 				while !remaining_futures.is_empty() {
 					let (result, _, next_remaining_futures) =
 						futures::future::select_all(remaining_futures).await;
-					if let Err(err_msg) = result {
-						errors.push(err_msg);
+					if let Err(CompanionDetailsWithErrorMessage {
+						ref owner,
+						ref repo,
+						ref number,
+						ref html_url,
+						ref msg,
+					}) = result
+					{
+						let _ = github_bot
+							.create_issue_comment(owner, repo, *number, msg)
+							.await
+							.map_err(|e| {
+								log::error!("Error posting comment: {}", e);
+							});
+						errors.push(format!("{} {}", html_url, msg));
 					}
 					remaining_futures = next_remaining_futures;
 				}
