@@ -451,8 +451,6 @@ pub async fn merge_companions(
 					remaining_futures = next_remaining_futures;
 				}
 			}
-		} else {
-			log::info!("PR had no body: {:?}", pr);
 		}
 	}
 
