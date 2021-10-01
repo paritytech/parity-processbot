@@ -874,7 +874,7 @@ async fn merge_allowed(
 	// received with "second" precision. For the lack of insight onto the Github Servers, it's
 	// assumed that those failures happened because the Github API did not update fast enough and
 	// therefore the state was invalid when the request happened, but it got cleared shortly after
-	// (possiblymicroseconds after, hence why it is not discernable at "second" resolution).
+	// (possibly microseconds after, hence why it is not discernable at "second" resolution).
 	// As a workaround we'll wait for long enough so that Github hopefully has time to update the API
 	// and make our merges succeed. A proper workaround would also entail retrying every X seconds for
 	// recoverable errors such as "required statuses are missing or pending".
