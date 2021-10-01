@@ -8,8 +8,8 @@ use ring::hmac;
 use rocksdb::DB;
 use serde::{Deserialize, Serialize};
 use snafu::{OptionExt, ResultExt};
-use std::{collections::HashMap, sync::Arc};
-use tokio::sync::Mutex;
+use std::{collections::HashMap, sync::Arc, time::Duration};
+use tokio::{sync::Mutex, time::delay_for};
 
 use crate::{
 	auth::GithubUserAuthenticator, companion::*, config::BotConfig,
@@ -396,7 +396,7 @@ async fn checks_and_status(
 		// delivered with a small delay right after this is triggered, thus it's
 		// worthwhile to wait for it instead of having to recover from a premature
 		// merge attempt due to some slightly-delayed missing status.
-		tokio::time::delay_for(std::time::Duration::from_millis(2048)).await;
+		delay_for(Duration::from_millis(4096)).await;
 
 		match github_bot.pull_request(&owner, &repo_name, number).await {
 			Ok(pr) => match pr.head_sha() {
@@ -868,6 +868,18 @@ async fn merge_allowed(
 	requested_by: &str,
 	min_approvals_required: Option<usize>,
 ) -> Result<Result<Option<String>>> {
+	// We've noticed the bot failing for no human-discernable reason when, for instance, it
+	// complained that the pull request was not mergeable when, in fact, it seemed to be,
+	// if one were to guess what the state of the Github API was at the time the response was
+	// received with "second" precision. For the lack of insight onto the Github Servers, it's
+	// assumed that those failures happened because the Github API did not update fast enough and
+	// therefore the state was invalid when the request happened, but it got cleared shortly after
+	// (possiblymicroseconds after, hence why it is not discernable at "second" resolution).
+	// As a workaround we'll wait for long enough so that Github hopefully has time to update the API
+	// and make our merges succeed. A proper workaround would also entail retrying every X seconds for
+	// recoverable errors such as "required statuses are missing or pending".
+	delay_for(Duration::from_millis(8192)).await;
+
 	let is_mergeable = pr.mergeable.unwrap_or(false);
 
 	if let Some(min_approvals_required) = &min_approvals_required {
