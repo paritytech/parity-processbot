@@ -295,6 +295,55 @@ fn parse_all_companions(body: &str) -> Vec<IssueDetailsWithRepositoryURL> {
 	body.lines().filter_map(companion_parse).collect()
 }
 
+pub async fn check_all_companions_are_mergeable(
+	github_bot: &GithubBot,
+	pr: &PullRequest,
+	merge_done_in: &str,
+) -> Result<()> {
+	if merge_done_in == "substrate" || merge_done_in == MAIN_REPO_FOR_STAGING {
+		if let Some(body) = pr.body.as_ref() {
+			for (html_url, owner, repo, number) in parse_all_companions(body) {
+				let companion =
+					github_bot.pull_request(&owner, &repo, number).await?;
+
+				let is_owner_a_user = companion
+					.user
+					.as_ref()
+					.map(|user| {
+						user.type_field
+							.as_ref()
+							.map(|user_type| user_type == &UserType::User)
+							.unwrap_or(false)
+					})
+					.unwrap_or(false);
+				if !is_owner_a_user {
+					return Err(Error::Message {
+						msg: format!(
+							"Companion {} is not owned by a user, therefore we will not be able to push the lockfile update to their branch due to a Github limitation (https://github.com/isaacs/github/issues/1681)",
+							html_url
+						),
+					});
+				}
+
+				let is_mergeable = companion
+					.mergeable
+					.map(|mergeable| mergeable)
+					.unwrap_or(false);
+				if !is_mergeable {
+					return Err(Error::Message {
+						msg: format!(
+							"Github API says companion {} is not mergeable",
+							html_url
+						),
+					});
+				}
+			}
+		}
+	}
+
+	Ok(())
+}
+
 async fn update_then_merge_companion(
 	github_bot: &GithubBot,
 	db: &DB,

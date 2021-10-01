@@ -893,6 +893,8 @@ async fn merge_allowed(
 		log::info!("{} is not mergeable", pr.html_url);
 	}
 
+	check_all_companions_are_mergeable(github_bot, pr, repo_name).await?;
+
 	if is_mergeable || min_approvals_required.is_some() {
 		match github_bot.reviews(&pr.url).await {
 			Ok(reviews) => {

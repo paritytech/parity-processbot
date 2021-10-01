@@ -208,6 +208,7 @@ pub struct RequestedReviewers {
 
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub enum UserType {
+	User,
 	Bot,
 	#[serde(other)]
 	Unknown,
