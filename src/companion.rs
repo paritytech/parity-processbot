@@ -1,7 +1,10 @@
 use regex::RegexBuilder;
 use rocksdb::DB;
 use snafu::ResultExt;
-use std::{path::Path, time::Duration};
+use std::{
+	collections::hash_set::HashSet, iter::FromIterator, path::Path,
+	time::Duration,
+};
 use tokio::time::delay_for;
 
 use crate::{
@@ -171,29 +174,55 @@ async fn update_companion_repository(
 		return Err(e);
 	}
 
-	// `cargo update` should normally make changes to the lockfile with the latest SHAs from Github
-	run_cmd(
-		"cargo",
-		&[
-			"update",
-			"-vp",
-			if merge_done_in == MAIN_REPO_FOR_STAGING {
-				MAIN_REPO_FOR_STAGING
+	// Update the packages from 'merge_done_in' in the companion
+	let url_merge_was_done_in =
+		format!("https://github.com/{}/{}", owner, merge_done_in);
+	let cargo_lock_path = Path::new(&repo_dir).join("Cargo.lock");
+	let lockfile =
+		cargo_lock::Lockfile::load(cargo_lock_path).map_err(|err| {
+			Error::Message {
+				msg: format!(
+					"Failed to parse lockfile of {}: {:?}",
+					contributor_repo, err
+				),
+			}
+		})?;
+	let pkgs_in_companion: HashSet<&str> = {
+		HashSet::from_iter(lockfile.packages.iter().filter_map(|pkg| {
+			if let Some(src) = pkg.source.as_ref() {
+				if src.url().as_str() == url_merge_was_done_in {
+					Some(pkg.name.as_str())
+				} else {
+					None
+				}
 			} else {
-				"sp-io"
-			},
-		],
-		&repo_dir,
-		CommandMessage::Configured(CommandMessageConfiguration {
-			secrets_to_hide,
-			are_errors_silenced: false,
-		}),
-	)
-	.await?;
+				None
+			}
+		}))
+	};
+	if !pkgs_in_companion.is_empty() {
+		let args = {
+			let mut args = vec!["update", "-v"];
+			args.extend(
+				pkgs_in_companion.iter().map(|pkg| ["-p", pkg]).flatten(),
+			);
+			args
+		};
+		run_cmd(
+			"cargo",
+			&args,
+			&repo_dir,
+			CommandMessage::Configured(CommandMessageConfiguration {
+				secrets_to_hide,
+				are_errors_silenced: false,
+			}),
+		)
+		.await?;
+	}
 
 	// Check if `cargo update` resulted in any changes. If the master merge commit already had the
 	// latest lockfile then no changes might have been made.
-	let changes_after_update_output = run_cmd_with_output(
+	let output = run_cmd_with_output(
 		"git",
 		&["status", "--short"],
 		&repo_dir,
@@ -203,7 +232,7 @@ async fn update_companion_repository(
 		}),
 	)
 	.await?;
-	if !String::from_utf8_lossy(&(&changes_after_update_output).stdout[..])
+	if !String::from_utf8_lossy(&(&output).stdout[..])
 		.trim()
 		.is_empty()
 	{
