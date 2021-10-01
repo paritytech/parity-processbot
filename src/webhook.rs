@@ -436,8 +436,8 @@ async fn checks_and_status(
 												db.delete(&commit_sha)
 													.context(Db)?;
 												merge_companions(
-													github_bot, &repo_name,
-													&pr, db,
+													github_bot, bot_config,
+													&repo_name, &pr, db,
 												)
 												.await
 											}
@@ -559,7 +559,8 @@ async fn handle_comment(
 				Err(e) => return Err(e),
 				_ => (),
 			}
-			merge_companions(github_bot, &repo_name, pr, db).await?;
+			merge_companions(github_bot, bot_config, &repo_name, pr, db)
+				.await?;
 		} else {
 			let pr_head_sha = pr.head_sha()?;
 			wait_to_merge(
@@ -637,7 +638,7 @@ async fn handle_comment(
 			Err(e) => return Err(e),
 			_ => (),
 		}
-		merge_companions(github_bot, &repo_name, &pr, db).await?;
+		merge_companions(github_bot, bot_config, &repo_name, &pr, db).await?;
 	} else if body.to_lowercase().trim()
 		== AUTO_MERGE_CANCEL.to_lowercase().trim()
 	{
@@ -1149,7 +1150,7 @@ async fn merge_allowed(
 ///
 /// This function is used when a merge request is first received, to decide whether to store the
 /// request and wait for checks -- if so they will later be handled by `checks_and_status`.
-async fn ready_to_merge(
+pub async fn ready_to_merge(
 	github_bot: &GithubBot,
 	owner: &str,
 	repo_name: &str,
@@ -1294,7 +1295,7 @@ async fn prepare_to_merge(
 /// It might recursively call itself when attempting to solve a merge error after something
 /// meaningful happens.
 #[async_recursion]
-async fn merge(
+pub async fn merge(
 	github_bot: &GithubBot,
 	owner: &str,
 	repo_name: &str,

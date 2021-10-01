@@ -1,13 +1,19 @@
 use regex::RegexBuilder;
 use rocksdb::DB;
 use snafu::ResultExt;
-use std::path::Path;
+use std::{path::Path, time::Duration};
+use tokio::time::delay_for;
 
 use crate::{
-	cmd::*, constants::MAIN_REPO_FOR_STAGING, error::*, github::*,
-	github_bot::GithubBot, webhook::wait_to_merge, Result,
-	COMPANION_LONG_REGEX, COMPANION_PREFIX_REGEX, COMPANION_SHORT_REGEX,
-	PR_HTML_URL_REGEX,
+	cmd::*,
+	config::BotConfig,
+	constants::MAIN_REPO_FOR_STAGING,
+	error::*,
+	github::*,
+	github_bot::GithubBot,
+	webhook::{merge, ready_to_merge, wait_to_merge},
+	Result, COMPANION_LONG_REGEX, COMPANION_PREFIX_REGEX,
+	COMPANION_SHORT_REGEX, PR_HTML_URL_REGEX,
 };
 
 async fn update_companion_repository(
@@ -346,6 +352,7 @@ pub async fn check_all_companions_are_mergeable(
 
 async fn update_then_merge_companion(
 	github_bot: &GithubBot,
+	bot_config: &BotConfig,
 	db: &DB,
 	html_url: &str,
 	owner: &str,
@@ -353,7 +360,7 @@ async fn update_then_merge_companion(
 	number: &i64,
 	merge_done_in: &str,
 ) -> Result<()> {
-	let comp_pr = github_bot.pull_request(&owner, &repo, *number).await?;
+	let pr = github_bot.pull_request(&owner, &repo, *number).await?;
 
 	if let PullRequest {
 		head:
@@ -371,13 +378,13 @@ async fn update_then_merge_companion(
 				..
 			}),
 		..
-	} = comp_pr.clone()
+	} = pr.clone()
 	{
 		log::info!("Updating companion {}", html_url);
 		let updated_sha = update_companion_repository(
 			github_bot,
-			&owner,
-			&repo,
+			owner,
+			repo,
 			&contributor,
 			&contributor_repo,
 			&contributor_branch,
@@ -385,18 +392,34 @@ async fn update_then_merge_companion(
 		)
 		.await?;
 
-		log::info!("Companion updated; waiting for checks on {}", html_url);
-		wait_to_merge(
-			github_bot,
-			&owner,
-			&repo,
-			comp_pr.number,
-			&comp_pr.html_url,
-			&format!("parity-processbot[bot]"),
-			&updated_sha,
-			db,
-		)
-		.await?;
+		// Wait a bit for all the statuses to settle after we've updated the companion.
+		delay_for(Duration::from_millis(4096)).await;
+
+		if ready_to_merge(github_bot, owner, repo, &pr).await? {
+			merge(
+				github_bot,
+				owner,
+				repo,
+				&pr,
+				bot_config,
+				"parity-processbot[bot]",
+				None,
+			)
+			.await??;
+		} else {
+			log::info!("Companion updated; waiting for checks on {}", html_url);
+			wait_to_merge(
+				github_bot,
+				&owner,
+				&repo,
+				pr.number,
+				&pr.html_url,
+				&format!("parity-processbot[bot]"),
+				&updated_sha,
+				db,
+			)
+			.await?;
+		}
 	} else {
 		return Err(Error::Message {
 			msg: "Companion PR is missing some API data.".to_string(),
@@ -408,6 +431,7 @@ async fn update_then_merge_companion(
 
 pub async fn merge_companions(
 	github_bot: &GithubBot,
+	bot_config: &BotConfig,
 	merge_done_in: &str,
 	pr: &PullRequest,
 	db: &DB,
@@ -428,6 +452,7 @@ pub async fn merge_companions(
 						Box::pin(async move {
 							update_then_merge_companion(
 								github_bot,
+								bot_config,
 								db,
 								&html_url,
 								&owner,
