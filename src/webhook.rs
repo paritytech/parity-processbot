@@ -879,7 +879,7 @@ async fn merge_allowed(
 	// As a workaround we'll wait for long enough so that Github hopefully has time to update the API
 	// and make our merges succeed. A proper workaround would also entail retrying every X seconds for
 	// recoverable errors such as "required statuses are missing or pending".
-	delay_for(Duration::from_millis(8192)).await;
+	delay_for(Duration::from_millis(4096)).await;
 
 	let is_mergeable = pr.mergeable.unwrap_or(false);
 
