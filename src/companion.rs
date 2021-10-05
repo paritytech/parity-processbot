@@ -354,7 +354,7 @@ pub async fn check_all_companions_are_mergeable(
 				if !is_owner_a_user {
 					return Err(Error::Message {
 						msg: format!(
-							"Companion {} is not owned by a user, therefore we will not be able to push the lockfile update to their branch due to a Github limitation (https://github.com/isaacs/github/issues/1681)",
+							"Companion {} is not owned by a user, therefore processbot would not be able to push the lockfile update to their branch due to a Github limitation (https://github.com/isaacs/github/issues/1681)",
 							html_url
 						),
 					});
