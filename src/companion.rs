@@ -424,6 +424,7 @@ async fn update_then_merge_companion(
 		// Wait a bit for all the statuses to settle after we've updated the companion.
 		delay_for(Duration::from_millis(4096)).await;
 
+		let pr = github_bot.pull_request(&owner, &repo, *number).await?;
 		if ready_to_merge(github_bot, owner, repo, &pr).await? {
 			merge(
 				github_bot,
