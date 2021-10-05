@@ -487,9 +487,7 @@ pub async fn merge_companions(
 						if let Some(group) = companions_groups.get_mut(&key) {
 							group.push(comp);
 						} else {
-							let mut group = vec![];
-							group.push(comp);
-							companions_groups.insert(key, group);
+							companions_groups.insert(key, vec![comp]);
 						}
 					}
 					companions_groups
