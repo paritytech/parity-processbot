@@ -2,7 +2,7 @@ use regex::RegexBuilder;
 use rocksdb::DB;
 use snafu::ResultExt;
 use std::{
-	collections::hash_set::HashSet, iter::FromIterator, path::Path,
+	collections::HashMap, collections::HashSet, iter::FromIterator, path::Path,
 	time::Duration,
 };
 use tokio::time::delay_for;
@@ -475,44 +475,75 @@ pub async fn merge_companions(
 			if companions.is_empty() {
 				log::info!("No companion found.");
 			} else {
-				let mut remaining_futures = companions
-					.iter()
-					.map(|(html_url, owner, repo, ref number)| {
+				let companions_groups = {
+					let mut companions_groups: HashMap<
+						String,
+						Vec<IssueDetailsWithRepositoryURL>,
+					> = HashMap::new();
+					for comp in companions {
+						let (_, ref owner, ref repo, _) = comp;
+						let key = format!("{}/{}", owner, repo);
+						if let Some(group) = companions_groups.get_mut(&key) {
+							group.push(comp);
+						} else {
+							let mut group = vec![];
+							group.push(comp);
+							companions_groups.insert(key, group);
+						}
+					}
+					companions_groups
+				};
+
+				let mut remaining_futures = companions_groups
+					.into_values()
+					.map(|group| {
 						Box::pin(async move {
-							update_then_merge_companion(
-								github_bot,
-								bot_config,
-								db,
-								&html_url,
-								&owner,
-								&repo,
-								number,
-								merge_done_in,
-							)
-							.await
-							.map_err(|err| CompanionDetailsWithErrorMessage {
-								owner: owner.to_owned(),
-								repo: repo.to_owned(),
-								number: *number,
-								html_url: html_url.to_owned(),
-								msg: format!(
-									"Companion update failed: {:?}",
-									err
-								),
-							})
+							let mut errors: Vec<
+								CompanionDetailsWithErrorMessage,
+							> = vec![];
+
+							for (html_url, owner, repo, ref number) in group {
+								if let Err(err) = update_then_merge_companion(
+									github_bot,
+									bot_config,
+									db,
+									&html_url,
+									&owner,
+									&repo,
+									number,
+									merge_done_in,
+								)
+								.await
+								{
+									errors.push(
+										CompanionDetailsWithErrorMessage {
+											owner: owner.to_owned(),
+											repo: repo.to_owned(),
+											number: *number,
+											html_url: html_url.to_owned(),
+											msg: format!(
+												"Companion update failed: {:?}",
+												err
+											),
+										},
+									);
+								}
+							}
+
+							errors
 						})
 					})
 					.collect::<Vec<_>>();
 				while !remaining_futures.is_empty() {
 					let (result, _, next_remaining_futures) =
 						futures::future::select_all(remaining_futures).await;
-					if let Err(CompanionDetailsWithErrorMessage {
+					for CompanionDetailsWithErrorMessage {
 						ref owner,
 						ref repo,
 						ref number,
 						ref html_url,
 						ref msg,
-					}) = result
+					} in result
 					{
 						let _ = github_bot
 							.create_issue_comment(owner, repo, *number, msg)
