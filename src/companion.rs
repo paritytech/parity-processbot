@@ -626,12 +626,16 @@ mod tests {
 
 	#[test]
 	fn test_parse_all_companions() {
-		let companion_url = "https://github.com/paritytech/polkadot/pull/1234";
+		let owner = "paritytech";
+		let repo = "polkadot";
+		let pr_number = 1234;
+		let companion_url =
+			format!("https://github.com/{}/{}/pull/{}", owner, repo, pr_number);
 		let expected_companion = (
-			"https://github.com/paritytech/polkadot/pull/1234".to_owned(),
-			"paritytech".to_owned(),
-			"polkadot".to_owned(),
-			1234,
+			companion_url.to_owned(),
+			owner.to_owned(),
+			repo.to_owned(),
+			pr_number,
 		);
 		assert_eq!(
 			parse_all_companions(&format!(
@@ -639,7 +643,7 @@ mod tests {
 					first companion: {}
 					second companion: {}
 				",
-				companion_url, companion_url
+				&companion_url, &companion_url
 			)),
 			vec![expected_companion.clone(), expected_companion.clone()]
 		);
