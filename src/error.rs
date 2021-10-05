@@ -199,7 +199,7 @@ pub enum Error {
 	},
 
 	#[snafu(display(
-		"Merge failure was skipped (will be solved later): {}",
+		"Encountered merge failure (would be solved later): {}",
 		msg
 	))]
 	MergeFailureWillBeSolvedLater {
