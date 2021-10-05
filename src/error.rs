@@ -6,6 +6,14 @@ pub type IssueDetails = (String, String, i64);
 // TODO this really should be struct { repository_url, repository, owner, number }
 pub type IssueDetailsWithRepositoryURL = (String, String, String, i64);
 
+pub struct CompanionDetailsWithErrorMessage {
+	pub owner: String,
+	pub repo: String,
+	pub number: i64,
+	pub html_url: String,
+	pub msg: String,
+}
+
 #[derive(Debug, Snafu)]
 #[snafu(visibility = "pub")]
 pub enum Error {
@@ -29,11 +37,6 @@ pub enum Error {
 		repo_name: String,
 		pr_number: i64,
 		created_approval_id: Option<i64>,
-	},
-
-	#[snafu(display("Companion update failed: {}", source))]
-	CompanionUpdate {
-		source: Box<Error>,
 	},
 
 	#[snafu(display("Rebase failed: {}", source))]
@@ -196,7 +199,7 @@ pub enum Error {
 	},
 
 	#[snafu(display(
-		"Merge failure was skipped (will be solved later): {}",
+		"Encountered merge failure (would be solved later): {}",
 		msg
 	))]
 	MergeFailureWillBeSolvedLater {

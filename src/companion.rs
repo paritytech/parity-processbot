@@ -1,13 +1,22 @@
 use regex::RegexBuilder;
 use rocksdb::DB;
 use snafu::ResultExt;
-use std::path::Path;
+use std::{
+	collections::HashMap, collections::HashSet, iter::FromIterator, path::Path,
+	time::Duration,
+};
+use tokio::time::delay_for;
 
 use crate::{
-	cmd::*, constants::MAIN_REPO_FOR_STAGING, error::*, github::*,
-	github_bot::GithubBot, webhook::wait_to_merge, Result,
-	COMPANION_LONG_REGEX, COMPANION_PREFIX_REGEX, COMPANION_SHORT_REGEX,
-	PR_HTML_URL_REGEX,
+	cmd::*,
+	config::BotConfig,
+	constants::MAIN_REPO_FOR_STAGING,
+	error::*,
+	github::*,
+	github_bot::GithubBot,
+	webhook::{merge, ready_to_merge, wait_to_merge},
+	Result, COMPANION_LONG_REGEX, COMPANION_PREFIX_REGEX,
+	COMPANION_SHORT_REGEX, PR_HTML_URL_REGEX,
 };
 
 async fn update_companion_repository(
@@ -165,29 +174,55 @@ async fn update_companion_repository(
 		return Err(e);
 	}
 
-	// `cargo update` should normally make changes to the lockfile with the latest SHAs from Github
-	run_cmd(
-		"cargo",
-		&[
-			"update",
-			"-vp",
-			if merge_done_in == MAIN_REPO_FOR_STAGING {
-				MAIN_REPO_FOR_STAGING
+	// Update the packages from 'merge_done_in' in the companion
+	let url_merge_was_done_in =
+		format!("https://github.com/{}/{}", owner, merge_done_in);
+	let cargo_lock_path = Path::new(&repo_dir).join("Cargo.lock");
+	let lockfile =
+		cargo_lock::Lockfile::load(cargo_lock_path).map_err(|err| {
+			Error::Message {
+				msg: format!(
+					"Failed to parse lockfile of {}: {:?}",
+					contributor_repo, err
+				),
+			}
+		})?;
+	let pkgs_in_companion: HashSet<&str> = {
+		HashSet::from_iter(lockfile.packages.iter().filter_map(|pkg| {
+			if let Some(src) = pkg.source.as_ref() {
+				if src.url().as_str() == url_merge_was_done_in {
+					Some(pkg.name.as_str())
+				} else {
+					None
+				}
 			} else {
-				"sp-io"
-			},
-		],
-		&repo_dir,
-		CommandMessage::Configured(CommandMessageConfiguration {
-			secrets_to_hide,
-			are_errors_silenced: false,
-		}),
-	)
-	.await?;
+				None
+			}
+		}))
+	};
+	if !pkgs_in_companion.is_empty() {
+		let args = {
+			let mut args = vec!["update", "-v"];
+			args.extend(
+				pkgs_in_companion.iter().map(|pkg| ["-p", pkg]).flatten(),
+			);
+			args
+		};
+		run_cmd(
+			"cargo",
+			&args,
+			&repo_dir,
+			CommandMessage::Configured(CommandMessageConfiguration {
+				secrets_to_hide,
+				are_errors_silenced: false,
+			}),
+		)
+		.await?;
+	}
 
 	// Check if `cargo update` resulted in any changes. If the master merge commit already had the
 	// latest lockfile then no changes might have been made.
-	let changes_after_update_output = run_cmd_with_output(
+	let output = run_cmd_with_output(
 		"git",
 		&["status", "--short"],
 		&repo_dir,
@@ -197,7 +232,7 @@ async fn update_companion_repository(
 		}),
 	)
 	.await?;
-	if !String::from_utf8_lossy(&(&changes_after_update_output).stdout[..])
+	if !String::from_utf8_lossy(&(&output).stdout[..])
 		.trim()
 		.is_empty()
 	{
@@ -291,16 +326,70 @@ fn companion_parse_short(body: &str) -> Option<IssueDetailsWithRepositoryURL> {
 	Some((html_url, owner, repo, number))
 }
 
-async fn perform_companion_update(
+fn parse_all_companions(body: &str) -> Vec<IssueDetailsWithRepositoryURL> {
+	body.lines().filter_map(companion_parse).collect()
+}
+
+pub async fn check_all_companions_are_mergeable(
 	github_bot: &GithubBot,
+	pr: &PullRequest,
+	merge_done_in: &str,
+) -> Result<()> {
+	if merge_done_in == "substrate" || merge_done_in == MAIN_REPO_FOR_STAGING {
+		if let Some(body) = pr.body.as_ref() {
+			for (html_url, owner, repo, number) in parse_all_companions(body) {
+				let companion =
+					github_bot.pull_request(&owner, &repo, number).await?;
+
+				let is_owner_a_user = companion
+					.user
+					.as_ref()
+					.map(|user| {
+						user.type_field
+							.as_ref()
+							.map(|user_type| user_type == &UserType::User)
+							.unwrap_or(false)
+					})
+					.unwrap_or(false);
+				if !is_owner_a_user {
+					return Err(Error::Message {
+						msg: format!(
+							"Companion {} is not owned by a user, therefore processbot would not be able to push the lockfile update to their branch due to a Github limitation (https://github.com/isaacs/github/issues/1681)",
+							html_url
+						),
+					});
+				}
+
+				let is_mergeable = companion
+					.mergeable
+					.map(|mergeable| mergeable)
+					.unwrap_or(false);
+				if !is_mergeable {
+					return Err(Error::Message {
+						msg: format!(
+							"Github API says companion {} is not mergeable",
+							html_url
+						),
+					});
+				}
+			}
+		}
+	}
+
+	Ok(())
+}
+
+async fn update_then_merge_companion(
+	github_bot: &GithubBot,
+	bot_config: &BotConfig,
 	db: &DB,
 	html_url: &str,
 	owner: &str,
 	repo: &str,
-	number: i64,
+	number: &i64,
 	merge_done_in: &str,
 ) -> Result<()> {
-	let comp_pr = github_bot.pull_request(&owner, &repo, number).await?;
+	let pr = github_bot.pull_request(&owner, &repo, *number).await?;
 
 	if let PullRequest {
 		head:
@@ -318,13 +407,13 @@ async fn perform_companion_update(
 				..
 			}),
 		..
-	} = comp_pr.clone()
+	} = pr.clone()
 	{
 		log::info!("Updating companion {}", html_url);
 		let updated_sha = update_companion_repository(
 			github_bot,
-			&owner,
-			&repo,
+			owner,
+			repo,
 			&contributor,
 			&contributor_repo,
 			&contributor_branch,
@@ -332,18 +421,35 @@ async fn perform_companion_update(
 		)
 		.await?;
 
-		log::info!("Companion updated; waiting for checks on {}", html_url);
-		wait_to_merge(
-			github_bot,
-			&owner,
-			&repo,
-			comp_pr.number,
-			&comp_pr.html_url,
-			&format!("parity-processbot[bot]"),
-			&updated_sha,
-			db,
-		)
-		.await?;
+		// Wait a bit for all the statuses to settle after we've updated the companion.
+		delay_for(Duration::from_millis(4096)).await;
+
+		let pr = github_bot.pull_request(&owner, &repo, *number).await?;
+		if ready_to_merge(github_bot, owner, repo, &pr).await? {
+			merge(
+				github_bot,
+				owner,
+				repo,
+				&pr,
+				bot_config,
+				"parity-processbot[bot]",
+				None,
+			)
+			.await??;
+		} else {
+			log::info!("Companion updated; waiting for checks on {}", html_url);
+			wait_to_merge(
+				github_bot,
+				&owner,
+				&repo,
+				pr.number,
+				&pr.html_url,
+				&format!("parity-processbot[bot]"),
+				&updated_sha,
+				db,
+			)
+			.await?;
+		}
 	} else {
 		return Err(Error::Message {
 			msg: "Companion PR is missing some API data.".to_string(),
@@ -353,61 +459,112 @@ async fn perform_companion_update(
 	Ok(())
 }
 
-async fn detect_then_update_companion(
+pub async fn merge_companions(
 	github_bot: &GithubBot,
+	bot_config: &BotConfig,
 	merge_done_in: &str,
 	pr: &PullRequest,
 	db: &DB,
 ) -> Result<()> {
+	let mut errors: Vec<String> = vec![];
+
 	if merge_done_in == "substrate" || merge_done_in == MAIN_REPO_FOR_STAGING {
 		log::info!("Checking for companion.");
-		if let Some((html_url, owner, repo, number)) =
-			pr.body.as_ref().map(|body| companion_parse(body)).flatten()
-		{
-			log::info!("Found companion {}", html_url);
-			perform_companion_update(
-				github_bot,
-				db,
-				&html_url,
-				&owner,
-				&repo,
-				number,
-				merge_done_in,
-			)
-			.await
-			.map_err(|e| e.map_issue((owner, repo, number)))?;
-		} else {
-			log::info!("No companion found.");
+
+		if let Some(body) = pr.body.as_ref() {
+			let companions = parse_all_companions(body);
+			if companions.is_empty() {
+				log::info!("No companion found.");
+			} else {
+				let companions_groups = {
+					let mut companions_groups: HashMap<
+						String,
+						Vec<IssueDetailsWithRepositoryURL>,
+					> = HashMap::new();
+					for comp in companions {
+						let (_, ref owner, ref repo, _) = comp;
+						let key = format!("{}/{}", owner, repo);
+						if let Some(group) = companions_groups.get_mut(&key) {
+							group.push(comp);
+						} else {
+							companions_groups.insert(key, vec![comp]);
+						}
+					}
+					companions_groups
+				};
+
+				let mut remaining_futures = companions_groups
+					.into_values()
+					.map(|group| {
+						Box::pin(async move {
+							let mut errors: Vec<
+								CompanionDetailsWithErrorMessage,
+							> = vec![];
+
+							for (html_url, owner, repo, ref number) in group {
+								if let Err(err) = update_then_merge_companion(
+									github_bot,
+									bot_config,
+									db,
+									&html_url,
+									&owner,
+									&repo,
+									number,
+									merge_done_in,
+								)
+								.await
+								{
+									errors.push(
+										CompanionDetailsWithErrorMessage {
+											owner: owner.to_owned(),
+											repo: repo.to_owned(),
+											number: *number,
+											html_url: html_url.to_owned(),
+											msg: format!(
+												"Companion update failed: {:?}",
+												err
+											),
+										},
+									);
+								}
+							}
+
+							errors
+						})
+					})
+					.collect::<Vec<_>>();
+				while !remaining_futures.is_empty() {
+					let (result, _, next_remaining_futures) =
+						futures::future::select_all(remaining_futures).await;
+					for CompanionDetailsWithErrorMessage {
+						ref owner,
+						ref repo,
+						ref number,
+						ref html_url,
+						ref msg,
+					} in result
+					{
+						let _ = github_bot
+							.create_issue_comment(owner, repo, *number, msg)
+							.await
+							.map_err(|e| {
+								log::error!("Error posting comment: {}", e);
+							});
+						errors.push(format!("{} {}", html_url, msg));
+					}
+					remaining_futures = next_remaining_futures;
+				}
+			}
 		}
 	}
 
-	Ok(())
-}
-
-/// Check for a Polkadot companion and update it if found.
-pub async fn update_companion(
-	github_bot: &GithubBot,
-	merge_done_in: &str,
-	pr: &PullRequest,
-	db: &DB,
-) -> Result<()> {
-	detect_then_update_companion(github_bot, merge_done_in, pr, db)
-		.await
-		.map_err(|e| match e {
-			Error::WithIssue { source, issue } => {
-				Error::CompanionUpdate { source }.map_issue(issue)
-			}
-			_ => {
-				let e = Error::CompanionUpdate {
-					source: Box::new(e),
-				};
-				if let Some(details) = pr.get_issue_details() {
-					e.map_issue(details)
-				} else {
-					e
-				}
-			}
+	if errors.is_empty() {
+		Ok(())
+	} else {
+		Err(Error::Message {
+			msg: format!("Companion update failed: {}", errors.join("\n")),
 		})
+	}
 }
 
 #[cfg(test)]
@@ -494,6 +651,31 @@ mod tests {
 				"
 			),
 			None
+		);
+	}
+
+	#[test]
+	fn test_parse_all_companions() {
+		let owner = "paritytech";
+		let repo = "polkadot";
+		let pr_number = 1234;
+		let companion_url =
+			format!("https://github.com/{}/{}/pull/{}", owner, repo, pr_number);
+		let expected_companion = (
+			companion_url.to_owned(),
+			owner.to_owned(),
+			repo.to_owned(),
+			pr_number,
+		);
+		assert_eq!(
+			parse_all_companions(&format!(
+				"
+					first companion: {}
+					second companion: {}
+				",
+				&companion_url, &companion_url
+			)),
+			vec![expected_companion.clone(), expected_companion.clone()]
 		);
 	}
 }

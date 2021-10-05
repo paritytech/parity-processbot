@@ -435,9 +435,9 @@ async fn checks_and_status(
 												.await??;
 												db.delete(&commit_sha)
 													.context(Db)?;
-												update_companion(
-													github_bot, &repo_name,
-													&pr, db,
+												merge_companions(
+													github_bot, bot_config,
+													&repo_name, &pr, db,
 												)
 												.await
 											}
@@ -559,7 +559,8 @@ async fn handle_comment(
 				Err(e) => return Err(e),
 				_ => (),
 			}
-			update_companion(github_bot, &repo_name, pr, db).await?;
+			merge_companions(github_bot, bot_config, &repo_name, pr, db)
+				.await?;
 		} else {
 			let pr_head_sha = pr.head_sha()?;
 			wait_to_merge(
@@ -637,7 +638,7 @@ async fn handle_comment(
 			Err(e) => return Err(e),
 			_ => (),
 		}
-		update_companion(github_bot, &repo_name, &pr, db).await?;
+		merge_companions(github_bot, bot_config, &repo_name, &pr, db).await?;
 	} else if body.to_lowercase().trim()
 		== AUTO_MERGE_CANCEL.to_lowercase().trim()
 	{
@@ -868,17 +869,17 @@ async fn merge_allowed(
 	requested_by: &str,
 	min_approvals_required: Option<usize>,
 ) -> Result<Result<Option<String>>> {
-	// We've noticed the bot failing for no human-discernable reason when, for instance, it
-	// complained that the pull request was not mergeable when, in fact, it seemed to be,
-	// if one were to guess what the state of the Github API was at the time the response was
-	// received with "second" precision. For the lack of insight onto the Github Servers, it's
-	// assumed that those failures happened because the Github API did not update fast enough and
-	// therefore the state was invalid when the request happened, but it got cleared shortly after
-	// (possiblymicroseconds after, hence why it is not discernable at "second" resolution).
+	// We've noticed the bot failing for no human-discernable reason when, for instance, it complained
+	// that the pull request was not mergeable when, in fact, it seemed to be, if one were to guess
+	// what the state of the Github API was at the time the response was received with "second"
+	// precision. For the lack of insight onto the Github Servers, it's assumed that those failures
+	// happened because the Github API did not update fast enough and therefore the state was invalid
+	// when the request happened, but it got cleared shortly after (possibly microseconds after, hence
+	// why it is not discernable at "second" resolution).
 	// As a workaround we'll wait for long enough so that Github hopefully has time to update the API
 	// and make our merges succeed. A proper workaround would also entail retrying every X seconds for
 	// recoverable errors such as "required statuses are missing or pending".
-	delay_for(Duration::from_millis(8192)).await;
+	delay_for(Duration::from_millis(4096)).await;
 
 	let is_mergeable = pr.mergeable.unwrap_or(false);
 
@@ -892,6 +893,8 @@ async fn merge_allowed(
 	} else {
 		log::info!("{} is not mergeable", pr.html_url);
 	}
+
+	check_all_companions_are_mergeable(github_bot, pr, repo_name).await?;
 
 	if is_mergeable || min_approvals_required.is_some() {
 		match github_bot.reviews(&pr.url).await {
@@ -1147,7 +1150,7 @@ async fn merge_allowed(
 ///
 /// This function is used when a merge request is first received, to decide whether to store the
 /// request and wait for checks -- if so they will later be handled by `checks_and_status`.
-async fn ready_to_merge(
+pub async fn ready_to_merge(
 	github_bot: &GithubBot,
 	owner: &str,
 	repo_name: &str,
@@ -1292,7 +1295,7 @@ async fn prepare_to_merge(
 /// It might recursively call itself when attempting to solve a merge error after something
 /// meaningful happens.
 #[async_recursion]
-async fn merge(
+pub async fn merge(
 	github_bot: &GithubBot,
 	owner: &str,
 	repo_name: &str,
@@ -1639,7 +1642,6 @@ Approval by \"Project Owners\" is only attempted if other means defined in the [
 			ref status
 		} => Some(format!("Response error (status {}): <pre><code>{}</code></pre>", status, html_escape::encode_safe(&body.to_string()))),
 		Error::OrganizationMembership { .. }
-		| Error::CompanionUpdate { .. }
 		| Error::Message { .. }
 		| Error::Rebase { .. } => {
 			Some(format!("Error: {}", err))
