@@ -205,6 +205,7 @@ async fn handle_payload(payload: Payload, state: &AppState) -> Result<()> {
 				)
 				.await
 				.map_err(|err| {
+					log::info!("debug: head: {:?}", head);
 					if err.should_trigger_db_cleanup() {
 						if let Some(sha) = head
 							.as_ref()
