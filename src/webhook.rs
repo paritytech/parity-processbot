@@ -1636,6 +1636,7 @@ Approval by \"Project Owners\" is only attempted if other means defined in the [
 }
 
 async fn handle_error(e: Error, state: &AppState) {
+	log::info!("handle_error: {}", e);
 	match e {
 		Error::MergeFailureWillBeSolvedLater { .. } => (),
 		e => match e {
@@ -1646,7 +1647,6 @@ async fn handle_error(e: Error, state: &AppState) {
 			} => match *source {
 				Error::MergeFailureWillBeSolvedLater { .. } => (),
 				e => {
-					log::error!("handle_error: {}", e);
 					let msg = handle_error_inner(e, state)
 						.await
 						.unwrap_or_else(|| {
@@ -1665,7 +1665,6 @@ async fn handle_error(e: Error, state: &AppState) {
 				}
 			},
 			_ => {
-				log::error!("handle_error: {}", e);
 				handle_error_inner(e, state).await;
 			}
 		},
