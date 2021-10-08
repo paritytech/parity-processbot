@@ -14,8 +14,9 @@ use tokio::{sync::Mutex, time::delay_for};
 use crate::{
 	auth::GithubUserAuthenticator, companion::*, config::BotConfig,
 	constants::*, error::*, github::*, github_bot::GithubBot, gitlab_bot::*,
-	matrix_bot::MatrixBot, performance, process, rebase::*, vanity_service,
-	Result, Status,
+	matrix_bot::MatrixBot, performance, process, rebase::*,
+	utils::parse_bot_comment_from_text, vanity_service, CommentCommand,
+	MergeCommentCommand, Result, Status,
 };
 
 /// This data gets passed along with each webhook to the webhook handler.
@@ -495,33 +496,48 @@ async fn handle_comment(
 			},
 		)?;
 
-	// Fetch the pr to get all fields (eg. mergeable).
-	let pr = &github_bot.pull_request(owner, &repo_name, number).await?;
+	let cmd = match parse_bot_comment_from_text(body) {
+		Some(cmd) => cmd,
+		None => return Ok(()),
+	};
+	log::info!("{:?} requested by {}", cmd, requested_by);
 
 	let auth =
 		GithubUserAuthenticator::new(requested_by, owner, &repo_name, number);
+	auth.check_org_membership(&github_bot).await?;
 
-	if body.to_lowercase().trim() == AUTO_MERGE_REQUEST.to_lowercase().trim() {
-		log::info!(
-			"Received merge request for PR {} from user {}",
-			html_url,
-			requested_by
-		);
+	match cmd {
+		CommentCommand::Merge(_) => {
+			// We've noticed the bot failing for no human-discernable reason when, for instance, it
+			// complained that the pull request was not mergeable when, in fact, it seemed to be, if one
+			// were to guess what the state of the Github API was at the time the response was received with
+			// "second" precision. For the lack of insight onto the Github Servers, it's assumed that those
+			// failures happened because the Github API did not update fast enough and therefore the state
+			// was invalid when the request happened, but it got cleared shortly after (possibly
+			// microseconds after, hence why it is not discernable at "second" resolution).
+			// As a workaround we'll wait for long enough so that Github hopefully has time to update the
+			// API and make our merges succeed. A proper workaround would also entail retrying every X
+			// seconds for recoverable errors such as "required statuses are missing or pending".
+			delay_for(Duration::from_millis(4096)).await;
+		}
+		_ => (),
+	}
 
-		auth.check_org_membership(&github_bot).await?;
+	let pr = &github_bot.pull_request(owner, &repo_name, number).await?;
 
-		merge_allowed(
-			github_bot,
-			owner,
-			&repo_name,
-			pr,
-			bot_config,
-			requested_by,
-			None,
-		)
-		.await??;
+	match cmd {
+		CommentCommand::Merge(cmd) => {
+			merge_allowed(
+				github_bot,
+				owner,
+				&repo_name,
+				pr,
+				bot_config,
+				requested_by,
+				None,
+			)
+			.await??;
 
-		if ready_to_merge(github_bot, owner, &repo_name, pr).await? {
 			prepare_to_merge(
 				github_bot,
 				owner,
@@ -531,174 +547,118 @@ async fn handle_comment(
 			)
 			.await?;
 
-			match merge(
-				github_bot,
-				owner,
-				&repo_name,
-				pr,
-				bot_config,
-				requested_by,
-				None,
-			)
-			.await?
-			{
-				// If the merge failure will be solved later, then register the PR in the database so that
-				// it'll eventually resume processing when later statuses arrive
-				Err(Error::MergeFailureWillBeSolvedLater { msg }) => {
-					let _ = create_merge_request(
+			match cmd {
+				MergeCommentCommand::Normal => {
+					if ready_to_merge(github_bot, owner, &repo_name, pr).await?
+					{
+						match merge(
+							github_bot,
+							owner,
+							&repo_name,
+							pr,
+							bot_config,
+							requested_by,
+							None,
+						)
+						.await?
+						{
+							// If the merge failure will be solved later, then register the PR in the database so that
+							// it'll eventually resume processing when later statuses arrive
+							Err(Error::MergeFailureWillBeSolvedLater {
+								msg,
+							}) => {
+								let _ = create_merge_request(
+									owner,
+									&repo_name,
+									pr.number,
+									&pr.html_url,
+									requested_by,
+									&pr.head_sha()?,
+									db,
+								);
+								return Err(
+									Error::MergeFailureWillBeSolvedLater {
+										msg,
+									},
+								);
+							}
+							Err(e) => return Err(e),
+							_ => (),
+						}
+					} else {
+						let pr_head_sha = pr.head_sha()?;
+						wait_to_merge(
+							github_bot,
+							owner,
+							&repo_name,
+							pr.number,
+							&pr.html_url,
+							requested_by,
+							pr_head_sha,
+							db,
+						)
+						.await?;
+						return Ok(());
+					}
+				}
+				MergeCommentCommand::Force => {
+					match merge(
+						github_bot,
 						owner,
 						&repo_name,
-						pr.number,
-						&pr.html_url,
+						&pr,
+						bot_config,
 						requested_by,
-						&pr.head_sha()?,
-						db,
-					);
-					return Err(Error::MergeFailureWillBeSolvedLater { msg });
+						None,
+					)
+					.await?
+					{
+						// Even if the merge failure can be solved later, it does not matter because `merge force` is
+						// supposed to be immediate. We should give up here and yield the error message.
+						Err(Error::MergeFailureWillBeSolvedLater { msg }) => {
+							return Err(Error::Merge {
+								source: Box::new(Error::Message { msg }),
+								commit_sha: pr.head_sha()?.to_owned(),
+								pr_url: pr.html_url.to_owned(),
+								owner: owner.to_string(),
+								repo_name: repo_name.to_string(),
+								pr_number: pr.number,
+								created_approval_id: None,
+							}
+							.map_issue((
+								owner.to_string(),
+								repo_name.to_string(),
+								pr.number,
+							)))
+						}
+						Err(e) => return Err(e),
+						_ => (),
+					}
 				}
-				Err(e) => return Err(e),
-				_ => (),
 			}
-			merge_companions(github_bot, bot_config, &repo_name, pr, db)
+
+			merge_companions(github_bot, bot_config, &repo_name, &pr, db)
 				.await?;
-		} else {
+		}
+		CommentCommand::CancelMerge => {
+			log::info!("Deleting merge request for {}", html_url);
+
 			let pr_head_sha = pr.head_sha()?;
-			wait_to_merge(
-				github_bot,
-				owner,
-				&repo_name,
-				pr.number,
-				&pr.html_url,
-				requested_by,
-				pr_head_sha,
-				db,
-			)
-			.await?;
-		}
-	} else if body.to_lowercase().trim()
-		== AUTO_MERGE_FORCE.to_lowercase().trim()
-	{
-		log::info!(
-			"Received merge request for PR {} from user {}",
-			html_url,
-			requested_by
-		);
+			db.delete(pr_head_sha.as_bytes()).context(Db)?;
 
-		auth.check_org_membership(&github_bot).await?;
-
-		merge_allowed(
-			github_bot,
-			owner,
-			&repo_name,
-			&pr,
-			&bot_config,
-			requested_by,
-			None,
-		)
-		.await??;
-
-		prepare_to_merge(
-			github_bot,
-			owner,
-			&repo_name,
-			pr.number,
-			&pr.html_url,
-		)
-		.await?;
-
-		match merge(
-			github_bot,
-			owner,
-			&repo_name,
-			&pr,
-			bot_config,
-			requested_by,
-			None,
-		)
-		.await?
-		{
-			// Even if the merge failure can be solved later, it does not matter because `merge force` is
-			// supposed to be immediate. We should give up here and yield the error message.
-			Err(Error::MergeFailureWillBeSolvedLater { msg }) => {
-				return Err(Error::Merge {
-					source: Box::new(Error::Message { msg }),
-					commit_sha: pr.head_sha()?.to_owned(),
-					pr_url: pr.html_url.to_owned(),
-					owner: owner.to_string(),
-					repo_name: repo_name.to_string(),
-					pr_number: pr.number,
-					created_approval_id: None,
-				}
-				.map_issue((
-					owner.to_string(),
-					repo_name.to_string(),
+			let _ = github_bot
+				.create_issue_comment(
+					owner,
+					&repo_name,
 					pr.number,
-				)))
-			}
-			Err(e) => return Err(e),
-			_ => (),
+					"Merge cancelled.",
+				)
+				.await
+				.map_err(|e| {
+					log::error!("Error posting comment: {}", e);
+				});
 		}
-		merge_companions(github_bot, bot_config, &repo_name, &pr, db).await?;
-	} else if body.to_lowercase().trim()
-		== AUTO_MERGE_CANCEL.to_lowercase().trim()
-	{
-		let pr_head_sha = pr.head_sha()?;
-
-		log::info!(
-			"Received merge cancel for PR {} from user {}",
-			html_url,
-			requested_by
-		);
-		log::info!("Deleting merge request for {}", html_url);
-		db.delete(pr_head_sha.as_bytes()).context(Db)?;
-		let _ = github_bot
-			.create_issue_comment(
-				owner,
-				&repo_name,
-				pr.number,
-				"Merge cancelled.",
-			)
-			.await
-			.map_err(|e| {
-				log::error!("Error posting comment: {}", e);
-			});
-	} else if repo_name == "polkadot"
-		&& body.to_lowercase().trim()
-			== COMPARE_RELEASE_REQUEST.to_lowercase().trim()
-	{
-		let pr_head_sha = pr.head_sha()?;
-
-		log::info!(
-			"Received diff request for PR {} from user {}",
-			html_url,
-			requested_by
-		);
-		let rel = github_bot.latest_release(owner, &repo_name).await?;
-		let release_tag =
-			github_bot.tag(owner, &repo_name, &rel.tag_name).await?;
-		let release_substrate_commit = github_bot
-			.substrate_commit_from_polkadot_commit(&release_tag.object.sha)
-			.await?;
-		let branch_substrate_commit = github_bot
-			.substrate_commit_from_polkadot_commit(pr_head_sha)
-			.await?;
-		let link = github_bot.diff_url(
-			owner,
-			"substrate",
-			&release_substrate_commit,
-			&branch_substrate_commit,
-		);
-
-		log::info!("Posting link to substrate diff: {}", &link);
-		let _ = github_bot
-			.create_issue_comment(owner, &repo_name, number, &link)
-			.await
-			.map_err(|e| {
-				log::error!("Error posting comment: {}", e);
-			});
-	} else if body.to_lowercase().trim() == REBASE.to_lowercase().trim() {
-		log::info!("Rebase {} requested by {}", html_url, requested_by);
-		{
+		CommentCommand::Rebase => {
 			if let PullRequest {
 				head:
 					Some(Head {
@@ -717,17 +677,19 @@ async fn handle_comment(
 				..
 			} = pr.clone()
 			{
-				let _ = github_bot
-					.create_issue_comment(
-						owner,
-						&repo_name,
-						pr.number,
-						"Rebasing.",
-					)
-					.await
-					.map_err(|e| {
-						log::error!("Error posting comment: {}", e);
-					});
+				let _ =
+					github_bot
+						.create_issue_comment(
+							owner,
+							&repo_name,
+							pr.number,
+							"Rebasing.",
+						)
+						.await
+						.map_err(|e| {
+							log::error!("Error posting comment for notifying rebase: {}", e);
+						});
+
 				rebase(
 					github_bot,
 					owner,
@@ -736,31 +698,52 @@ async fn handle_comment(
 					&head_repo,
 					&head_branch,
 				)
-				.await
+				.await?;
 			} else {
-				Err(Error::Message {
+				return Err(Error::Message {
 					msg: format!("PR is missing some API data"),
-				})
+				});
 			}
 		}
-		.map_err(|e| Error::Rebase {
-			source: Box::new(e),
-		})?;
-	} else if body.to_lowercase().trim() == BURNIN_REQUEST.to_lowercase().trim()
-	{
-		auth.check_org_membership(github_bot).await?;
+		CommentCommand::BurninRequest => {
+			handle_burnin_request(
+				github_bot,
+				&state.gitlab_bot,
+				&state.matrix_bot,
+				owner,
+				requested_by,
+				&repo_name,
+				&pr,
+			)
+			.await?;
+		}
+		CommentCommand::CompareReleaseRequest => {
+			let pr_head_sha = pr.head_sha()?;
+			let rel = github_bot.latest_release(owner, &repo_name).await?;
+			let release_tag =
+				github_bot.tag(owner, &repo_name, &rel.tag_name).await?;
+			let release_substrate_commit = github_bot
+				.substrate_commit_from_polkadot_commit(&release_tag.object.sha)
+				.await?;
+			let branch_substrate_commit = github_bot
+				.substrate_commit_from_polkadot_commit(pr_head_sha)
+				.await?;
+			let link = github_bot.diff_url(
+				owner,
+				"substrate",
+				&release_substrate_commit,
+				&branch_substrate_commit,
+			);
 
-		handle_burnin_request(
-			github_bot,
-			&state.gitlab_bot,
-			&state.matrix_bot,
-			owner,
-			requested_by,
-			&repo_name,
-			&pr,
-		)
-		.await?;
-	}
+			log::info!("Posting link to substrate diff: {}", &link);
+			let _ = github_bot
+				.create_issue_comment(owner, &repo_name, number, &link)
+				.await
+				.map_err(|e| {
+					log::error!("Error posting comment: {}", e);
+				});
+		}
+	};
 
 	Ok(())
 }
@@ -869,18 +852,6 @@ async fn merge_allowed(
 	requested_by: &str,
 	min_approvals_required: Option<usize>,
 ) -> Result<Result<Option<String>>> {
-	// We've noticed the bot failing for no human-discernable reason when, for instance, it complained
-	// that the pull request was not mergeable when, in fact, it seemed to be, if one were to guess
-	// what the state of the Github API was at the time the response was received with "second"
-	// precision. For the lack of insight onto the Github Servers, it's assumed that those failures
-	// happened because the Github API did not update fast enough and therefore the state was invalid
-	// when the request happened, but it got cleared shortly after (possibly microseconds after, hence
-	// why it is not discernable at "second" resolution).
-	// As a workaround we'll wait for long enough so that Github hopefully has time to update the API
-	// and make our merges succeed. A proper workaround would also entail retrying every X seconds for
-	// recoverable errors such as "required statuses are missing or pending".
-	delay_for(Duration::from_millis(4096)).await;
-
 	let is_mergeable = pr.mergeable.unwrap_or(false);
 
 	if let Some(min_approvals_required) = &min_approvals_required {
@@ -1281,7 +1252,7 @@ async fn prepare_to_merge(
 	number: i64,
 	html_url: &str,
 ) -> Result<()> {
-	log::info!("{} checks successful; trying merge.", html_url);
+	log::info!("Trying merge of {}", html_url);
 	let _ = github_bot
 		.create_issue_comment(owner, &repo_name, number, "Trying merge.")
 		.await
@@ -1641,9 +1612,7 @@ Approval by \"Project Owners\" is only attempted if other means defined in the [
 			ref body,
 			ref status
 		} => Some(format!("Response error (status {}): <pre><code>{}</code></pre>", status, html_escape::encode_safe(&body.to_string()))),
-		Error::OrganizationMembership { .. }
-		| Error::Message { .. }
-		| Error::Rebase { .. } => {
+		Error::Message { .. } => {
 			Some(format!("Error: {}", err))
 		}
 		_ => None

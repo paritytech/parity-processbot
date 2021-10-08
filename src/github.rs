@@ -1,4 +1,6 @@
-use crate::{constants::BOT_COMMANDS, error::*, Result, PR_HTML_URL_REGEX};
+use crate::{
+	error::*, utils::parse_bot_comment_from_text, Result, PR_HTML_URL_REGEX,
+};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use snafu::OptionExt;
@@ -436,49 +438,43 @@ impl HasIssueDetails for DetectUserCommentPullRequest {
 					..
 				}) => None,
 				_ => {
-					let body = body.trim();
+					if parse_bot_comment_from_text(body).is_none() {
+						return None;
+					}
 
-					if BOT_COMMANDS.iter().find(|cmd| **cmd == body).is_some() {
-						if let Some(DetectUserCommentPullRequestRepository {
-							name: Some(name),
-							owner: Some(User { login, .. }),
-							..
-						}) = repository
-						{
-							Some((login.to_owned(), name.to_owned(), *number))
-						} else {
-							None
-						}
-						.or_else(|| {
-							if let Some(
-								DetectUserCommentPullRequestRepository {
-									full_name: Some(full_name),
-									..
-								},
-							) = repository
-							{
-								parse_repository_full_name(full_name)
-									.map(|(owner, name)| (owner, name, *number))
-							} else {
-								None
-							}
-						})
-						.or_else(|| {
-							if let DetectUserCommentPullRequestPullRequest {
-								html_url: Some(html_url),
-							} = pr
-							{
-								parse_issue_details_from_pr_html_url(html_url)
-									.map(|(owner, name, _)| {
-										(owner, name, *number)
-									})
-							} else {
-								None
-							}
-						})
+					if let Some(DetectUserCommentPullRequestRepository {
+						name: Some(name),
+						owner: Some(User { login, .. }),
+						..
+					}) = repository
+					{
+						Some((login.to_owned(), name.to_owned(), *number))
 					} else {
 						None
 					}
+					.or_else(|| {
+						if let Some(DetectUserCommentPullRequestRepository {
+							full_name: Some(full_name),
+							..
+						}) = repository
+						{
+							parse_repository_full_name(full_name)
+								.map(|(owner, name)| (owner, name, *number))
+						} else {
+							None
+						}
+					})
+					.or_else(|| {
+						if let DetectUserCommentPullRequestPullRequest {
+							html_url: Some(html_url),
+						} = pr
+						{
+							parse_issue_details_from_pr_html_url(html_url)
+								.map(|(owner, name, _)| (owner, name, *number))
+						} else {
+							None
+						}
+					})
 				}
 			}
 		} else {
