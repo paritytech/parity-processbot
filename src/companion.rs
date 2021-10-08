@@ -14,8 +14,11 @@ use crate::{
 	error::*,
 	github::*,
 	github_bot::GithubBot,
-	webhook::{merge, ready_to_merge, wait_to_merge},
-	Result, COMPANION_LONG_REGEX, COMPANION_PREFIX_REGEX,
+	webhook::{
+		get_latest_checks_state, get_latest_statuses_state, merge,
+		ready_to_merge, wait_to_merge,
+	},
+	Result, Status, COMPANION_LONG_REGEX, COMPANION_PREFIX_REGEX,
 	COMPANION_SHORT_REGEX, PR_HTML_URL_REGEX,
 };
 
@@ -340,8 +343,9 @@ pub async fn check_all_companions_are_mergeable(
 			for (html_url, owner, repo, number) in parse_all_companions(body) {
 				let companion =
 					github_bot.pull_request(&owner, &repo, number).await?;
+				let head_sha = companion.head_sha()?;
 
-				let is_owner_a_user = companion
+				let has_user_owner = companion
 					.user
 					.as_ref()
 					.map(|user| {
@@ -351,7 +355,7 @@ pub async fn check_all_companions_are_mergeable(
 							.unwrap_or(false)
 					})
 					.unwrap_or(false);
-				if !is_owner_a_user {
+				if !has_user_owner {
 					return Err(Error::Message {
 						msg: format!(
 							"Companion {} is not owned by a user, therefore processbot would not be able to push the lockfile update to their branch due to a Github limitation (https://github.com/isaacs/github/issues/1681)",
@@ -372,6 +376,86 @@ pub async fn check_all_companions_are_mergeable(
 						),
 					});
 				}
+
+				let target_branch = github_bot
+					.branch(
+						&companion.base.repo.owner.login,
+						&companion.base.repo.name,
+						&companion.base.ref_field,
+					)
+					.await?;
+
+				let statuses = get_latest_statuses_state(
+					github_bot,
+					&owner,
+					&repo,
+					head_sha,
+					&pr.html_url,
+					Some(
+						&target_branch
+							.protection
+							.required_status_checks
+							.contexts,
+					),
+				)
+				.await?;
+				match statuses {
+					Status::Success => (),
+					Status::Pending => {
+						return Err(Error::InvalidCompanionStatus {
+							status: Status::Pending,
+							msg: format!(
+								"Companion {} has pending required statuses",
+								html_url
+							),
+						});
+					}
+					Status::Failure => {
+						return Err(Error::InvalidCompanionStatus {
+							status: Status::Failure,
+							msg: format!(
+								"Companion {} has failed required statuses",
+								html_url
+							),
+						});
+					}
+				};
+
+				let checks = get_latest_checks_state(
+					github_bot,
+					&owner,
+					&repo,
+					&head_sha,
+					&pr.html_url,
+					Some(
+						&target_branch
+							.protection
+							.required_status_checks
+							.contexts,
+					),
+				)
+				.await?;
+				match checks {
+					Status::Success => (),
+					Status::Pending => {
+						return Err(Error::InvalidCompanionStatus {
+							status: checks,
+							msg: format!(
+								"Companion {} has pending required checks",
+								html_url
+							),
+						});
+					}
+					Status::Failure => {
+						return Err(Error::InvalidCompanionStatus {
+							status: checks,
+							msg: format!(
+								"Companion {} has failed required checks",
+								html_url
+							),
+						});
+					}
+				};
 			}
 		}
 	}
@@ -447,12 +531,13 @@ async fn update_then_merge_companion(
 				&format!("parity-processbot[bot]"),
 				&updated_sha,
 				db,
+				None,
 			)
 			.await?;
 		}
 	} else {
 		return Err(Error::Message {
-			msg: "Companion PR is missing some API data.".to_string(),
+			msg: format!("Companion {} is missing some API data", html_url),
 		});
 	}
 

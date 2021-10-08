@@ -3,7 +3,6 @@ use crate::{github, Result};
 use super::GithubBot;
 
 impl GithubBot {
-	/// Returns a repository with the given name.
 	pub async fn repository<A>(
 		&self,
 		owner: &str,
@@ -17,6 +16,22 @@ impl GithubBot {
 			base_url = Self::BASE_URL,
 			owner = owner,
 			repo_name = repo_name
+		);
+		self.client.get(url).await
+	}
+
+	pub async fn branch(
+		&self,
+		owner: &str,
+		repo: &str,
+		branch: &str,
+	) -> Result<github::Branch> {
+		let url = format!(
+			"{}/repos/{}/{}/branches/{}",
+			Self::BASE_URL,
+			owner,
+			repo,
+			branch
 		);
 		self.client.get(url).await
 	}

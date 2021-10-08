@@ -148,7 +148,7 @@ fn handle_cmd_result<'a>(
 									err_output.replace(secret, "${SECRET}");
 							}
 						}
-						log::error!(
+						log::info!(
 							"handle_cmd_result: {} failed with error: {}",
 							cmd_display,
 							err_output

@@ -1,5 +1,6 @@
 use crate::{
-	error::*, utils::parse_bot_comment_from_text, Result, PR_HTML_URL_REGEX,
+	error::*, utils::parse_bot_comment_from_text,
+	PlaceholderDeserializationItem, Result, PR_HTML_URL_REGEX,
 };
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -7,6 +8,19 @@ use snafu::OptionExt;
 
 pub trait HasIssueDetails {
 	fn get_issue_details(&self) -> Option<IssueDetails>;
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BranchProtectionRequiredStatusChecks {
+	pub contexts: Vec<String>,
+}
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BranchProtection {
+	pub required_status_checks: BranchProtectionRequiredStatusChecks,
+}
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Branch {
+	pub protection: BranchProtection,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -73,7 +87,7 @@ pub struct Issue {
 	// User might be missing when it has been deleted
 	pub user: Option<User>,
 	pub body: Option<String>,
-	pub pull_request: Option<IssuePullRequest>,
+	pub pull_request: Option<PlaceholderDeserializationItem>,
 	pub repository: Option<Repository>,
 	pub repository_url: Option<String>,
 }
@@ -173,9 +187,6 @@ pub struct Team {
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct IssuePullRequest {}
-
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Head {
 	pub label: Option<String>,
 	#[serde(rename = "ref")]
@@ -188,10 +199,8 @@ pub struct Head {
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Base {
 	#[serde(rename = "ref")]
-	pub ref_field: Option<String>,
-	pub sha: Option<String>,
-	// Repository might be missing when it has been deleted
-	pub repo: Option<HeadRepo>,
+	pub ref_field: String,
+	pub repo: BaseRepo,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -324,6 +333,12 @@ pub struct HeadRepo {
 	pub owner: Option<User>,
 }
 
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BaseRepo {
+	pub name: String,
+	pub owner: User,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CheckRunConclusion {
@@ -354,7 +369,7 @@ pub struct WebhookIssueComment {
 	pub number: i64,
 	pub html_url: String,
 	pub repository_url: Option<String>,
-	pub pull_request: Option<IssuePullRequest>,
+	pub pull_request: Option<PlaceholderDeserializationItem>,
 }
 
 impl HasIssueDetails for WebhookIssueComment {

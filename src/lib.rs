@@ -1,3 +1,5 @@
+use serde::{Deserialize, Serialize};
+
 mod auth;
 pub mod bamboo;
 pub mod cmd;
@@ -24,6 +26,7 @@ pub mod webhook;
 
 pub type Result<T, E = error::Error> = std::result::Result<T, E>;
 
+#[derive(Debug)]
 pub enum Status {
 	Success,
 	Pending,
@@ -42,4 +45,13 @@ pub enum CommentCommand {
 	Rebase,
 	BurninRequest,
 	CompareReleaseRequest,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PlaceholderDeserializationItem {}
+
+pub enum MergeCancelOutcome {
+	ShaDidNotExist,
+	WasCancelled,
+	WasNotCancelled,
 }

@@ -1,3 +1,4 @@
+use crate::Status;
 use snafu::Snafu;
 
 // TODO this really should be struct { repository, owner, number }
@@ -48,11 +49,6 @@ pub enum Error {
 	HeadChanged {
 		expected: String,
 		actual: String,
-	},
-
-	#[snafu(display("Error getting process info: {}", source))]
-	ProcessFile {
-		source: Box<Error>,
 	},
 
 	#[snafu(display("Missing process info."))]
@@ -195,6 +191,12 @@ pub enum Error {
 	MergeFailureWillBeSolvedLater {
 		msg: String,
 	},
+
+	#[snafu(display("{}", msg))]
+	InvalidCompanionStatus {
+		status: Status,
+		msg: String,
+	},
 }
 
 impl Error {
@@ -205,6 +207,15 @@ impl Error {
 				source: Box::new(self),
 				issue,
 			},
+		}
+	}
+	pub fn stops_merge_attempt(&self) -> bool {
+		match self {
+			Self::WithIssue { source, .. } | Self::Merge { source, .. } => {
+				source.stops_merge_attempt()
+			}
+			Self::MergeFailureWillBeSolvedLater { .. } => false,
+			_ => true,
 		}
 	}
 }
