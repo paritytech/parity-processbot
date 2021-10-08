@@ -18,6 +18,7 @@ pub mod performance;
 pub mod process;
 pub mod rebase;
 pub mod server;
+pub mod utils;
 pub mod vanity_service;
 pub mod webhook;
 
@@ -27,4 +28,18 @@ pub enum Status {
 	Success,
 	Pending,
 	Failure,
+}
+
+#[derive(Debug)]
+pub enum MergeCommentCommand {
+	Normal,
+	Force,
+}
+#[derive(Debug)]
+pub enum CommentCommand {
+	Merge(MergeCommentCommand),
+	CancelMerge,
+	Rebase,
+	BurninRequest,
+	CompareReleaseRequest,
 }
