@@ -50,11 +50,6 @@ pub enum Error {
 		actual: String,
 	},
 
-	#[snafu(display("Error getting process info: {}", source))]
-	ProcessFile {
-		source: Box<Error>,
-	},
-
 	#[snafu(display("Missing process info."))]
 	ProcessInfo {
 		errors: Option<Vec<String>>,
@@ -205,6 +200,15 @@ impl Error {
 				source: Box::new(self),
 				issue,
 			},
+		}
+	}
+	pub fn should_trigger_db_cleanup(&self) -> bool {
+		match self {
+			Self::WithIssue { source, .. } | Self::Merge { source, .. } => {
+				source.should_trigger_db_cleanup()
+			}
+			Self::MergeFailureWillBeSolvedLater { .. } => false,
+			_ => true,
 		}
 	}
 }
