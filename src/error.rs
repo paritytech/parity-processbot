@@ -39,11 +39,6 @@ pub enum Error {
 		created_approval_id: Option<i64>,
 	},
 
-	#[snafu(display("Rebase failed: {}", source))]
-	Rebase {
-		source: Box<Error>,
-	},
-
 	#[snafu(display("Checks failed for {}", commit_sha))]
 	ChecksFailed {
 		commit_sha: String,
@@ -53,11 +48,6 @@ pub enum Error {
 	HeadChanged {
 		expected: String,
 		actual: String,
-	},
-
-	#[snafu(display("Error getting organization membership: {}", source))]
-	OrganizationMembership {
-		source: Box<Error>,
 	},
 
 	#[snafu(display("Error getting process info: {}", source))]

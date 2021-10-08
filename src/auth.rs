@@ -1,4 +1,4 @@
-use crate::{error::Error, github_bot::GithubBot, Result};
+use crate::{github_bot::GithubBot, Result};
 
 // This is a lame alternative to an async closure.
 pub struct GithubUserAuthenticator {
@@ -27,35 +27,13 @@ impl GithubUserAuthenticator {
 		&self,
 		github_bot: &GithubBot,
 	) -> Result<()> {
-		let is_member = github_bot
-			.org_member(&self.org, &self.username)
-			.await
-			.map_err(|e| {
-				Error::OrganizationMembership {
-					source: Box::new(e),
-				}
-				.map_issue((
-					self.org.clone(),
-					self.repo_name.clone(),
-					self.pr_number,
-				))
-			})?;
-
-		if !is_member {
-			Err(Error::OrganizationMembership {
-				source: Box::new(Error::Message {
-					msg: format!(
-						"{} is not a member of {}; aborting.",
-						self.username, self.org
-					),
-				}),
-			}
-			.map_issue((
+		match github_bot.org_member(&self.org, &self.username).await {
+			Ok(_) => Ok(()),
+			Err(e) => Err(e.map_issue((
 				self.org.clone(),
 				self.repo_name.clone(),
 				self.pr_number,
-			)))?;
+			))),
 		}
-		Ok(())
 	}
 }
