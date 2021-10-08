@@ -173,7 +173,13 @@ pub struct Team {
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct IssuePullRequest {}
+pub struct IssuePullRequestHead {
+	pub sha: Option<String>,
+}
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct IssuePullRequest {
+	pub head: Option<IssuePullRequestHead>,
+}
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Head {
