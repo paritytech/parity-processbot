@@ -35,6 +35,7 @@ pub struct PullRequest {
 	pub head: Option<Head>,
 	pub base: Base,
 	pub repository: Option<Repository>,
+	pub merged: bool,
 }
 
 impl HasIssueDetails for PullRequest {

@@ -12,11 +12,11 @@ use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::{sync::Mutex, time::delay_for};
 
 use crate::{
-	auth::GithubUserAuthenticator, companion::*, config::BotConfig,
-	constants::*, error::*, github::*, github_bot::GithubBot, gitlab_bot::*,
-	matrix_bot::MatrixBot, performance, process, rebase::*,
-	utils::parse_bot_comment_from_text, vanity_service, CommentCommand,
-	MergeCancelOutcome, MergeCommentCommand, Result, Status,
+	auth::GithubUserAuthenticator, companion::parse_all_companions,
+	companion::*, config::BotConfig, constants::*, error::*, github::*,
+	github_bot::GithubBot, gitlab_bot::*, matrix_bot::MatrixBot, performance,
+	process, rebase::*, utils::parse_bot_comment_from_text, vanity_service,
+	CommentCommand, MergeCancelOutcome, MergeCommentCommand, Result, Status,
 };
 
 /// This data gets passed along with each webhook to the webhook handler.
@@ -33,12 +33,20 @@ pub struct AppState {
 /// This stores information about a pull request while we wait for checks to complete.
 #[derive(Debug, Serialize, Deserialize)]
 #[repr(C)]
+pub struct MergeRequestReference {
+	pub owner: String,
+	pub repo: String,
+	pub number: i64,
+}
+#[derive(Debug, Serialize, Deserialize)]
+#[repr(C)]
 pub struct MergeRequest {
-	owner: String,
-	repo_name: String,
-	number: i64,
-	html_url: String,
-	requested_by: String,
+	pub owner: String,
+	pub repo_name: String,
+	pub number: i64,
+	pub html_url: String,
+	pub requested_by: String,
+	pub companion_children: Option<Vec<MergeRequestReference>>,
 }
 
 /// Check the SHA1 signature on a webhook payload.
@@ -300,13 +308,7 @@ async fn handle_check(
 	state: &AppState,
 ) -> Result<()> {
 	if status == CheckRunStatus::Completed {
-		checks_and_status(
-			&state.bot_config,
-			&state.github_bot,
-			&state.db,
-			&commit_sha,
-		)
-		.await
+		checks_and_status(state, &commit_sha).await
 	} else {
 		Ok(())
 	}
@@ -321,13 +323,7 @@ async fn handle_status(
 	if status == StatusState::Pending {
 		Ok(())
 	} else {
-		checks_and_status(
-			&state.bot_config,
-			&state.github_bot,
-			&state.db,
-			&commit_sha,
-		)
-		.await
+		checks_and_status(state, commit_sha).await
 	}
 }
 
@@ -337,7 +333,6 @@ pub async fn get_latest_statuses_state(
 	owner_repo: &str,
 	commit_sha: &str,
 	html_url: &str,
-	filter_context: Option<&Vec<String>>,
 ) -> Result<Status> {
 	let status = github_bot.status(&owner, &owner_repo, &commit_sha).await?;
 	log::info!("{:?}", status);
@@ -360,16 +355,6 @@ pub async fn get_latest_statuses_state(
 			.unwrap_or(false)
 		{
 			continue;
-		}
-
-		if let Some(filter_context) = filter_context {
-			if !filter_context
-				.iter()
-				.find(|ctx| **ctx == s.context)
-				.is_some()
-			{
-				continue;
-			}
 		}
 
 		if latest_statuses
@@ -408,7 +393,6 @@ pub async fn get_latest_checks_state(
 	repo_name: &str,
 	commit_sha: &str,
 	html_url: &str,
-	filter_name: Option<&Vec<String>>,
 ) -> Result<Status> {
 	let checks = github_bot
 		.check_runs(&owner, &repo_name, commit_sha)
@@ -422,11 +406,6 @@ pub async fn get_latest_checks_state(
 		(i64, CheckRunStatus, Option<CheckRunConclusion>),
 	> = HashMap::new();
 	for c in checks.check_runs {
-		if let Some(filter_name) = filter_name {
-			if !filter_name.iter().find(|name| **name == c.name).is_some() {
-				continue;
-			}
-		}
 		if latest_checks
 			.get(&c.name)
 			.map(|(prev_id, _, _)| prev_id < &(&c).id)
@@ -457,12 +436,8 @@ pub async fn get_latest_checks_state(
 
 /// Check that no commit has been pushed since the merge request was received.  Query checks and
 /// statuses and if they are green, attempt merge.
-async fn checks_and_status(
-	bot_config: &BotConfig,
-	github_bot: &GithubBot,
-	db: &DB,
-	sha: &str,
-) -> Result<()> {
+async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
+	let AppState { db, .. } = state;
 	let pr_bytes = match db.get(sha.as_bytes()).context(Db)? {
 		Some(pr_bytes) => pr_bytes,
 		None => return Ok(()),
@@ -480,6 +455,12 @@ async fn checks_and_status(
 			requested_by,
 			..
 		} = &mr;
+		let AppState {
+			github_bot,
+			db,
+			bot_config,
+			..
+		} = state;
 
 		let pr = github_bot.pull_request(owner, repo_name, *number).await?;
 		let pr_head_sha = pr.head_sha()?;
@@ -492,13 +473,13 @@ async fn checks_and_status(
 		}
 
 		let status = get_latest_statuses_state(
-			github_bot, &owner, &repo_name, sha, &html_url, None,
+			github_bot, &owner, &repo_name, sha, &html_url,
 		)
 		.await?;
 		match status {
 			Status::Success => {
 				let checks = get_latest_checks_state(
-					github_bot, &owner, &repo_name, sha, &html_url, None,
+					github_bot, &owner, &repo_name, sha, &html_url,
 				)
 				.await?;
 				match checks {
@@ -528,10 +509,7 @@ async fn checks_and_status(
 						{
 							Ok(_) => {
 								db.delete(&sha).context(Db)?;
-								merge_companions(
-									github_bot, bot_config, &repo_name, &pr, db,
-								)
-								.await
+								merge_companions(state, &repo_name, &pr).await
 							}
 							Err(Error::MergeFailureWillBeSolvedLater {
 								..
@@ -591,6 +569,24 @@ async fn handle_command(
 			)
 			.await?;
 
+			let mr = MergeRequest {
+				owner: owner.to_owned(),
+				repo_name: repo.to_owned(),
+				number,
+				html_url: html_url.to_owned(),
+				requested_by: requested_by.to_owned(),
+				companion_children: pr.body.as_ref().map(|body| {
+					parse_all_companions(body)
+						.into_iter()
+						.map(|(_, owner, repo, number)| MergeRequestReference {
+							owner,
+							repo,
+							number,
+						})
+						.collect()
+				}),
+			};
+
 			match cmd {
 				MergeCommentCommand::Normal => {
 					if ready_to_merge(github_bot, owner, &repo, &pr).await? {
@@ -615,14 +611,9 @@ async fn handle_command(
 									msg
 								);
 								wait_to_merge(
-									github_bot,
-									owner,
-									&repo,
-									pr.number,
-									&pr.html_url,
-									requested_by,
+									state,
 									pr_head_sha,
-									db,
+									&mr,
 									Some(&msg),
 								)
 								.await?;
@@ -636,18 +627,7 @@ async fn handle_command(
 							_ => (),
 						}
 					} else {
-						wait_to_merge(
-							github_bot,
-							owner,
-							&repo,
-							pr.number,
-							&pr.html_url,
-							requested_by,
-							pr_head_sha,
-							db,
-							None,
-						)
-						.await?;
+						wait_to_merge(state, pr_head_sha, &mr, None).await?;
 						return Ok(());
 					}
 				}
@@ -688,7 +668,7 @@ async fn handle_command(
 			}
 
 			db.delete(pr_head_sha.as_bytes()).context(Db)?;
-			merge_companions(github_bot, bot_config, &repo, &pr, db).await
+			merge_companions(state, &repo, &pr).await
 		}
 		CommentCommand::CancelMerge => {
 			log::info!("Deleting merge request for {}", html_url);
@@ -1258,7 +1238,6 @@ pub async fn ready_to_merge(
 				repo_name,
 				pr_head_sha,
 				&pr.html_url,
-				None,
 			)
 			.await
 			{
@@ -1270,7 +1249,6 @@ pub async fn ready_to_merge(
 							repo_name,
 							pr_head_sha,
 							&pr.html_url,
-							None,
 						)
 						.await
 						{
@@ -1303,64 +1281,43 @@ pub async fn ready_to_merge(
 ///
 /// If this has been called, error handling must remove the db entry.
 async fn register_merge_request(
-	owner: &str,
-	repo: &str,
-	number: i64,
-	html_url: &str,
-	requested_by: &str,
-	commit_sha: &str,
-	db: &DB,
+	state: &AppState,
+	sha: &str,
+	mr: &MergeRequest,
 ) -> Result<()> {
-	let mr = MergeRequest {
-		owner: owner.to_string(),
-		repo_name: repo.to_string(),
-		number: number,
-		html_url: html_url.to_string(),
-		requested_by: requested_by.to_string(),
-	};
-	async {
-		log::info!("Serializing merge request: {:?}", mr);
-		let bytes = bincode::serialize(&mr).context(Bincode)?;
-		log::info!("Writing merge request to db (head sha: {})", commit_sha);
-		db.put(commit_sha.trim().as_bytes(), bytes).context(Db)
-	}
-	.await
-	.map_err(|err| err.map_issue((owner.to_string(), repo.to_string(), number)))
+	let AppState { db, .. } = state;
+	log::info!("Serializing merge request: {:?}", mr);
+	let bytes = bincode::serialize(mr).context(Bincode)?;
+	log::info!("Writing merge request to db (sha: {})", sha);
+	db.put(sha.trim().as_bytes(), bytes).context(Db)
 }
 
 /// Create a merge request, add it to the database, and post a comment stating the merge is
 /// pending.
 pub async fn wait_to_merge(
-	github_bot: &GithubBot,
-	owner: &str,
-	repo: &str,
-	number: i64,
-	html_url: &str,
-	requested_by: &str,
-	commit_sha: &str,
-	db: &DB,
+	state: &AppState,
+	sha: &str,
+	mr: &MergeRequest,
 	msg: Option<&str>,
 ) -> Result<()> {
-	register_merge_request(
-		owner,
-		repo,
-		number,
-		html_url,
-		requested_by,
-		commit_sha,
-		db,
-	)
-	.await?;
+	register_merge_request(state, sha, mr).await?;
 
-	let comment = {
-		let msg = msg.unwrap_or("Waiting for commit status.");
-		format!(
-			"{} If your PR has companions, processbot will also wait until the companion's required statuses are passing.",
-			msg
-		)
-	};
+	let AppState { github_bot, .. } = state;
+
+	let MergeRequest {
+		owner,
+		repo_name,
+		number,
+		..
+	} = mr;
+
 	let post_comment_result = github_bot
-		.create_issue_comment(owner, &repo, number, &comment)
+		.create_issue_comment(
+			owner,
+			repo_name,
+			*number,
+			msg.unwrap_or("Waiting for commit status."),
+		)
 		.await;
 	if let Err(err) = post_comment_result {
 		log::error!("Error posting comment: {}", err);
@@ -1382,6 +1339,10 @@ pub async fn merge(
 	requested_by: &str,
 	created_approval_id: Option<i64>,
 ) -> Result<Result<()>> {
+	if pr.merged {
+		return Ok(Ok());
+	}
+
 	match pr.head_sha() {
 		Ok(pr_head_sha) => match github_bot
 			.merge_pull_request(owner, repo_name, pr.number, pr_head_sha)

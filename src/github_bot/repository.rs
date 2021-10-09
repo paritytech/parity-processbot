@@ -19,22 +19,6 @@ impl GithubBot {
 		);
 		self.client.get(url).await
 	}
-
-	pub async fn branch(
-		&self,
-		owner: &str,
-		repo: &str,
-		branch: &str,
-	) -> Result<github::Branch> {
-		let url = format!(
-			"{}/repos/{}/{}/branches/{}",
-			Self::BASE_URL,
-			owner,
-			repo,
-			branch
-		);
-		self.client.get(url).await
-	}
 }
 
 /*

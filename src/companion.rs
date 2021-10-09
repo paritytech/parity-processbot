@@ -1,5 +1,4 @@
 use regex::RegexBuilder;
-use rocksdb::DB;
 use snafu::ResultExt;
 use std::{
 	collections::HashMap, collections::HashSet, iter::FromIterator, path::Path,
@@ -9,14 +8,14 @@ use tokio::time::delay_for;
 
 use crate::{
 	cmd::*,
-	config::BotConfig,
-	constants::MAIN_REPO_FOR_STAGING,
+	constants::{BOT_NAME_FOR_COMMITS, MAIN_REPO_FOR_STAGING},
 	error::*,
 	github::*,
 	github_bot::GithubBot,
 	webhook::{
 		get_latest_checks_state, get_latest_statuses_state, merge,
-		ready_to_merge, wait_to_merge,
+		ready_to_merge, wait_to_merge, AppState, MergeRequest,
+		MergeRequestReference,
 	},
 	Result, Status, COMPANION_LONG_REGEX, COMPANION_PREFIX_REGEX,
 	COMPANION_SHORT_REGEX, PR_HTML_URL_REGEX,
@@ -329,7 +328,7 @@ fn companion_parse_short(body: &str) -> Option<IssueDetailsWithRepositoryURL> {
 	Some((html_url, owner, repo, number))
 }
 
-fn parse_all_companions(body: &str) -> Vec<IssueDetailsWithRepositoryURL> {
+pub fn parse_all_companions(body: &str) -> Vec<IssueDetailsWithRepositoryURL> {
 	body.lines().filter_map(companion_parse).collect()
 }
 
@@ -343,6 +342,11 @@ pub async fn check_all_companions_are_mergeable(
 			for (html_url, owner, repo, number) in parse_all_companions(body) {
 				let companion =
 					github_bot.pull_request(&owner, &repo, number).await?;
+
+				if companion.merged {
+					continue;
+				}
+
 				let head_sha = companion.head_sha()?;
 
 				let has_user_owner = companion
@@ -377,26 +381,12 @@ pub async fn check_all_companions_are_mergeable(
 					});
 				}
 
-				let target_branch = github_bot
-					.branch(
-						&companion.base.repo.owner.login,
-						&companion.base.repo.name,
-						&companion.base.ref_field,
-					)
-					.await?;
-
 				let statuses = get_latest_statuses_state(
 					github_bot,
 					&owner,
 					&repo,
 					head_sha,
 					&pr.html_url,
-					Some(
-						&target_branch
-							.protection
-							.required_status_checks
-							.contexts,
-					),
 				)
 				.await?;
 				match statuses {
@@ -427,12 +417,6 @@ pub async fn check_all_companions_are_mergeable(
 					&repo,
 					&head_sha,
 					&pr.html_url,
-					Some(
-						&target_branch
-							.protection
-							.required_status_checks
-							.contexts,
-					),
 				)
 				.await?;
 				match checks {
@@ -463,17 +447,112 @@ pub async fn check_all_companions_are_mergeable(
 	Ok(())
 }
 
+async fn trigger_merge_through_parent(
+	state: &AppState,
+	companion: &MergeRequestReference,
+) -> bool {
+	let AppState { db, github_bot, .. } = state;
+
+	let mut triggered_through_parent: Option<String> = None;
+	let mut required_in_parent = false;
+
+	let mut iter = db.iterator(IteratorMode::Start);
+	for (sha, value) in iter {
+		let mr: MergeRequest =
+			match bincode::deserialize(&value).context(Bincode) {
+				Ok(mr) => mr,
+				Err(err) => {
+					log::error!(
+						"Failed to deserialize {} during when_companion_ready",
+						String::from_utf8_lossy(sha)
+					);
+					continue;
+				}
+			};
+
+		log::info!("Deserialized merge request: {:?}", mr);
+
+		let companion_children = match mr.companion_children {
+			Some(companion_children) => companion_children,
+			None => continue,
+		};
+
+		for child in companion_children {
+			if child.owner == companion.owner
+				&& child.repo == companion.repo
+				&& child.number == companion.number
+			{
+				match async {
+					let pr = github_bot
+						.pull_request(mr.owner, mr.repo_name, mr.number)
+						.await?;
+
+					if pr.merged {
+						return Ok(None);
+					}
+
+					let companions =
+						match pr.body.map(|body| parse_all_companions(body)) {
+							Some(companions) => companions,
+							None => return Ok(None),
+						};
+					if companions.iter().find(|parsed| parsed).is_none() {
+						return Ok(None);
+					}
+
+					check_all_companions_are_mergeable(
+						github_bot,
+						&pr,
+						mr.repo_name,
+					)
+					.await?;
+					merge(
+						github_bot,
+						owner,
+						repo,
+						&pr,
+						bot_config,
+						BOT_NAME_FOR_COMMITS,
+						None,
+					)
+					.await??;
+					db.delete(&sha).context(Db)?;
+					merge_companions(state, &repo, &pr).await
+
+					Ok(Some(pr.html_url))
+				}
+				.await {
+					Ok(Some(result)) => {
+						triggered_through_parent = Some(result);
+						break;
+					},
+					_ => None
+				}
+			}
+		}
+	}
+
+	merge_was_triggered
+}
+
 async fn update_then_merge_companion(
-	github_bot: &GithubBot,
-	bot_config: &BotConfig,
-	db: &DB,
+	state: &AppState,
 	html_url: &str,
 	owner: &str,
 	repo: &str,
 	number: &i64,
 	merge_done_in: &str,
 ) -> Result<()> {
+	let AppState {
+		github_bot,
+		bot_config,
+		..
+	} = state;
+
 	let pr = github_bot.pull_request(&owner, &repo, *number).await?;
+	if pr.merged {
+		return Ok(());
+	}
 
 	if let PullRequest {
 		head:
@@ -516,21 +595,23 @@ async fn update_then_merge_companion(
 				repo,
 				&pr,
 				bot_config,
-				"parity-processbot[bot]",
+				BOT_NAME_FOR_COMMITS,
 				None,
 			)
 			.await??;
 		} else {
 			log::info!("Companion updated; waiting for checks on {}", html_url);
 			wait_to_merge(
-				github_bot,
-				&owner,
-				&repo,
-				pr.number,
-				&pr.html_url,
-				&format!("parity-processbot[bot]"),
+				state,
 				&updated_sha,
-				db,
+				&MergeRequest {
+					owner: owner.to_owned(),
+					repo_name: repo.to_owned(),
+					number: number.to_owned(),
+					html_url: html_url.to_owned(),
+					requested_by: BOT_NAME_FOR_COMMITS.to_owned(),
+					companion_children: None,
+				},
 				None,
 			)
 			.await?;
@@ -545,102 +626,100 @@ async fn update_then_merge_companion(
 }
 
 pub async fn merge_companions(
-	github_bot: &GithubBot,
-	bot_config: &BotConfig,
+	state: &AppState,
 	merge_done_in: &str,
 	pr: &PullRequest,
-	db: &DB,
 ) -> Result<()> {
-	let mut errors: Vec<String> = vec![];
+	if merge_done_in != "substrate" && merge_done_in != MAIN_REPO_FOR_STAGING {
+		return Ok(());
+	}
 
-	if merge_done_in == "substrate" || merge_done_in == MAIN_REPO_FOR_STAGING {
-		log::info!("Checking for companion.");
+	log::info!("Checking for companion in  {}", pr.html_url);
 
-		if let Some(body) = pr.body.as_ref() {
-			let companions = parse_all_companions(body);
-			if companions.is_empty() {
-				log::info!("No companion found.");
+	let companions_groups = {
+		let body = match pr.body.as_ref() {
+			Some(body) => body,
+			None => return Ok(()),
+		};
+
+		let companions = parse_all_companions(body);
+		if companions.is_empty() {
+			log::info!("No companion found.");
+			return Ok(());
+		}
+
+		let mut companions_groups: HashMap<
+			String,
+			Vec<IssueDetailsWithRepositoryURL>,
+		> = HashMap::new();
+		for comp in companions {
+			let (_, ref owner, ref repo, _) = comp;
+			let key = format!("{}/{}", owner, repo);
+			if let Some(group) = companions_groups.get_mut(&key) {
+				group.push(comp);
 			} else {
-				let companions_groups = {
-					let mut companions_groups: HashMap<
-						String,
-						Vec<IssueDetailsWithRepositoryURL>,
-					> = HashMap::new();
-					for comp in companions {
-						let (_, ref owner, ref repo, _) = comp;
-						let key = format!("{}/{}", owner, repo);
-						if let Some(group) = companions_groups.get_mut(&key) {
-							group.push(comp);
-						} else {
-							companions_groups.insert(key, vec![comp]);
-						}
-					}
-					companions_groups
-				};
-
-				let mut remaining_futures = companions_groups
-					.into_values()
-					.map(|group| {
-						Box::pin(async move {
-							let mut errors: Vec<
-								CompanionDetailsWithErrorMessage,
-							> = vec![];
-
-							for (html_url, owner, repo, ref number) in group {
-								if let Err(err) = update_then_merge_companion(
-									github_bot,
-									bot_config,
-									db,
-									&html_url,
-									&owner,
-									&repo,
-									number,
-									merge_done_in,
-								)
-								.await
-								{
-									errors.push(
-										CompanionDetailsWithErrorMessage {
-											owner: owner.to_owned(),
-											repo: repo.to_owned(),
-											number: *number,
-											html_url: html_url.to_owned(),
-											msg: format!(
-												"Companion update failed: {:?}",
-												err
-											),
-										},
-									);
-								}
-							}
-
-							errors
-						})
-					})
-					.collect::<Vec<_>>();
-				while !remaining_futures.is_empty() {
-					let (result, _, next_remaining_futures) =
-						futures::future::select_all(remaining_futures).await;
-					for CompanionDetailsWithErrorMessage {
-						ref owner,
-						ref repo,
-						ref number,
-						ref html_url,
-						ref msg,
-					} in result
-					{
-						let _ = github_bot
-							.create_issue_comment(owner, repo, *number, msg)
-							.await
-							.map_err(|e| {
-								log::error!("Error posting comment: {}", e);
-							});
-						errors.push(format!("{} {}", html_url, msg));
-					}
-					remaining_futures = next_remaining_futures;
-				}
+				companions_groups.insert(key, vec![comp]);
 			}
 		}
+
+		companions_groups
+	};
+
+	let AppState { github_bot, .. } = state;
+
+	let mut remaining_futures = companions_groups
+		.into_values()
+		.map(|group| {
+			Box::pin(async move {
+				let mut errors: Vec<CompanionDetailsWithErrorMessage> = vec![];
+
+				for (html_url, owner, repo, ref number) in group {
+					if let Err(err) = update_then_merge_companion(
+						state,
+						&html_url,
+						&owner,
+						&repo,
+						number,
+						merge_done_in,
+					)
+					.await
+					{
+						errors.push(CompanionDetailsWithErrorMessage {
+							owner: owner.to_owned(),
+							repo: repo.to_owned(),
+							number: *number,
+							html_url: html_url.to_owned(),
+							msg: format!("Companion update failed: {:?}", err),
+						});
+					}
+				}
+
+				errors
+			})
+		})
+		.collect::<Vec<_>>();
+
+	let mut errors: Vec<String> = vec![];
+	while !remaining_futures.is_empty() {
+		let (result, _, next_remaining_futures) =
+			futures::future::select_all(remaining_futures).await;
+		for CompanionDetailsWithErrorMessage {
+			ref owner,
+			ref repo,
+			ref number,
+			ref html_url,
+			ref msg,
+		} in result
+		{
+			let _ = github_bot
+				.create_issue_comment(owner, repo, *number, msg)
+				.await
+				.map_err(|e| {
+					log::error!("Error posting comment: {}", e);
+				});
+			errors.push(format!("{} {}", html_url, msg));
+		}
+		remaining_futures = next_remaining_futures;
 	}
 
 	if errors.is_empty() {
