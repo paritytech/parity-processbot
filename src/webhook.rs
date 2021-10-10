@@ -14,7 +14,7 @@ use tokio::{sync::Mutex, time::delay_for};
 use crate::{
 	companion::parse_all_companions, companion::*, config::BotConfig,
 	constants::*, error::*, github::*, github_bot::GithubBot, gitlab_bot::*,
-	matrix_bot::MatrixBot, performance, process, rebase::*,
+	matrix_bot::MatrixBot, process, rebase::*,
 	utils::parse_bot_comment_from_text, vanity_service, CommentCommand,
 	MergeCancelOutcome, MergeCommentCommand, Result, Status,
 	PROCESS_INFO_ERROR_TEMPLATE, WEBHOOK_PARSING_ERROR_TEMPLATE,
@@ -476,12 +476,11 @@ async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 	} = &mr;
 
 	let pr = github_bot.pull_request(owner, repo, *number).await?;
-	let pr_head_sha = pr.head_sha()?;
 
-	if sha != pr_head_sha {
+	if sha != pr.head.sha {
 		return Err(Error::HeadChanged {
 			expected: sha.to_string(),
-			actual: pr_head_sha.to_owned(),
+			actual: pr.head.sha.to_owned(),
 		});
 	}
 
@@ -550,8 +549,6 @@ async fn handle_command(
 
 	match cmd {
 		CommentCommand::Merge(cmd) => {
-			let pr_head_sha = pr.head_sha()?;
-
 			let mr = MergeRequest {
 				owner: pr.base.repo.owner.login.to_owned(),
 				repo: pr.base.repo.name.to_owned(),
@@ -615,7 +612,7 @@ async fn handle_command(
 								);
 								wait_to_merge(
 									state,
-									pr_head_sha,
+									&pr.head.sha,
 									&mr,
 									Some(&msg),
 								)
@@ -632,7 +629,7 @@ async fn handle_command(
 					} else {
 						wait_to_merge(
 							state,
-							pr_head_sha,
+							&pr.head.sha,
 							&mr,
 							if should_wait_for_companions {
 								Some("Waiting for companions statuses and this PR's statuses")
@@ -672,7 +669,7 @@ async fn handle_command(
 
 			cleanup_pr(
 				state,
-				pr.head_sha()?,
+				&pr.head.sha,
 				&pr.base.repo.owner.login,
 				&pr.base.repo.name,
 				pr.number,
@@ -697,54 +694,31 @@ async fn handle_command(
 			Ok(())
 		}
 		CommentCommand::Rebase => {
-			if let PullRequest {
-				head:
-					Some(Head {
-						ref_field: Some(head_branch),
-						repo:
-							Some(HeadRepo {
-								name: head_repo,
-								owner:
-									Some(User {
-										login: head_owner, ..
-									}),
-								..
-							}),
-						..
-					}),
-				..
-			} = pr.clone()
-			{
-				if let Err(err) = github_bot
-					.create_issue_comment(
-						&pr.base.repo.owner.login,
-						&pr.base.repo.name,
-						pr.number,
-						"Rebasing",
-					)
-					.await
-				{
-					log::error!(
-						"Failed to post comment on {} due to {}",
-						pr.html_url,
-						err
-					);
-				}
-
-				rebase(
-					github_bot,
+			if let Err(err) = github_bot
+				.create_issue_comment(
 					&pr.base.repo.owner.login,
 					&pr.base.repo.name,
-					&head_owner,
-					&head_repo,
-					&head_branch,
+					pr.number,
+					"Rebasing",
 				)
 				.await
-			} else {
-				Err(Error::Message {
-					msg: "This PR is missing some API data".to_owned(),
-				})
+			{
+				log::error!(
+					"Failed to post comment on {} due to {}",
+					pr.html_url,
+					err
+				);
 			}
+
+			rebase(
+				github_bot,
+				&pr.base.repo.owner.login,
+				&pr.base.repo.name,
+				&pr.head.repo.owner.login,
+				&pr.head.repo.name,
+				&pr.head.ref_field,
+			)
+			.await
 		}
 		CommentCommand::BurninRequest => {
 			handle_burnin_request(state, pr, requested_by).await
@@ -752,7 +726,6 @@ async fn handle_command(
 		CommentCommand::CompareReleaseRequest => {
 			match pr.base.repo.name.as_str() {
 				"polkadot" => {
-					let pr_head_sha = pr.head_sha()?;
 					let rel = github_bot
 						.latest_release(
 							&pr.base.repo.owner.login,
@@ -772,7 +745,7 @@ async fn handle_command(
 						)
 						.await?;
 					let branch_substrate_commit = github_bot
-						.substrate_commit_from_polkadot_commit(pr_head_sha)
+						.substrate_commit_from_polkadot_commit(&pr.head.sha)
 						.await?;
 					let link = github_bot.diff_url(
 						&pr.base.repo.owner.login,
@@ -868,10 +841,9 @@ async fn handle_comment(
 		.map_err(|err| {
 			err.map_issue((owner.to_owned(), repo.to_owned(), number))
 		});
+
 	let sha = match cmd {
-		CommentCommand::Merge(_) => {
-			pr.head_sha().ok().map(|head_sha| head_sha.to_owned())
-		}
+		CommentCommand::Merge(_) => Some(pr.head.sha),
 		_ => None,
 	};
 
@@ -896,9 +868,7 @@ async fn handle_burnin_request(
 	let unexpected_error_msg = "Starting CI job for burn-in deployment failed with an unexpected error; see logs.".to_string();
 	let mut matrix_msg: Option<String> = None;
 
-	let pr_head_sha = pr.head_sha()?;
-
-	let msg = match gitlab_bot.build_artifact(pr_head_sha) {
+	let msg = match gitlab_bot.build_artifact(&pr.head.sha) {
 		Ok(job) => {
 			let ci_job_link = make_job_link(job.url);
 
@@ -1227,13 +1197,11 @@ pub async fn ready_to_merge(
 	github_bot: &GithubBot,
 	pr: &PullRequest,
 ) -> Result<bool> {
-	let pr_head_sha = pr.head_sha()?;
-
 	match get_latest_statuses_state(
 		github_bot,
 		&pr.base.repo.owner.login,
 		&pr.base.repo.name,
-		pr_head_sha,
+		&pr.head.sha,
 		&pr.html_url,
 	)
 	.await?
@@ -1243,20 +1211,20 @@ pub async fn ready_to_merge(
 				github_bot,
 				&pr.base.repo.owner.login,
 				&pr.base.repo.name,
-				pr_head_sha,
+				&pr.head.sha,
 				&pr.html_url,
 			)
 			.await?
 			{
 				Status::Success => Ok(true),
 				Status::Failure => Err(Error::ChecksFailed {
-					commit_sha: pr_head_sha.to_string(),
+					commit_sha: pr.head.sha.to_owned(),
 				}),
 				_ => Ok(false),
 			}
 		}
 		Status::Failure => Err(Error::ChecksFailed {
-			commit_sha: pr_head_sha.to_string(),
+			commit_sha: pr.head.sha.to_owned(),
 		}),
 		_ => Ok(false),
 	}
@@ -1271,9 +1239,8 @@ async fn register_merge_request(
 	mr: &MergeRequest,
 ) -> Result<()> {
 	let AppState { db, .. } = state;
-	log::info!("Registering merge request: {:?}", mr);
+	log::info!("Registering merge request (sha: {}): {:?}", sha, mr);
 	let bytes = bincode::serialize(mr).context(Bincode)?;
-	log::info!("Writing merge request to db (sha: {})", sha);
 	db.put(sha.trim().as_bytes(), bytes).context(Db)
 }
 
@@ -1319,10 +1286,9 @@ pub fn check_cleanup_merged_pr(
 		return Ok(false);
 	}
 
-	let key_to_guarantee_deleted = pr.head_sha()?;
 	cleanup_pr(
 		state,
-		key_to_guarantee_deleted,
+		&pr.head.sha,
 		&pr.base.repo.owner.login,
 		&pr.base.repo.name,
 		pr.number,
@@ -1395,7 +1361,6 @@ pub async fn merge(
 	}
 
 	let AppState { github_bot, .. } = state;
-	let pr_head_sha = pr.head_sha()?;
 
 	if let Err(err) = async {
 		let err = match github_bot
@@ -1403,7 +1368,7 @@ pub async fn merge(
 				&pr.base.repo.owner.login,
 				&pr.base.repo.name,
 				pr.number,
-				pr_head_sha,
+				&pr.head.sha,
 			)
 			.await
 		{
@@ -1411,7 +1376,7 @@ pub async fn merge(
 				log::info!("{} merged successfully.", pr.html_url);
 				if let Err(err) = cleanup_pr(
 					state,
-					pr_head_sha,
+					&pr.head.sha,
 					&pr.base.repo.owner.login,
 					&pr.base.repo.name,
 					pr.number,
@@ -1575,87 +1540,6 @@ pub async fn merge(
 	Ok(Ok(()))
 }
 
-#[allow(dead_code)]
-async fn performance_regression(
-	github_bot: &GithubBot,
-	owner: &str,
-	repo_name: &str,
-	pr: &PullRequest,
-) -> Result<()> {
-	let _ = github_bot
-		.create_issue_comment(
-			owner,
-			&repo_name,
-			pr.number,
-			"Running performance regression.",
-		)
-		.await
-		.map_err(|e| {
-			log::error!("Error posting comment: {}", e);
-		});
-	if let PullRequest {
-		head:
-			Some(Head {
-				ref_field: Some(head_branch),
-				repo:
-					Some(HeadRepo {
-						name: head_repo,
-						owner: Some(User {
-							login: head_owner, ..
-						}),
-						..
-					}),
-				..
-			}),
-		..
-	} = pr.clone()
-	{
-		match performance::regression(
-			github_bot,
-			owner,
-			&repo_name,
-			&head_owner,
-			&head_repo,
-			&head_branch,
-		)
-		.await
-		{
-			Ok(Some(reg)) => {
-				if reg > 2. {
-					log::error!("Performance regression shows factor {} change in benchmark average.", reg);
-					Err(Error::Message {
-							msg: format!("Performance regression shows greater than 2x increase in benchmark average; aborting merge."),
-						}
-						.map_issue((
-							owner.to_string(),
-							repo_name.to_string(),
-							pr.number,
-						)))?;
-				}
-			}
-			Ok(None) => {
-				log::error!("Failed to complete performance regression.");
-				let _ = github_bot
-					.create_issue_comment(owner, &repo_name, pr.number, "Failed to complete performance regression; see logs; continuing merge.")
-					.await
-					.map_err(|e| {
-						log::error!("Error posting comment: {}", e);
-					});
-			}
-			Err(e) => {
-				log::error!("Error running performance regression: {}", e);
-				let _ = github_bot
-					.create_issue_comment(owner, &repo_name, pr.number, "Error running performance regression; see logs; continuing merge.")
-					.await
-					.map_err(|e| {
-						log::error!("Error posting comment: {}", e);
-					});
-			}
-		}
-	}
-	Ok(())
-}
-
 fn get_troubleshoot_msg() -> String {
 	return format!(
 		"Merge failed. Check out the [criteria for merge](https://github.com/paritytech/parity-processbot#criteria-for-merge). If you're not meeting the approval count, check if the approvers are members of {} or {}",
@@ -1679,8 +1563,7 @@ fn display_errors_along_the_way(errors: Option<Vec<String>>) -> String {
 		.unwrap_or_else(|| "".to_string())
 }
 
-#[async_recursion]
-async fn handle_error_inner(err: Error, state: &AppState) -> String {
+fn format_error(err: Error) -> String {
 	match err {
 		Error::ProcessInfo { errors } => {
 			format!(
@@ -1724,7 +1607,7 @@ async fn handle_error(
 				Error::MergeFailureWillBeSolvedLater { .. } => (),
 				err => {
 					let msg = {
-						let description = handle_error_inner(err, state).await;
+						let description = format_error(err);
 						let caption = match merge_cancel_outcome {
 							MergeCancelOutcome::ShaNotFound  => "",
 							MergeCancelOutcome::WasCancelled => "Merge cancelled due to error.",
@@ -1744,9 +1627,7 @@ async fn handle_error(
 					}
 				}
 			},
-			_ => {
-				handle_error_inner(err, state).await;
-			}
+			_ => (),
 		},
 	}
 }
@@ -1839,8 +1720,7 @@ async fn attempt_merge_as_companion_fallback_direct(
 						.await??;
 					merge_companions(state, &pr_from_db_mr).await?;
 				} else {
-					let pr_from_db_mr_head_sha =
-						pr_from_db_mr.head_sha()?.to_owned();
+					let pr_from_db_mr_head_sha = pr.head.sha.to_owned();
 					register_merge_request(
 						state,
 						&pr_from_db_mr_head_sha,

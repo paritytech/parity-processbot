@@ -355,8 +355,6 @@ pub async fn check_all_companions_are_mergeable(
 			continue;
 		}
 
-		let head_sha = companion.head_sha()?;
-
 		let has_user_owner = companion
 			.user
 			.as_ref()
@@ -380,17 +378,10 @@ pub async fn check_all_companions_are_mergeable(
 			// Even if the "Allow edits from maintainers" setting is not enabled, as long as the
 			// companion belongs to the same organization, the bot should still be able to push
 			// commits.
-			&& !companion
+			&& companion
 				.head
-				.as_ref()
-				.map(|head| {
-					head.repo.as_ref().map(|repo| {
-						repo.owner
-							.as_ref()
-							.map(|user| user.login == pr.base.repo.owner.login)
-					})
-				})
-				.flatten().flatten().unwrap_or(false)
+				.repo
+				.owner.login != pr.base.repo.owner.login
 		{
 			return Err(Error::Message {
 				msg: format!(
@@ -411,10 +402,10 @@ pub async fn check_all_companions_are_mergeable(
 
 		match get_latest_statuses_state(
 			github_bot,
-			&owner,
-			&repo,
-			head_sha,
-			&pr.html_url,
+			&companion.base.repo.owner.login,
+			&companion.base.repo.name,
+			&companion.head.sha,
+			&companion.html_url,
 		)
 		.await?
 		{
@@ -435,10 +426,10 @@ pub async fn check_all_companions_are_mergeable(
 
 		match get_latest_checks_state(
 			github_bot,
-			&owner,
-			&repo,
-			&head_sha,
-			&pr.html_url,
+			&companion.base.repo.owner.login,
+			&companion.base.repo.name,
+			&companion.head.sha,
+			&companion.html_url,
 		)
 		.await?
 		{
@@ -471,68 +462,45 @@ async fn update_then_merge_companion(
 ) -> Result<()> {
 	let AppState { github_bot, .. } = state;
 
-	let pr = github_bot.pull_request(&owner, &repo, *number).await?;
-	if check_cleanup_merged_pr(state, &pr)? {
+	let companion = github_bot.pull_request(&owner, &repo, *number).await?;
+	if check_cleanup_merged_pr(state, &companion)? {
 		return Ok(());
 	}
 
-	if let PullRequest {
-		head:
-			Some(Head {
-				ref_field: Some(contributor_branch),
-				repo:
-					Some(HeadRepo {
-						name: contributor_repo,
-						owner:
-							Some(User {
-								login: contributor, ..
-							}),
-						..
-					}),
-				..
-			}),
-		..
-	} = pr.clone()
-	{
-		log::info!("Updating companion {}", html_url);
-		let updated_sha = update_companion_repository(
-			github_bot,
-			owner,
-			repo,
-			&contributor,
-			&contributor_repo,
-			&contributor_branch,
-			merge_done_in,
+	log::info!("Updating companion {}", html_url);
+	let updated_sha = update_companion_repository(
+		github_bot,
+		owner,
+		repo,
+		&companion.head.repo.owner.login,
+		&companion.head.repo.name,
+		&companion.head.ref_field,
+		merge_done_in,
+	)
+	.await?;
+
+	// Wait a bit for all the statuses to settle after we've updated the companion.
+	delay_for(Duration::from_millis(4096)).await;
+
+	let pr = github_bot.pull_request(&owner, &repo, *number).await?;
+	if ready_to_merge(&state.github_bot, &pr).await? {
+		merge(state, &pr, BOT_NAME_FOR_COMMITS, None).await??;
+	} else {
+		log::info!("Companion updated; waiting for checks on {}", html_url);
+		wait_to_merge(
+			state,
+			&updated_sha,
+			&MergeRequest {
+				owner: owner.to_owned(),
+				repo: repo.to_owned(),
+				number: number.to_owned(),
+				html_url: html_url.to_owned(),
+				requested_by: BOT_NAME_FOR_COMMITS.to_owned(),
+				companion_children: None,
+			},
+			None,
 		)
 		.await?;
-
-		// Wait a bit for all the statuses to settle after we've updated the companion.
-		delay_for(Duration::from_millis(4096)).await;
-
-		let pr = github_bot.pull_request(&owner, &repo, *number).await?;
-		if ready_to_merge(&state.github_bot, &pr).await? {
-			merge(state, &pr, BOT_NAME_FOR_COMMITS, None).await??;
-		} else {
-			log::info!("Companion updated; waiting for checks on {}", html_url);
-			wait_to_merge(
-				state,
-				&updated_sha,
-				&MergeRequest {
-					owner: owner.to_owned(),
-					repo: repo.to_owned(),
-					number: number.to_owned(),
-					html_url: html_url.to_owned(),
-					requested_by: BOT_NAME_FOR_COMMITS.to_owned(),
-					companion_children: None,
-				},
-				None,
-			)
-			.await?;
-		}
-	} else {
-		return Err(Error::Message {
-			msg: format!("Companion {} is missing some API data", html_url),
-		});
 	}
 
 	Ok(())

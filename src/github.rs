@@ -1,10 +1,9 @@
 use crate::{
 	error::*, utils::parse_bot_comment_from_text,
-	PlaceholderDeserializationItem, Result, PR_HTML_URL_REGEX,
+	PlaceholderDeserializationItem, PR_HTML_URL_REGEX,
 };
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use snafu::OptionExt;
 
 pub trait HasIssueDetails {
 	fn get_issue_details(&self) -> Option<IssueDetails>;
@@ -31,7 +30,7 @@ pub struct PullRequest {
 	pub user: Option<User>,
 	pub body: Option<String>,
 	pub labels: Vec<Label>,
-	pub head: Option<Head>,
+	pub head: Head,
 	pub base: Base,
 	pub repository: Option<Repository>,
 	pub mergeable: bool,
@@ -64,21 +63,6 @@ impl HasIssueDetails for PullRequest {
 			}
 		})
 		.or_else(|| parse_issue_details_from_pr_html_url(&self.html_url))
-	}
-}
-
-impl PullRequest {
-	pub fn head_sha(&self) -> Result<&String> {
-		self.head
-			.as_ref()
-			.context(MissingField {
-				field: "pull_request.head",
-			})?
-			.sha
-			.as_ref()
-			.context(MissingField {
-				field: "pull_request.head.sha",
-			})
 	}
 }
 
@@ -190,12 +174,10 @@ pub struct Team {
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Head {
-	pub label: Option<String>,
+	pub sha: String,
+	pub repo: HeadRepo,
 	#[serde(rename = "ref")]
-	pub ref_field: Option<String>,
-	pub sha: Option<String>,
-	// Repository might be missing when it has been deleted
-	pub repo: Option<HeadRepo>,
+	pub ref_field: String,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -331,8 +313,7 @@ pub struct HeadRepo {
 	pub id: i64,
 	pub url: String,
 	pub name: String,
-	// The owner might be missing when e.g. they have deleted their account
-	pub owner: Option<User>,
+	pub owner: User,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
