@@ -681,7 +681,7 @@ async fn handle_command(
 				&pr.base.repo.owner.login,
 				&pr.base.repo.name,
 				pr.number,
-			);
+			)?;
 
 			if let Err(err) = github_bot
 				.create_issue_comment(
