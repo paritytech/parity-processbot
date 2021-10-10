@@ -28,11 +28,11 @@ async fn run() -> anyhow::Result<()> {
 		.format(logging::gke::format)
 		.init();
 
-	let db_version_file =
+	let db_version_path =
 		Path::new(&config.db_path).join("__PROCESSBOT_VERSION__");
-	let is_at_current_db_version = match db_version_file.exists() {
+	let is_at_current_db_version = match db_version_path.exists() {
 		true => {
-			let str = fs::read_to_string(&db_version_file)?;
+			let str = fs::read_to_string(&db_version_path)?;
 			str == DATABASE_VERSION
 		}
 		false => false,
@@ -44,13 +44,16 @@ async fn run() -> anyhow::Result<()> {
 		);
 		for entry in fs::read_dir(&config.db_path)? {
 			let entry = entry?;
+			if entry.path() == db_version_path {
+				continue;
+			}
 			if entry.metadata()?.is_dir() {
 				fs::remove_dir_all(entry.path())?;
 			} else {
 				fs::remove_file(entry.path())?;
 			}
 		}
-		fs::write(db_version_file, DATABASE_VERSION).unwrap();
+		fs::write(db_version_path, DATABASE_VERSION).unwrap();
 	}
 
 	let db = DB::open_default(&config.db_path)?;
