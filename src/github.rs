@@ -10,19 +10,6 @@ pub trait HasIssueDetails {
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct BranchProtectionRequiredStatusChecks {
-	pub contexts: Vec<String>,
-}
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct BranchProtection {
-	pub required_status_checks: BranchProtectionRequiredStatusChecks,
-}
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Branch {
-	pub protection: BranchProtection,
-}
-
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PullRequest {
 	pub url: String,
 	pub html_url: String,

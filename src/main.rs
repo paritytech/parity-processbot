@@ -11,7 +11,7 @@ use parity_processbot::{
 	webhook::*,
 };
 
-fn main() {
+fn main() -> anyhow::Result<()> {
 	env_logger::from_env(env_logger::Env::default().default_filter_or("info"))
 		.format(logging::gke::format)
 		.init();
@@ -27,7 +27,7 @@ fn main() {
 		Path::new(&config.db_path).join("__PROCESSBOT_VERSION__");
 	let is_at_current_db_version = match db_version_path.exists() {
 		true => {
-			let str = fs::read_to_string(&db_version_path).unwrap();
+			let str = fs::read_to_string(&db_version_path)?;
 			str == DATABASE_VERSION
 		}
 		false => false,
@@ -37,28 +37,27 @@ fn main() {
 			"Clearing database to start from version {}",
 			DATABASE_VERSION
 		);
-		for entry in fs::read_dir(&config.db_path).unwrap() {
-			let entry = entry.unwrap();
+		for entry in fs::read_dir(&config.db_path)? {
+			let entry = entry?;
 			if entry.path() == db_version_path {
 				continue;
 			}
-			if entry.metadata().unwrap().is_dir() {
-				fs::remove_dir_all(entry.path()).unwrap();
+			if entry.metadata()?.is_dir() {
+				fs::remove_dir_all(entry.path())?;
 			} else {
-				fs::remove_file(entry.path()).unwrap();
+				fs::remove_file(entry.path())?;
 			}
 		}
-		fs::write(db_version_path, DATABASE_VERSION).unwrap();
+		fs::write(db_version_path, DATABASE_VERSION)?;
 	}
 
-	let db = DB::open_default(&config.db_path).unwrap();
+	let db = DB::open_default(&config.db_path)?;
 
 	let github_bot = github_bot::GithubBot::new(
 		config.private_key.clone(),
 		&config.installation_login,
 		config.github_app_id,
-	)
-	.unwrap();
+	)?;
 
 	let webhook_proxy_url = config.webhook_proxy_url.clone();
 
@@ -71,8 +70,7 @@ fn main() {
 	let rt = tokio::runtime::Builder::new()
 		.threaded_scheduler()
 		.enable_all()
-		.build()
-		.unwrap();
+		.build()?;
 
 	if let Some(webhook_proxy_url) = webhook_proxy_url {
 		use eventsource::reqwest::Client;
@@ -109,22 +107,4 @@ fn main() {
 	}
 
 	loop {}
-}
-
-#[cfg(test)]
-mod tests {
-	use regex::Regex;
-
-	#[test]
-	fn test_replace_whitespace_in_toml_key() {
-		let mut s = String::from("[Smart Contracts Ok]\nwhitelist = []");
-		let re = Regex::new(
-			r"^\[((?:[[:word:]]|[[:punct:]])*)[[:blank:]]((?:[[:word:]]|[[:punct:]])*)",
-		)
-		.unwrap();
-		while re.captures_iter(&s).count() > 0 {
-			s = dbg!(re.replace_all(&s, "[$1-$2").to_string());
-		}
-		assert_eq!(&s, "[Smart-Contracts-Ok]\nwhitelist = []");
-	}
 }
