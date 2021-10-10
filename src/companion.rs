@@ -355,6 +355,8 @@ pub async fn check_all_companions_are_mergeable(
 			continue;
 		}
 
+		log::info!("Parsed {} in the description of {}", html_url, pr.html_url);
+
 		let head_sha = companion.head_sha()?;
 
 		let has_user_owner = companion
@@ -394,15 +396,15 @@ pub async fn check_all_companions_are_mergeable(
 			});
 		}
 
-		let statuses = get_latest_statuses_state(
+		match get_latest_statuses_state(
 			github_bot,
 			&owner,
 			&repo,
 			head_sha,
 			&pr.html_url,
 		)
-		.await?;
-		match statuses {
+		.await?
+		{
 			Status::Success => (),
 			Status::Pending => {
 				return Err(Error::InvalidCompanionStatus {
@@ -424,15 +426,15 @@ pub async fn check_all_companions_are_mergeable(
 			}
 		};
 
-		let checks = get_latest_checks_state(
+		match get_latest_checks_state(
 			github_bot,
 			&owner,
 			&repo,
 			&head_sha,
 			&pr.html_url,
 		)
-		.await?;
-		match checks {
+		.await?
+		{
 			Status::Success => (),
 			Status::Pending => {
 				return Err(Error::InvalidCompanionStatus {
