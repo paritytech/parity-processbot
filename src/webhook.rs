@@ -33,7 +33,7 @@ pub struct AppState {
 /// This stores information about a pull request while we wait for checks to complete.
 #[derive(Debug, Serialize, Deserialize)]
 #[repr(C)]
-pub struct MergeRequestReference {
+pub struct MergeRequestBase {
 	pub owner: String,
 	pub repo: String,
 	pub number: i64,
@@ -46,7 +46,7 @@ pub struct MergeRequest {
 	pub number: i64,
 	pub html_url: String,
 	pub requested_by: String,
-	pub companion_children: Option<Vec<MergeRequestReference>>,
+	pub companion_children: Option<Vec<MergeRequestBase>>,
 }
 
 /// Check the SHA1 signature on a webhook payload.
@@ -508,8 +508,10 @@ async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 						.await?
 						{
 							Ok(_) => {
-								db.delete(&sha).context(Db)?;
-								merge_companions(state, &repo_name, &pr).await
+								attempt_merge_as_companion_fallback_merge(
+									state, pr,
+								)
+								.await
 							}
 							Err(Error::MergeFailureWillBeSolvedLater {
 								..
@@ -569,26 +571,27 @@ async fn handle_command(
 			)
 			.await?;
 
-			let mr = MergeRequest {
-				owner: owner.to_owned(),
-				repo_name: repo.to_owned(),
-				number,
-				html_url: html_url.to_owned(),
-				requested_by: requested_by.to_owned(),
-				companion_children: pr.body.as_ref().map(|body| {
-					parse_all_companions(body)
-						.into_iter()
-						.map(|(_, owner, repo, number)| MergeRequestReference {
-							owner,
-							repo,
-							number,
-						})
-						.collect()
-				}),
-			};
-
 			match cmd {
 				MergeCommentCommand::Normal => {
+					let mr = MergeRequest {
+						owner: owner.to_owned(),
+						repo_name: repo.to_owned(),
+						number,
+						html_url: html_url.to_owned(),
+						requested_by: requested_by.to_owned(),
+						companion_children: pr.body.as_ref().map(|body| {
+							parse_all_companions(body)
+								.into_iter()
+								.map(|(_, owner, repo, number)| {
+									MergeRequestBase {
+										owner,
+										repo,
+										number,
+									}
+								})
+								.collect()
+						}),
+					};
 					if ready_to_merge(github_bot, owner, &repo, &pr).await? {
 						match merge(
 							github_bot,
@@ -1326,20 +1329,71 @@ pub async fn wait_to_merge(
 	Ok(())
 }
 
+pub async fn check_cleanup_merged_pr(
+	state: &AppState,
+	pr: &PullRequest,
+) -> bool {
+	if !pr.merged {
+		return false;
+	}
+
+	cleanup_merged_pr(
+		state,
+		&MergeRequestBase {
+			owner: pr.base.repo.owner.to_owned(),
+			repo: pr.base.repo.name.to_owned(),
+			number: pr.number,
+		},
+	);
+
+	true
+}
+
+pub fn cleanup_merged_pr(state: &AppState, pr: &MergeRequestBase) {
+	let AppState { db, .. } = state;
+	let mut iter = db.iterator(rocksdb::IteratorMode::Start);
+	for (key, _) in iter {
+		let db_mr: MergeRequest =
+			match bincode::deserialize(&value).context(Bincode) {
+				Ok(mr) => mr,
+				Err(err) => {
+					log::error!(
+						"Failed to deserialize {} during cleanup_merged_pr",
+						String::from_utf8_lossy(sha)
+					);
+					continue;
+				}
+			};
+		log::info!("Deserialized merge request: {:?}", db_mr);
+
+		if db_mr.owner == pr.owner
+			&& db_mr.repo_name == pr.repo
+			&& db_mr.number == pr.number
+		{
+			if let Err(err) = db.delete(key) {
+				log::error!(
+					"Failed to delete {} during cleanup_merged_pr due to {:?}",
+					String::from_utf8_lossy(key),
+					err
+				);
+			}
+		}
+	}
+}
+
 /// Send a merge request.
 /// It might recursively call itself when attempting to solve a merge error after something
 /// meaningful happens.
 #[async_recursion]
 pub async fn merge(
-	github_bot: &GithubBot,
+	state: &AppState,
 	owner: &str,
 	repo_name: &str,
 	pr: &PullRequest,
-	bot_config: &BotConfig,
 	requested_by: &str,
 	created_approval_id: Option<i64>,
 ) -> Result<Result<()>> {
-	if pr.merged {
+	if check_cleanup_merged_pr(state, pr) {
 		return Ok(Ok());
 	}
 
@@ -1350,6 +1404,7 @@ pub async fn merge(
 		{
 			Ok(_) => {
 				log::info!("{} merged successfully.", pr.html_url);
+				cleanup_merged_pr(state, pr);
 				Ok(Ok(()))
 			}
 			Err(e) => match e {
@@ -1717,5 +1772,149 @@ async fn handle_error(
 				handle_error_inner(err, state).await;
 			}
 		},
+	}
+}
+
+/// Try queueing this merge through the parent if some PR is depending on it
+async fn attempt_merge_as_companion_fallback_merge(
+	state: &AppState,
+	mr: &MergeRequestBase,
+) -> bool {
+	let AppState { db, github_bot, .. } = state;
+
+	// Iteration is restarted after merge because merges might clean up not only this key, but also
+	// others which could come before it
+	'restart_iteration: loop {
+		let mut iter = db.iterator(rocksdb::IteratorMode::Start);
+
+		for (sha, value) in iter {
+			let db_mr: MergeRequest =
+				match bincode::deserialize(&value).context(Bincode) {
+					Ok(mr) => mr,
+					Err(err) => {
+						log::error!(
+							"Failed to deserialize {} during attempt_merge",
+							String::from_utf8_lossy(sha)
+						);
+						continue;
+					}
+				};
+			log::info!("Deserialized merge request: {:?}", db_mr);
+
+			let companion_children = match db_mr.companion_children {
+				Some(companion_children) => companion_children,
+				None => continue,
+			};
+
+			for child in companion_children {
+				if child.owner != mr.owner
+					|| child.repo != mr.repo
+					|| child.number != mr.number
+				{
+					continue;
+				}
+
+				if let Ok(true) = async {
+					let pr_from_db_mr = github_bot
+						.pull_request(
+							db_mr.owner,
+							db_mr.repo_name,
+							db_mr.number,
+						)
+						.await?;
+
+					if check_cleanup_merged_pr(state, pr_from_db_mr, None)
+						.await?
+					{
+						return Ok(false);
+					}
+
+					let companions = match pr_from_db_mr
+						.body
+						.map(|body| parse_all_companions(body))
+					{
+						Some(companions) => companions,
+						None => return Ok(false),
+					};
+					// Check if this MR would be queued as a companion if we were to merge the MR parsed from
+					// the database (the current iteration's value)
+					if companions
+						.iter()
+						.find(|(_, owner, repo, number)| {
+							owner == mr.owner
+								&& repo == mr.repo && number == mr.number
+						})
+						.is_none()
+					{
+						return Ok(false);
+					}
+
+					merge_allowed(
+						github_bot,
+						&owner,
+						&repo_name,
+						&pr_from_db_mr,
+						bot_config,
+						&requested_by,
+						None,
+						false,
+					)
+					.await?;
+
+					if ready_to_merge(github_bot, owner, &repo, &pr_from_db_mr)
+						.await?
+					{
+						merge(
+							state,
+							db_mr.owner,
+							db_mr.repo,
+							&pr_from_db_mr,
+							bot_config,
+							db_mr.requested_by,
+							None,
+						)
+						.await??;
+						merge_companions(state, &repo, &pr_from_db_mr).await?;
+					} else {
+						wait_to_merge(
+							state,
+							pr_from_db_mr.head_sha()?,
+							&MergeRequest {
+								owner: db_mr.owner,
+								repo_name: db_mr.repo_name,
+								number: db_mr.number,
+								html_url: db_mr.html_url,
+								requested_by: db_mr.requested_by,
+								companion_children: pr.body.as_ref().map(
+									|body| {
+										parse_all_companions(body)
+											.into_iter()
+											.map(|(_, owner, repo, number)| {
+												MergeRequestBase {
+													owner,
+													repo,
+													number,
+												}
+											})
+											.collect()
+									},
+								),
+							},
+							None,
+						)
+						.await?;
+					}
+
+					Ok(true)
+				}
+				.await
+				{
+					// See the note about restarting iteration at the top of this loop
+					continue 'restart_iteration;
+				};
+			}
+		}
+
+		break;
 	}
 }

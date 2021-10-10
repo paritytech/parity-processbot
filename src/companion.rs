@@ -15,7 +15,7 @@ use crate::{
 	webhook::{
 		get_latest_checks_state, get_latest_statuses_state, merge,
 		ready_to_merge, wait_to_merge, AppState, MergeRequest,
-		MergeRequestReference,
+		MergeRequestBase,
 	},
 	Result, Status, COMPANION_LONG_REGEX, COMPANION_PREFIX_REGEX,
 	COMPANION_SHORT_REGEX, PR_HTML_URL_REGEX,
@@ -447,94 +447,6 @@ pub async fn check_all_companions_are_mergeable(
 	Ok(())
 }
 
-async fn trigger_merge_through_parent(
-	state: &AppState,
-	companion: &MergeRequestReference,
-) -> bool {
-	let AppState { db, github_bot, .. } = state;
-
-	let mut triggered_through_parent: Option<String> = None;
-	let mut required_in_parent = false;
-
-	let mut iter = db.iterator(IteratorMode::Start);
-	for (sha, value) in iter {
-		let mr: MergeRequest =
-			match bincode::deserialize(&value).context(Bincode) {
-				Ok(mr) => mr,
-				Err(err) => {
-					log::error!(
-						"Failed to deserialize {} during when_companion_ready",
-						String::from_utf8_lossy(sha)
-					);
-					continue;
-				}
-			};
-
-		log::info!("Deserialized merge request: {:?}", mr);
-
-		let companion_children = match mr.companion_children {
-			Some(companion_children) => companion_children,
-			None => continue,
-		};
-
-		for child in companion_children {
-			if child.owner == companion.owner
-				&& child.repo == companion.repo
-				&& child.number == companion.number
-			{
-				match async {
-					let pr = github_bot
-						.pull_request(mr.owner, mr.repo_name, mr.number)
-						.await?;
-
-					if pr.merged {
-						return Ok(None);
-					}
-
-					let companions =
-						match pr.body.map(|body| parse_all_companions(body)) {
-							Some(companions) => companions,
-							None => return Ok(None),
-						};
-					if companions.iter().find(|parsed| parsed).is_none() {
-						return Ok(None);
-					}
-
-					check_all_companions_are_mergeable(
-						github_bot,
-						&pr,
-						mr.repo_name,
-					)
-					.await?;
-					merge(
-						github_bot,
-						owner,
-						repo,
-						&pr,
-						bot_config,
-						BOT_NAME_FOR_COMMITS,
-						None,
-					)
-					.await??;
-					db.delete(&sha).context(Db)?;
-					merge_companions(state, &repo, &pr).await
-
-					Ok(Some(pr.html_url))
-				}
-				.await {
-					Ok(Some(result)) => {
-						triggered_through_parent = Some(result);
-						break;
-					},
-					_ => None
-				}
-			}
-		}
-	}
-
-	merge_was_triggered
-}
-
 async fn update_then_merge_companion(
 	state: &AppState,
 	html_url: &str,
@@ -550,7 +462,7 @@ async fn update_then_merge_companion(
 	} = state;
 
 	let pr = github_bot.pull_request(&owner, &repo, *number).await?;
-	if pr.merged {
+	if check_cleanup_merged_pr(state, pr, None).await? {
 		return Ok(());
 	}
 
