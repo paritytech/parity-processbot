@@ -55,3 +55,8 @@ pub enum MergeCancelOutcome {
 	WasCancelled,
 	WasNotCancelled,
 }
+
+pub enum PendingCompanionStatusesRestriction {
+	Allow,
+	Disallow,
+}

@@ -15,7 +15,7 @@ use crate::{
 	webhook::{
 		check_cleanup_merged_pr, get_latest_checks_state,
 		get_latest_statuses_state, merge, ready_to_merge, wait_to_merge,
-		AppState, MergeRequest, MergeRequestBase,
+		AppState, MergeRequest,
 	},
 	Result, Status, COMPANION_LONG_REGEX, COMPANION_PREFIX_REGEX,
 	COMPANION_SHORT_REGEX, PR_HTML_URL_REGEX,
@@ -454,20 +454,20 @@ pub async fn check_all_companions_are_mergeable(
 
 async fn update_then_merge_companion(
 	state: &AppState,
-	html_url: &str,
 	owner: &str,
 	repo: &str,
 	number: &i64,
+	html_url: &str,
 	merge_done_in: &str,
 ) -> Result<()> {
 	let AppState {
-		github_bot,
 		bot_config,
+		github_bot,
 		..
 	} = state;
 
 	let pr = github_bot.pull_request(&owner, &repo, *number).await?;
-	if check_cleanup_merged_pr(state, pr, None).await? {
+	if check_cleanup_merged_pr(state, &pr) {
 		return Ok(());
 	}
 
@@ -504,17 +504,8 @@ async fn update_then_merge_companion(
 		delay_for(Duration::from_millis(4096)).await;
 
 		let pr = github_bot.pull_request(&owner, &repo, *number).await?;
-		if ready_to_merge(github_bot, owner, repo, &pr).await? {
-			merge(
-				github_bot,
-				owner,
-				repo,
-				&pr,
-				bot_config,
-				BOT_NAME_FOR_COMMITS,
-				None,
-			)
-			.await??;
+		if ready_to_merge(&state.github_bot, &pr).await? {
+			merge(state, &pr, BOT_NAME_FOR_COMMITS, None).await??;
 		} else {
 			log::info!("Companion updated; waiting for checks on {}", html_url);
 			wait_to_merge(
@@ -545,6 +536,7 @@ pub async fn merge_companions(
 	state: &AppState,
 	pr: &PullRequest,
 ) -> Result<()> {
+	// TODO: get rid of this limitation by breaking cycles in companion descriptions across repositories
 	if pr.base.repo.owner.login != "substrate"
 		&& pr.base.repo.owner.login != MAIN_REPO_FOR_STAGING
 	{
@@ -592,7 +584,12 @@ pub async fn merge_companions(
 
 				for (html_url, owner, repo, ref number) in group {
 					if let Err(err) = update_then_merge_companion(
-						state, &html_url, &owner, &repo, number,
+						state,
+						&owner,
+						&repo,
+						number,
+						&html_url,
+						&pr.base.repo.owner.login,
 					)
 					.await
 					{
