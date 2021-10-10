@@ -378,7 +378,22 @@ pub async fn check_all_companions_are_mergeable(
 			});
 		}
 
-		if !companion.maintainer_can_modify {
+		if !companion.maintainer_can_modify
+			// Even if the "Allow edits from maintainers" setting is not enabled, as long as the
+			// companion belongs to the same organization, the bot should still be able to push
+			// commits.
+			&& !companion
+				.head
+				.as_ref()
+				.map(|head| {
+					head.repo.as_ref().map(|repo| {
+						repo.owner
+							.as_ref()
+							.map(|user| user.login == pr.base.repo.owner.login)
+					})
+				})
+				.flatten().flatten().unwrap_or(false)
+		{
 			return Err(Error::Message {
 				msg: format!(
 					"Github API says \"Allow edits from maintainers\" is not enabled for {}. The bot would use that permission to push the lockfile update after merging this PR. Please check https://docs.github.com/en/github/collaborating-with-pull-requests/working-with-forks/allowing-changes-to-a-pull-request-branch-created-from-a-fork.",
