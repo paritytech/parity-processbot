@@ -12,10 +12,16 @@ use parity_processbot::{
 };
 
 fn main() {
-	let config = MainConfig::from_env();
 	env_logger::from_env(env_logger::Env::default().default_filter_or("info"))
 		.format(logging::gke::format)
 		.init();
+
+	let config = MainConfig::from_env();
+
+	let socket = SocketAddr::new(
+		IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+		config.webhook_port.parse::<u16>().expect("webhook port"),
+	);
 
 	let db_version_path =
 		Path::new(&config.db_path).join("__PROCESSBOT_VERSION__");
@@ -54,23 +60,21 @@ fn main() {
 	)
 	.unwrap();
 
+	let webhook_proxy_url = config.webhook_proxy_url.clone();
+
 	let app_state = Arc::new(Mutex::new(AppState {
 		db,
 		github_bot,
-		webhook_secret: config.webhook_secret,
+		config,
 	}));
-
-	let socket = SocketAddr::new(
-		IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
-		config.webhook_port.parse::<u16>().expect("webhook port"),
-	);
 
 	let rt = tokio::runtime::Builder::new()
 		.threaded_scheduler()
 		.enable_all()
 		.build()
 		.unwrap();
-	if let Some(webhook_proxy_url) = config.webhook_proxy_url.as_ref() {
+
+	if let Some(webhook_proxy_url) = webhook_proxy_url {
 		use eventsource::reqwest::Client;
 		use reqwest::Url;
 
@@ -96,7 +100,7 @@ fn main() {
 						handle_error(merge_cancel_outcome, err, &state).await;
 					}
 				} else {
-					println!("Not parsed (1) {:?}", event);
+					log::info!("Not parsed {:?}", event);
 				}
 			});
 		}

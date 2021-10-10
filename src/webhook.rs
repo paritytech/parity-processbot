@@ -12,10 +12,10 @@ use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::{sync::Mutex, time::delay_for};
 
 use crate::{
-	companion::parse_all_companions, companion::*, constants::*, error::*,
-	github::*, github_bot::GithubBot, process, rebase::*,
-	utils::parse_bot_comment_from_text, vanity_service, CommentCommand,
-	MergeCancelOutcome, MergeCommentCommand, Result, Status,
+	companion::parse_all_companions, companion::*, config::MainConfig,
+	constants::*, error::*, github::*, github_bot::GithubBot, process,
+	rebase::*, utils::parse_bot_comment_from_text, vanity_service,
+	CommentCommand, MergeCancelOutcome, MergeCommentCommand, Result, Status,
 	PROCESS_INFO_ERROR_TEMPLATE, WEBHOOK_PARSING_ERROR_TEMPLATE,
 };
 
@@ -23,7 +23,7 @@ use crate::{
 pub struct AppState {
 	pub db: DB,
 	pub github_bot: GithubBot,
-	pub webhook_secret: String,
+	pub config: MainConfig,
 }
 
 /// This stores information about a pull request while we wait for checks to complete.
@@ -136,8 +136,10 @@ pub async fn webhook_inner(
 		msg: format!("Error decoding x-hub-signature"),
 	})?;
 
+	let AppState { config, .. } = state;
+
 	verify(
-		state.webhook_secret.trim().as_bytes(),
+		config.webhook_secret.trim().as_bytes(),
 		&msg_bytes,
 		&sig_bytes,
 	)
@@ -172,13 +174,12 @@ pub async fn webhook_inner(
 				.map_issue(pr_details))
 			} else {
 				log::info!("Ignoring payload parsing error",);
-				Ok((MergeCancelOutcome::WasNotCancelled, Ok(())))
+				Ok((MergeCancelOutcome::ShaNotFound, Ok(())))
 			}
 		}
 	}
 }
 
-/// Match different kinds of payload.
 pub async fn handle_payload(
 	payload: Payload,
 	state: &AppState,
@@ -234,9 +235,13 @@ pub async fn handle_payload(
 			},
 			_ => (Ok(()), None),
 		},
-		Payload::CommitStatus { sha, state: status } => {
-			(handle_status(state, status, &sha).await, Some(sha))
-		}
+		Payload::CommitStatus { sha, state: status } => (
+			match status {
+				StatusState::Pending => Ok(()),
+				_ => checks_and_status(state, &sha).await,
+			},
+			Some(sha),
+		),
 		Payload::CheckRun {
 			check_run: CheckRun {
 				status,
@@ -244,33 +249,61 @@ pub async fn handle_payload(
 				..
 			},
 			..
-		} => (handle_check(state, status, &sha).await, Some(sha)),
+		} => (
+			match status {
+				CheckRunStatus::Completed => {
+					checks_and_status(state, &sha).await
+				}
+				_ => Ok(()),
+			},
+			Some(sha),
+		),
 		Payload::WorkflowJob {
-			workflow_job:
-				WorkflowJob {
-					head_sha: sha,
-					conclusion,
-					..
-				},
+			workflow_job: WorkflowJob {
+				head_sha: sha,
+				conclusion,
+			},
 			..
 		} => (
-			handle_workflow_job(state, conclusion, &sha).await,
+			if conclusion.is_some() {
+				checks_and_status(state, &sha).await
+			} else {
+				Ok(())
+			},
+			Some(sha),
+		),
+		Payload::CheckSuite {
+			check_suite: CheckSuite {
+				head_sha: sha,
+				conclusion,
+			},
+			..
+		} => (
+			if conclusion.is_some() {
+				checks_and_status(state, &sha).await
+			} else {
+				Ok(())
+			},
 			Some(sha),
 		),
 	};
 
+	// From this point onwards we'll clean the SHA from the database if this is a fatal error which
+	// stops the merge process
+
 	// Without the SHA we'll not be able to fetch the database for more context, so exit early
 	let sha = match sha {
 		Some(sha) => sha,
-		None => return (MergeCancelOutcome::WasNotCancelled, result),
+		None => return (MergeCancelOutcome::ShaNotFound, result),
 	};
 
-	// If it's not an error then don't bother with doing any further processing
+	// If it's not an error then don't bother with going further
 	let err = match result {
-		Ok(_) => return (MergeCancelOutcome::WasNotCancelled, Ok(())),
+		Ok(_) => return (MergeCancelOutcome::WasCancelled, Ok(())),
 		Err(err) => err,
 	};
 
+	// If this error does not interrupt the merge process, then don't bother with going further
 	if !err.stops_merge_attempt() {
 		return (MergeCancelOutcome::WasNotCancelled, Err(err));
 	};
@@ -329,42 +362,6 @@ pub async fn handle_payload(
 			);
 			(MergeCancelOutcome::WasNotCancelled, Err(err))
 		}
-	}
-}
-
-async fn handle_check(
-	state: &AppState,
-	status: CheckRunStatus,
-	sha: &str,
-) -> Result<()> {
-	if status == CheckRunStatus::Completed {
-		checks_and_status(state, sha).await
-	} else {
-		Ok(())
-	}
-}
-
-async fn handle_status(
-	state: &AppState,
-	status: StatusState,
-	sha: &str,
-) -> Result<()> {
-	if status == StatusState::Pending {
-		Ok(())
-	} else {
-		checks_and_status(state, sha).await
-	}
-}
-
-async fn handle_workflow_job(
-	state: &AppState,
-	conclusion: Option<WorkflowJobConclusion>,
-	sha: &str,
-) -> Result<()> {
-	if conclusion.is_some() {
-		checks_and_status(state, sha).await
-	} else {
-		Ok(())
 	}
 }
 
@@ -480,24 +477,41 @@ pub async fn get_latest_checks_state(
 async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 	let AppState { db, github_bot, .. } = state;
 
-	let pr_bytes = match db.get(sha.as_bytes()).context(Db)? {
-		Some(pr_bytes) => pr_bytes,
-		None => return Ok(()),
+	log::info!("Checking for statuses of {}", sha);
+
+	let (requested_by, parent, pr) = match db.get(sha.as_bytes()).context(Db)? {
+		Some(bytes) => {
+			let mr: MergeRequest =
+				bincode::deserialize(&bytes).context(Bincode)?;
+			let MergeRequest {
+				owner,
+				repo,
+				number,
+				..
+			} = &mr;
+			let pr = github_bot.pull_request(owner, repo, *number).await?;
+			log::info!(
+				"Deserialized merge request for {} (sha {}): {:?}",
+				pr.html_url,
+				sha,
+				mr
+			);
+			(mr.requested_by, None, pr)
+		}
+		None => match get_match_from_registered_companions(state, sha).await? {
+			Some((parent, pr)) => {
+				let requested_by = parent.requested_by.to_owned();
+				log::info!(
+					"Found parent for {} (sha {}): {:?}",
+					pr.html_url,
+					sha,
+					parent
+				);
+				(requested_by.to_owned(), Some(parent), pr)
+			}
+			None => return Ok(()),
+		},
 	};
-
-	let mr = bincode::deserialize(&pr_bytes).context(Bincode)?;
-	log::info!("Deserialized merge request: {:?}", mr);
-
-	let MergeRequest {
-		owner,
-		repo,
-		number,
-		html_url,
-		requested_by,
-		..
-	} = &mr;
-
-	let pr = github_bot.pull_request(owner, repo, *number).await?;
 
 	if sha != pr.head.sha {
 		return Err(Error::HeadChanged {
@@ -506,58 +520,33 @@ async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 		});
 	}
 
-	let status =
-		get_latest_statuses_state(github_bot, &owner, &repo, sha, &html_url)
-			.await?;
-	match status {
-		Status::Success => {
-			let checks = get_latest_checks_state(
-				github_bot, &owner, &repo, sha, &html_url,
-			)
-			.await?;
-			match checks {
-				Status::Success => {
-					if let Err(err) =
-						check_merge_is_allowed(state, &pr, &requested_by, None)
-							.await
-					{
-						return match err {
-							Error::InvalidCompanionStatus {
-								ref value, ..
-							} => match value {
-								InvalidCompanionStatusValue::Pending => Ok(()),
-								InvalidCompanionStatusValue::Failure => {
-									Err(err)
-								}
-							},
-							_ => Err(err),
-						};
-					}
+	if !ready_to_merge(github_bot, &pr).await? {
+		return Ok(());
+	}
 
-					match attempt_merge_as_companion_fallback_direct(
-						state,
-						&pr,
-						requested_by,
-					)
-					.await
-					{
-						Ok(_) => Ok(()),
-						Err(Error::MergeFailureWillBeSolvedLater {
-							..
-						}) => Ok(()),
-						Err(err) => Err(err),
-					}
-				}
-				Status::Failure => Err(Error::ChecksFailed {
-					commit_sha: sha.to_string(),
-				}),
-				Status::Pending => Ok(()),
-			}
-		}
-		Status::Failure => Err(Error::ChecksFailed {
-			commit_sha: sha.to_string(),
-		}),
-		Status::Pending => Ok(()),
+	if let Err(err) =
+		check_merge_is_allowed(state, &pr, &requested_by, None).await
+	{
+		return match err {
+			Error::InvalidCompanionStatus { ref value, .. } => match value {
+				InvalidCompanionStatusValue::Pending => Ok(()),
+				InvalidCompanionStatusValue::Failure => Err(err),
+			},
+			_ => Err(err),
+		};
+	}
+
+	let result = if parent.is_some() {
+		attempt_merge_as_companion_fallback_direct(state, &pr, &requested_by)
+			.await
+	} else {
+		merge(state, &pr, &requested_by, None).await?
+	};
+
+	match result {
+		Ok(_) => Ok(()),
+		Err(Error::MergeFailureWillBeSolvedLater { .. }) => Ok(()),
+		Err(err) => Err(err),
 	}
 }
 
@@ -676,6 +665,7 @@ async fn handle_command(
 				}
 			}
 
+			log::info!("Merging companions of {}", pr.html_url);
 			if let Err(err) = merge_companions(state, pr).await {
 				log::error!(
 					"Failed to merge the companions of {} due to {:?}",
@@ -817,7 +807,9 @@ async fn handle_comment(
 	};
 	log::info!("{:?} requested by {} in {}", cmd, requested_by, html_url);
 
-	let AppState { github_bot, .. } = state;
+	let AppState {
+		github_bot, config, ..
+	} = state;
 
 	let (owner, repo, pr) = match async {
 		let owner =
@@ -829,7 +821,9 @@ async fn handle_comment(
 			msg: format!("Failed parsing repo name in url: {}", repo_url),
 		})?;
 
-		github_bot.org_member(owner, requested_by).await?;
+		if !config.disable_org_check {
+			github_bot.org_member(owner, requested_by).await?;
+		}
 
 		if let CommentCommand::Merge(_) = cmd {
 			// We've noticed the bot failing for no human-discernable reason when, for instance, it
@@ -1243,6 +1237,15 @@ pub fn cleanup_pr(
 			continue;
 		}
 
+		log::info!(
+			"Cleaning up {:?} due to SHA {} of {}/{}#{}",
+			db_mr,
+			key_to_guarantee_deleted,
+			owner,
+			repo,
+			number
+		);
+
 		if let Err(err) = db.delete(&key) {
 			log::error!(
 				"Failed to delete {} during cleanup_pr due to {:?}",
@@ -1252,6 +1255,7 @@ pub fn cleanup_pr(
 		}
 	}
 
+	// Sanity-check: the key should have actually been deleted
 	if let Some(_) = db.get(key_to_guarantee_deleted).context(Db)? {
 		return Err(Error::Message {
 			msg: format!(
@@ -1460,7 +1464,7 @@ pub async fn merge(
 
 fn get_troubleshoot_msg() -> String {
 	return format!(
-		"Merge failed. Check out the [criteria for merge](https://github.com/paritytech/parity-processbot#criteria-for-merge). If you're not meeting the approval count, check if the approvers are members of {} or {}",
+		"Merge failed. Check out the [criteria for merge](https://github.com/paritytech/parity-processbot#criteria-for-merge). If you're not meeting the approval count, check if the approvers are members of {} or {}.",
 		SUBSTRATE_TEAM_LEADS_GROUP,
 		CORE_DEVS_GROUP
 	);
@@ -1529,7 +1533,7 @@ pub async fn handle_error(
 						let caption = match merge_cancel_outcome {
 							MergeCancelOutcome::ShaNotFound  => "",
 							MergeCancelOutcome::WasCancelled => "Merge cancelled due to error.",
-							MergeCancelOutcome::WasNotCancelled => "Some error happened, but the merge was not cancelled.",
+							MergeCancelOutcome::WasNotCancelled => "Some error happened, but the merge was not cancelled (likely due to a bug).",
 						};
 						format!("{} Error: {}", caption, description)
 					};
@@ -1548,6 +1552,37 @@ pub async fn handle_error(
 			_ => (),
 		},
 	}
+}
+
+async fn get_match_from_registered_companions(
+	state: &AppState,
+	sha: &str,
+) -> Result<Option<(MergeRequest, PullRequest)>> {
+	let AppState { db, github_bot, .. } = state;
+
+	let iter = db.iterator(rocksdb::IteratorMode::Start);
+	for (_, value) in iter {
+		let db_mr: MergeRequest =
+			bincode::deserialize(&value).context(Bincode)?;
+
+		let companion_children = match db_mr.companion_children {
+			Some(ref companion_children) => companion_children,
+			_ => continue,
+		};
+
+		for child in companion_children {
+			let pr = github_bot
+				.pull_request(&child.owner, &child.repo, child.number)
+				.await?;
+
+			// TODO: consider more than one dependent relationship
+			if &pr.head.sha == sha {
+				return Ok(Some((db_mr, pr)));
+			}
+		}
+	}
+
+	Ok(None)
 }
 
 /// Try queueing this merge through the parent if some PR is depending on it

@@ -6,7 +6,8 @@ pub struct MainConfig {
 	pub db_path: String,
 	pub private_key: Vec<u8>,
 	pub webhook_proxy_url: Option<String>,
-	pub github_app_id: usize
+	pub github_app_id: usize,
+	pub disable_org_check: bool,
 }
 
 impl MainConfig {
@@ -31,6 +32,17 @@ impl MainConfig {
 			.parse::<usize>()
 			.expect("GITHUB_APP_ID should be a number");
 
+		let disable_org_check = dotenv::var("DISABLE_ORG_CHECK")
+			.ok()
+			.map(|value| match value.as_str() {
+				"true" => true,
+				"false" => false,
+				_ => {
+					panic!("DISABLE_ORG_CHECK should be \"true\" or \"false\"")
+				}
+			})
+			.unwrap_or(false);
+
 		Self {
 			installation_login,
 			webhook_secret,
@@ -39,6 +51,7 @@ impl MainConfig {
 			private_key,
 			webhook_proxy_url,
 			github_app_id,
+			disable_org_check,
 		}
 	}
 }

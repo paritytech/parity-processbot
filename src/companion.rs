@@ -511,8 +511,8 @@ pub async fn merge_companions(
 	pr: &PullRequest,
 ) -> Result<()> {
 	// TODO: get rid of this limitation by breaking cycles in companion descriptions across repositories
-	if pr.base.repo.owner.login != "substrate"
-		&& pr.base.repo.owner.login != MAIN_REPO_FOR_STAGING
+	if pr.base.repo.name != "substrate"
+		&& pr.base.repo.name != MAIN_REPO_FOR_STAGING
 	{
 		return Ok(());
 	}

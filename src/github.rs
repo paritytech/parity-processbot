@@ -38,34 +38,6 @@ pub struct PullRequest {
 	pub maintainer_can_modify: bool,
 }
 
-impl HasIssueDetails for PullRequest {
-	fn get_issue_details(&self) -> Option<IssueDetails> {
-		if let Some(Repository {
-			owner: Some(User { login, .. }),
-			name,
-			..
-		}) = self.repository.as_ref()
-		{
-			Some((login.to_owned(), name.to_owned(), self.number))
-		} else {
-			None
-		}
-		.or_else(|| {
-			if let Some(Repository {
-				full_name: Some(full_name),
-				..
-			}) = self.repository.as_ref()
-			{
-				parse_repository_full_name(full_name)
-					.map(|(owner, name)| (owner, name, self.number))
-			} else {
-				None
-			}
-		})
-		.or_else(|| parse_issue_details_from_pr_html_url(&self.html_url))
-	}
-}
-
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Issue {
 	pub number: i64,
@@ -76,43 +48,6 @@ pub struct Issue {
 	pub pull_request: Option<PlaceholderDeserializationItem>,
 	pub repository: Option<Repository>,
 	pub repository_url: Option<String>,
-}
-
-impl HasIssueDetails for Issue {
-	fn get_issue_details(&self) -> Option<IssueDetails> {
-		match self {
-			Issue {
-				number,
-				html_url,
-				pull_request: Some(_), // indicates the issue is a pr
-				repository,
-				..
-			} => if let Some(Repository {
-				owner: Some(User { login, .. }),
-				name,
-				..
-			}) = &repository
-			{
-				Some((login.to_owned(), name.to_owned(), *number))
-			} else {
-				None
-			}
-			.or_else(|| {
-				if let Some(Repository {
-					full_name: Some(full_name),
-					..
-				}) = &repository
-				{
-					parse_repository_full_name(full_name)
-						.map(|(owner, name)| (owner, name, *number))
-				} else {
-					None
-				}
-			})
-			.or_else(|| parse_issue_details_from_pr_html_url(html_url)),
-			_ => None,
-		}
-	}
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -357,14 +292,13 @@ pub struct WebhookIssueComment {
 
 impl HasIssueDetails for WebhookIssueComment {
 	fn get_issue_details(&self) -> Option<IssueDetails> {
-		None
+		parse_issue_details_from_pr_html_url(&self.html_url)
 	}
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum WorkflowJobConclusion {
-	Success,
 	#[serde(other)]
 	Unknown,
 }
@@ -372,6 +306,18 @@ pub enum WorkflowJobConclusion {
 pub struct WorkflowJob {
 	pub head_sha: String,
 	pub conclusion: Option<WorkflowJobConclusion>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CheckSuiteConclusion {
+	#[serde(other)]
+	Unknown,
+}
+#[derive(PartialEq, Deserialize)]
+pub struct CheckSuite {
+	pub head_sha: String,
+	pub conclusion: Option<CheckSuiteConclusion>,
 }
 
 #[derive(PartialEq, Deserialize)]
@@ -396,6 +342,9 @@ pub enum Payload {
 	},
 	WorkflowJob {
 		workflow_job: WorkflowJob,
+	},
+	CheckSuite {
+		check_suite: CheckSuite,
 	},
 }
 
