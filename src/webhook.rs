@@ -499,7 +499,7 @@ async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 			(mr.requested_by, None, pr)
 		}
 		None => match get_match_from_registered_companions(state, sha).await? {
-			Some((parent, pr)) => {
+			Some(((sha, parent), pr)) => {
 				let requested_by = parent.requested_by.to_owned();
 				log::info!(
 					"Found parent for {} (sha {}): {:?}",
@@ -507,46 +507,179 @@ async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 					sha,
 					parent
 				);
-				(requested_by.to_owned(), Some(parent), pr)
+				(requested_by.to_owned(), Some((sha, parent)), pr)
 			}
 			None => return Ok(()),
 		},
 	};
 
-	if sha != pr.head.sha {
-		return Err(Error::HeadChanged {
-			expected: sha.to_string(),
-			actual: pr.head.sha.to_owned(),
-		});
-	}
+	match async {
+		if sha != pr.head.sha {
+			return Err(Error::HeadChanged {
+				expected: sha.to_string(),
+				actual: pr.head.sha.to_owned(),
+			});
+		}
 
-	if !ready_to_merge(github_bot, &pr).await? {
-		return Ok(());
-	}
+		if !ready_to_merge(github_bot, &pr).await? {
+			return Ok(());
+		}
 
-	if let Err(err) =
-		check_merge_is_allowed(state, &pr, &requested_by, None).await
-	{
-		return match err {
-			Error::InvalidCompanionStatus { ref value, .. } => match value {
-				InvalidCompanionStatusValue::Pending => Ok(()),
-				InvalidCompanionStatusValue::Failure => Err(err),
-			},
-			_ => Err(err),
-		};
-	}
+		if let Err(err) =
+			check_merge_is_allowed(state, &pr, &requested_by, None).await
+		{
+			return match err {
+				Error::InvalidCompanionStatus { ref value, .. } => {
+					match value {
+						InvalidCompanionStatusValue::Pending => Ok(()),
+						InvalidCompanionStatusValue::Failure => Err(err),
+					}
+				}
+				err => Err(err),
+			};
+		}
 
-	let result = if parent.is_some() {
-		attempt_merge_as_companion_fallback_direct(state, &pr, &requested_by)
+		if let Some((parent_sha, parent)) = parent.as_ref() {
+			let parent_pr = github_bot
+				.pull_request(&parent.owner, &parent.repo, parent.number)
+				.await?;
+
+			if parent_sha != parent_pr.head.sha.as_str() {
+				return Err(Error::Message {
+					msg: format!(
+						"Parent HEAD changed from {} to {}",
+						parent_sha, parent_pr.head.sha
+					),
+				});
+			}
+
+			if let Err(err) = match check_merge_is_allowed(
+				state,
+				&parent_pr,
+				&requested_by,
+				None,
+			)
 			.await
-	} else {
-		merge(state, &pr, &requested_by, None).await?
-	};
+			{
+				Ok(_) => Ok(()),
+				Err(err) => match err {
+					Error::InvalidCompanionStatus { ref value, .. } => {
+						match value {
+							InvalidCompanionStatusValue::Pending => Ok(()),
+							InvalidCompanionStatusValue::Failure => Err(err),
+						}
+					}
+					err => Err(err),
+				},
+			} {
+				let msg = format!(
+					"Failed to merge (parent) {} due to {}",
+					parent_pr.html_url, err
+				);
+				return Err(Error::Message { msg });
+			}
 
-	match result {
-		Ok(_) => Ok(()),
-		Err(Error::MergeFailureWillBeSolvedLater { .. }) => Ok(()),
-		Err(err) => Err(err),
+			if !ready_to_merge(github_bot, &parent_pr).await? {
+				return Ok(());
+			}
+
+			// Merge the parent (which should also merge this one, since it is a companion)
+			log::info!(
+				"Merging {} (expected to also merge {} as a companion)",
+				parent_pr.html_url,
+				pr.html_url
+			);
+
+			if let Err(err) =
+				merge(state, &parent_pr, &requested_by, None).await?
+			{
+				return match err {
+					Error::MergeFailureWillBeSolvedLater { .. } => Ok(()),
+					err => Err(Error::Message {
+						msg: format!(
+							"Failed to merge (parent) {} due to {}",
+							parent_pr.html_url, err
+						),
+					}),
+				};
+			};
+
+			if let Err(err) = merge_companions(state, &pr, &requested_by).await
+			{
+				log::error!(
+					"Failed to merge companions of {} due to {:?}",
+					pr.html_url,
+					err
+				);
+			} else {
+				// Since the parent companion merges has been started as shown above, this pull request will be
+				// slated for a merge as well, so it's fine to return here.
+				return Ok(());
+			};
+		}
+
+		if let Err(err) =
+			check_merge_is_allowed(state, &pr, &requested_by, None).await
+		{
+			return match err {
+				Error::InvalidCompanionStatus { ref value, .. } => {
+					match value {
+						InvalidCompanionStatusValue::Pending => Ok(()),
+						InvalidCompanionStatusValue::Failure => Err(err),
+					}
+				}
+				err => Err(err),
+			};
+		};
+
+		if let Err(err) = merge(state, &pr, &requested_by, None).await? {
+			return match err {
+				Error::MergeFailureWillBeSolvedLater { .. } => Ok(()),
+				err => Err(err),
+			};
+		}
+
+		if let Err(err) = merge_companions(state, &pr, &requested_by).await {
+			log::error!(
+				"Failed to merge companions of {} due to {}",
+				pr.html_url,
+				err
+			);
+		}
+
+		Ok(())
+	}
+	.await
+	{
+		Ok(_) | Err(Error::MergeFailureWillBeSolvedLater { .. }) => Ok(()),
+		Err(err) => {
+			if let Some((parent_sha, parent)) = parent {
+				cleanup_pr(
+					state,
+					&parent_sha,
+					&parent.owner,
+					&parent.repo,
+					parent.number,
+				)?;
+				handle_error(
+					MergeCancelOutcome::WasCancelled,
+					Error::Message {
+						msg: format!(
+							"Companion {} has error: {}",
+							pr.html_url, err
+						),
+					}
+					.map_issue((parent.owner, parent.repo, parent.number)),
+					state,
+				)
+				.await;
+			}
+			Err(err.map_issue((
+				pr.base.repo.owner.login,
+				pr.base.repo.name,
+				pr.number,
+			)))
+		}
 	}
 }
 
@@ -643,7 +776,7 @@ async fn handle_command(
 							&pr.head.sha,
 							&mr,
 							if should_wait_for_companions {
-								Some("Waiting for companions statuses and this PR's statuses")
+								Some("Waiting for both companions statuses and this PR's statuses")
 							} else {
 								None
 							},
@@ -666,7 +799,7 @@ async fn handle_command(
 			}
 
 			log::info!("Merging companions of {}", pr.html_url);
-			if let Err(err) = merge_companions(state, pr).await {
+			if let Err(err) = merge_companions(state, pr, requested_by).await {
 				log::error!(
 					"Failed to merge the companions of {} due to {:?}",
 					pr.html_url,
@@ -867,7 +1000,7 @@ async fn handle_comment(
 /// Errors related to core-devs and substrateteamleads API requests are ignored
 /// because the merge might succeed regardless of them, thus it does not make
 /// sense to fail this scenario completely if the request fails for some reason.
-async fn check_merge_is_allowed(
+pub async fn check_merge_is_allowed(
 	state: &AppState,
 	pr: &PullRequest,
 	requested_by: &str,
@@ -1557,15 +1690,15 @@ pub async fn handle_error(
 async fn get_match_from_registered_companions(
 	state: &AppState,
 	sha: &str,
-) -> Result<Option<(MergeRequest, PullRequest)>> {
+) -> Result<Option<((String, MergeRequest), PullRequest)>> {
 	let AppState { db, github_bot, .. } = state;
 
 	let iter = db.iterator(rocksdb::IteratorMode::Start);
-	for (_, value) in iter {
-		let db_mr: MergeRequest =
+	for (parent_sha, value) in iter {
+		let parent: MergeRequest =
 			bincode::deserialize(&value).context(Bincode)?;
 
-		let companion_children = match db_mr.companion_children {
+		let companion_children = match parent.companion_children {
 			Some(ref companion_children) => companion_children,
 			_ => continue,
 		};
@@ -1577,158 +1710,13 @@ async fn get_match_from_registered_companions(
 
 			// TODO: consider more than one dependent relationship
 			if &pr.head.sha == sha {
-				return Ok(Some((db_mr, pr)));
+				return Ok(Some((
+					(String::from_utf8_lossy(&parent_sha).to_string(), parent),
+					pr,
+				)));
 			}
 		}
 	}
 
 	Ok(None)
-}
-
-/// Try queueing this merge through the parent if some PR is depending on it
-async fn attempt_merge_as_companion_fallback_direct(
-	state: &AppState,
-	pr: &PullRequest,
-	requested_by: &str,
-) -> Result<()> {
-	let AppState { db, github_bot, .. } = state;
-
-	let was_queued_as_companion = {
-		let mut was_queued_as_companion: Option<bool> = None;
-
-		// Go through each merge request registered in the database until we find one parent for this
-		// companion (*IF* this is a companion)
-		let iter = db.iterator(rocksdb::IteratorMode::Start);
-		for (_, value) in iter {
-			let db_mr: MergeRequest =
-				bincode::deserialize(&value).context(Bincode)?;
-
-			let is_parent = match db_mr.companion_children.as_ref() {
-				Some(companion_children) => companion_children
-					.iter()
-					.find(|child| {
-						child.owner == pr.base.repo.owner.login
-							&& child.repo == pr.base.repo.name
-							&& child.number == pr.number
-					})
-					.is_some(),
-				None => false,
-			};
-			if !is_parent {
-				continue;
-			}
-
-			let html_url = db_mr.html_url.to_string();
-			let html_url = &html_url;
-			log::info!(
-				"{} is listed as a companion of {} in the database",
-				&pr.html_url,
-				html_url
-			);
-
-			let requested_by = db_mr.requested_by.to_string();
-			let was_queued: Result<bool> = async {
-				let pr_from_db_mr = github_bot
-					.pull_request(&db_mr.owner, &db_mr.repo, db_mr.number)
-					.await?;
-
-				if check_cleanup_merged_pr(state, &pr_from_db_mr)? {
-					return Ok(false);
-				}
-
-				let companions = match pr_from_db_mr
-					.body
-					.as_ref()
-					.map(|body| parse_all_companions(body))
-				{
-					Some(companions) => companions,
-					None => return Ok(false),
-				};
-				// Check if the MR provided to this function would be queued as a companion if we were to
-				// merge the MR parsed from the database (the current iteration's value)
-				if !companions.iter().any(|(_, owner, repo, number)| {
-					owner == &pr.base.repo.owner.login
-						&& repo == &pr.base.repo.name
-						&& *number == pr.number
-				}) {
-					return Ok(false);
-				}
-
-				log::info!(
-					"{} is listed as a companion of {} in the database",
-					&pr.html_url,
-					html_url
-				);
-
-				check_merge_is_allowed(
-					state,
-					&pr_from_db_mr,
-					&requested_by,
-					None,
-				)
-				.await?;
-
-				if ready_to_merge(github_bot, &pr_from_db_mr).await? {
-					merge(state, &pr_from_db_mr, &db_mr.requested_by, None)
-						.await??;
-					merge_companions(state, &pr_from_db_mr).await?;
-				} else {
-					let pr_from_db_mr_head_sha = pr.head.sha.to_owned();
-					register_merge_request(
-						state,
-						&pr_from_db_mr_head_sha,
-						&MergeRequest {
-							owner: pr_from_db_mr.base.repo.owner.login,
-							repo: pr_from_db_mr.base.repo.name,
-							number: pr_from_db_mr.number,
-							html_url: pr_from_db_mr.html_url,
-							requested_by,
-							companion_children: Some(
-								companions
-									.into_iter()
-									.map(|(_, owner, repo, number)| {
-										MergeRequestBase {
-											owner,
-											repo,
-											number,
-										}
-									})
-									.collect(),
-							),
-						},
-					)
-					.await?;
-				}
-
-				Ok(true)
-			}
-			.await;
-
-			if let Ok(true) = was_queued {
-				was_queued_as_companion = Some(true);
-				break;
-			}
-		}
-
-		was_queued_as_companion.unwrap_or(false)
-	};
-
-	if !was_queued_as_companion && ready_to_merge(github_bot, pr).await? {
-		return match merge(state, pr, requested_by, None).await? {
-			Ok(_) => {
-				if let Err(err) = merge_companions(state, pr).await {
-					log::error!(
-						"Failed to merge the companions of {} due to {:?}",
-						pr.html_url,
-						err
-					);
-				}
-				Ok(())
-			}
-			Err(Error::MergeFailureWillBeSolvedLater { .. }) => Ok(()),
-			Err(err) => Err(err),
-		};
-	}
-
-	Ok(())
 }

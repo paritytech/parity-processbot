@@ -1,3 +1,4 @@
+use async_recursion::async_recursion;
 use regex::RegexBuilder;
 use snafu::ResultExt;
 use std::{
@@ -8,14 +9,15 @@ use tokio::time::delay_for;
 
 use crate::{
 	cmd::*,
-	constants::{BOT_NAME_FOR_COMMITS, MAIN_REPO_FOR_STAGING},
+	constants::MAIN_REPO_FOR_STAGING,
 	error::*,
 	github::*,
 	github_bot::GithubBot,
 	webhook::{
-		check_cleanup_merged_pr, get_latest_checks_state,
-		get_latest_statuses_state, merge, ready_to_merge, wait_to_merge,
-		AppState, MergeRequest,
+		check_cleanup_merged_pr, check_merge_is_allowed,
+		get_latest_checks_state, get_latest_statuses_state, merge,
+		ready_to_merge, wait_to_merge, AppState, MergeRequest,
+		MergeRequestBase,
 	},
 	Result, Status, COMPANION_LONG_REGEX, COMPANION_PREFIX_REGEX,
 	COMPANION_SHORT_REGEX, PR_HTML_URL_REGEX,
@@ -452,6 +454,7 @@ pub async fn check_all_companions_are_mergeable(
 	Ok(())
 }
 
+#[async_recursion]
 async fn update_then_merge_companion(
 	state: &AppState,
 	owner: &str,
@@ -459,12 +462,25 @@ async fn update_then_merge_companion(
 	number: &i64,
 	html_url: &str,
 	merge_done_in: &str,
+	requested_by: &str,
 ) -> Result<()> {
 	let AppState { github_bot, .. } = state;
 
 	let companion = github_bot.pull_request(&owner, &repo, *number).await?;
 	if check_cleanup_merged_pr(state, &companion)? {
 		return Ok(());
+	}
+
+	if let Err(err) =
+		check_merge_is_allowed(state, &companion, requested_by, None).await
+	{
+		match err {
+			Error::InvalidCompanionStatus { ref value, .. } => match value {
+				InvalidCompanionStatusValue::Pending => (),
+				InvalidCompanionStatusValue::Failure => return Err(err),
+			},
+			err => return Err(err),
+		};
 	}
 
 	log::info!("Updating companion {}", html_url);
@@ -479,26 +495,77 @@ async fn update_then_merge_companion(
 	)
 	.await?;
 
-	// Wait a bit for all the statuses to settle after we've updated the companion.
+	// Wait a bit for all the statuses to settle after we've updated the companion
 	delay_for(Duration::from_millis(4096)).await;
 
-	let pr = github_bot.pull_request(&owner, &repo, *number).await?;
-	if ready_to_merge(&state.github_bot, &pr).await? {
-		merge(state, &pr, BOT_NAME_FOR_COMMITS, None).await??;
+	// Fetch it again since we've pushed some commits and therefore something might have failed already
+	let companion = github_bot.pull_request(&owner, &repo, *number).await?;
+
+	if let Err(err) =
+		check_merge_is_allowed(state, &companion, requested_by, None).await
+	{
+		match err {
+			Error::InvalidCompanionStatus { ref value, .. } => match value {
+				InvalidCompanionStatusValue::Pending => (),
+				InvalidCompanionStatusValue::Failure => return Err(err),
+			},
+			err => return Err(err),
+		};
+	}
+
+	if ready_to_merge(&state.github_bot, &companion).await? {
+		if let Err(err) = merge(state, &companion, requested_by, None).await? {
+			return match err {
+				Error::MergeFailureWillBeSolvedLater { .. } => Ok(()),
+				err => Err(err),
+			};
+		}
+		if let Err(err) =
+			merge_companions(state, &companion, &requested_by).await
+		{
+			log::error!(
+				"Failed to merge companions of {} due to {:?}",
+				companion.html_url,
+				err
+			);
+		}
 	} else {
 		log::info!("Companion updated; waiting for checks on {}", html_url);
+
+		let companion_children = companion.body.as_ref().map(|body| {
+			parse_all_companions(body)
+				.into_iter()
+				.map(|(_, owner, repo, number)| MergeRequestBase {
+					owner,
+					repo,
+					number,
+				})
+				.collect()
+		});
+
+		let msg = companion_children
+			.as_ref()
+			.map(|children: &Vec<MergeRequestBase>| {
+				if children.is_empty() {
+					None
+				} else {
+					Some("Waiting for both companions statuses and this PR's statuses")
+				}
+			})
+			.flatten();
+
 		wait_to_merge(
 			state,
 			&updated_sha,
 			&MergeRequest {
-				owner: owner.to_owned(),
-				repo: repo.to_owned(),
-				number: number.to_owned(),
-				html_url: html_url.to_owned(),
-				requested_by: BOT_NAME_FOR_COMMITS.to_owned(),
-				companion_children: None,
+				owner: companion.base.repo.owner.login,
+				repo: companion.base.repo.name,
+				number: companion.number,
+				html_url: companion.html_url,
+				requested_by: requested_by.to_owned(),
+				companion_children,
 			},
-			None,
+			msg,
 		)
 		.await?;
 	}
@@ -509,6 +576,7 @@ async fn update_then_merge_companion(
 pub async fn merge_companions(
 	state: &AppState,
 	pr: &PullRequest,
+	requested_by: &str,
 ) -> Result<()> {
 	// TODO: get rid of this limitation by breaking cycles in companion descriptions across repositories
 	if pr.base.repo.name != "substrate"
@@ -564,6 +632,7 @@ pub async fn merge_companions(
 						number,
 						&html_url,
 						&pr.base.repo.owner.login,
+						requested_by,
 					)
 					.await
 					{
