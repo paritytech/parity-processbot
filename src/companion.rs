@@ -348,131 +348,133 @@ pub async fn check_all_companions_are_mergeable(
 		None => return Ok(()),
 	};
 
-	for (html_url, owner, repo, number) in parse_all_companions(body) {
-		let companion = github_bot.pull_request(&owner, &repo, number).await?;
+	async {
+		for (html_url, owner, repo, number) in parse_all_companions(body) {
+			let companion = github_bot.pull_request(&owner, &repo, number).await?;
 
-		if companion.merged {
-			continue;
-		}
+			if companion.merged {
+				continue;
+			}
 
-		log::info!("Parsed {} in the description of {}", html_url, pr.html_url);
+			log::info!("Parsed {} in the description of {}", html_url, pr.html_url);
 
-		let head_sha = companion.head_sha()?;
+			let head_sha = companion.head_sha()?;
 
-		let has_user_owner = companion
-			.user
-			.as_ref()
-			.map(|user| {
-				user.type_field
-					.as_ref()
-					.map(|user_type| user_type == &UserType::User)
-					.unwrap_or(false)
-			})
-			.unwrap_or(false);
-		if !has_user_owner {
-			return Err(Error::Message {
-				msg: format!(
-					"Companion {} is not owned by a user, therefore processbot would not be able to push the lockfile update to their branch due to a Github limitation (https://github.com/isaacs/github/issues/1681)",
-					html_url
-				),
-			});
-		}
-
-		if !companion.maintainer_can_modify
-			// Even if the "Allow edits from maintainers" setting is not enabled, as long as the
-			// companion belongs to the same organization, the bot should still be able to push
-			// commits.
-			&& !companion
-				.head
+			let has_user_owner = companion
+				.user
 				.as_ref()
-				.map(|head| {
-					head.repo.as_ref().map(|repo| {
-						repo.owner
-							.as_ref()
-							.map(|user| user.login == pr.base.repo.owner.login)
-					})
+				.map(|user| {
+					user.type_field
+						.as_ref()
+						.map(|user_type| user_type == &UserType::User)
+						.unwrap_or(false)
 				})
-				.flatten().flatten().unwrap_or(false)
-		{
-			return Err(Error::Message {
-				msg: format!(
-					"Github API says \"Allow edits from maintainers\" is not enabled for {}. The bot would use that permission to push the lockfile update after merging this PR. Please check https://docs.github.com/en/github/collaborating-with-pull-requests/working-with-forks/allowing-changes-to-a-pull-request-branch-created-from-a-fork.",
-					html_url
-				),
-			});
+				.unwrap_or(false);
+			if !has_user_owner {
+				return Err(Error::Message {
+					msg: format!(
+						"Companion {} is not owned by a user, therefore processbot would not be able to push the lockfile update to their branch due to a Github limitation (https://github.com/isaacs/github/issues/1681)",
+						html_url
+					),
+				});
+			}
+
+			if !companion.maintainer_can_modify
+				// Even if the "Allow edits from maintainers" setting is not enabled, as long as the
+				// companion belongs to the same organization, the bot should still be able to push
+				// commits.
+				&& !companion
+					.head
+					.as_ref()
+					.map(|head| {
+						head.repo.as_ref().map(|repo| {
+							repo.owner
+								.as_ref()
+								.map(|user| user.login == pr.base.repo.owner.login)
+						})
+					})
+					.flatten().flatten().unwrap_or(false)
+			{
+				return Err(Error::Message {
+					msg: format!(
+						"Github API says \"Allow edits from maintainers\" is not enabled for {}. The bot would use that permission to push the lockfile update after merging this PR. Please check https://docs.github.com/en/github/collaborating-with-pull-requests/working-with-forks/allowing-changes-to-a-pull-request-branch-created-from-a-fork.",
+						html_url
+					),
+				});
+			}
+
+			if !companion.mergeable {
+				return Err(Error::Message {
+					msg: format!(
+						"Github API says companion {} is not mergeable",
+						html_url
+					),
+				});
+			}
+
+			match get_latest_statuses_state(
+				github_bot,
+				&owner,
+				&repo,
+				head_sha,
+				&pr.html_url,
+			)
+			.await?
+			{
+				Status::Success => (),
+				Status::Pending => {
+					return Err(Error::InvalidCompanionStatus {
+						value: InvalidCompanionStatusValue::Pending,
+						msg: format!(
+							"Companion {} has pending required statuses",
+							html_url
+						),
+					});
+				}
+				Status::Failure => {
+					return Err(Error::InvalidCompanionStatus {
+						value: InvalidCompanionStatusValue::Failure,
+						msg: format!(
+							"Companion {} has failed required statuses",
+							html_url
+						),
+					});
+				}
+			};
+
+			match get_latest_checks_state(
+				github_bot,
+				&owner,
+				&repo,
+				&head_sha,
+				&pr.html_url,
+			)
+			.await?
+			{
+				Status::Success => (),
+				Status::Pending => {
+					return Err(Error::InvalidCompanionStatus {
+						value: InvalidCompanionStatusValue::Pending,
+						msg: format!(
+							"Companion {} has pending required checks",
+							html_url
+						),
+					});
+				}
+				Status::Failure => {
+					return Err(Error::InvalidCompanionStatus {
+						value: InvalidCompanionStatusValue::Failure,
+						msg: format!(
+							"Companion {} has failed required checks",
+							html_url
+						),
+					});
+				}
+			};
 		}
 
-		if !companion.mergeable {
-			return Err(Error::Message {
-				msg: format!(
-					"Github API says companion {} is not mergeable",
-					html_url
-				),
-			});
-		}
-
-		match get_latest_statuses_state(
-			github_bot,
-			&owner,
-			&repo,
-			head_sha,
-			&pr.html_url,
-		)
-		.await?
-		{
-			Status::Success => (),
-			Status::Pending => {
-				return Err(Error::InvalidCompanionStatus {
-					value: InvalidCompanionStatusValue::Pending,
-					msg: format!(
-						"Companion {} has pending required statuses",
-						html_url
-					),
-				});
-			}
-			Status::Failure => {
-				return Err(Error::InvalidCompanionStatus {
-					value: InvalidCompanionStatusValue::Failure,
-					msg: format!(
-						"Companion {} has failed required statuses",
-						html_url
-					),
-				});
-			}
-		};
-
-		match get_latest_checks_state(
-			github_bot,
-			&owner,
-			&repo,
-			&head_sha,
-			&pr.html_url,
-		)
-		.await?
-		{
-			Status::Success => (),
-			Status::Pending => {
-				return Err(Error::InvalidCompanionStatus {
-					value: InvalidCompanionStatusValue::Pending,
-					msg: format!(
-						"Companion {} has pending required checks",
-						html_url
-					),
-				});
-			}
-			Status::Failure => {
-				return Err(Error::InvalidCompanionStatus {
-					value: InvalidCompanionStatusValue::Failure,
-					msg: format!(
-						"Companion {} has failed required checks",
-						html_url
-					),
-				});
-			}
-		};
-	}
-
-	Ok(())
+		Ok(())
+	}.await.map_err(|err| err.map_issue((pr.base.repo.owner.login.to_owned(), pr.base.repo.name.to_owned(), pr.number)))
 }
 
 async fn update_then_merge_companion(
