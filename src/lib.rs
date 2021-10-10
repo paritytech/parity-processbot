@@ -51,7 +51,7 @@ pub enum CommentCommand {
 pub struct PlaceholderDeserializationItem {}
 
 pub enum MergeCancelOutcome {
-	ShaDidNotExist,
+	ShaNotFound ,
 	WasCancelled,
 	WasNotCancelled,
 }

@@ -307,7 +307,7 @@ async fn handle_payload(
 								}
 							}
 						}
-						Ok(None) => MergeCancelOutcome::ShaDidNotExist,
+						Ok(None) => MergeCancelOutcome::ShaNotFound,
 						Err(db_err) => {
 							log::info!(
 								"Failed to fetch {} from the database due to {:?}",
@@ -318,7 +318,7 @@ async fn handle_payload(
 						}
 					}
 				} else {
-					MergeCancelOutcome::ShaDidNotExist
+					MergeCancelOutcome::ShaNotFound
 				}
 			} else {
 				MergeCancelOutcome::WasNotCancelled
@@ -1807,7 +1807,7 @@ async fn handle_error(
 					let msg = {
 						let description = handle_error_inner(err, state).await;
 						let caption = match merge_cancel_outcome {
-							MergeCancelOutcome::ShaDidNotExist => "",
+							MergeCancelOutcome::ShaNotFound  => "",
 							MergeCancelOutcome::WasCancelled => "Merge cancelled due to error.",
 							MergeCancelOutcome::WasNotCancelled => "Some error happened, but the merge was not cancelled.",
 						};
