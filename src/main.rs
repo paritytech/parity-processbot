@@ -1,5 +1,7 @@
 use rocksdb::DB;
+use std::fs;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 mod logging;
@@ -24,6 +26,17 @@ async fn run() -> anyhow::Result<()> {
 	env_logger::from_env(env_logger::Env::default().default_filter_or("info"))
 		.format(logging::gke::format)
 		.init();
+
+	let db_version_file =
+		Path::new(&config.db_path).join("__PROCESSBOT_VERSION__");
+	if !db_version_file.exists() {
+		log::info!("Clearing database to start from version 1");
+		for entry in fs::read_dir(&config.db_path)? {
+			let entry = entry?;
+			fs::remove_file(entry.path())?;
+		}
+		fs::write(db_version_file, "V1").unwrap();
+	}
 
 	let db = DB::open_default(&config.db_path)?;
 
@@ -96,10 +109,10 @@ async fn run() -> anyhow::Result<()> {
 	*/
 
 	let app_state = Arc::new(Mutex::new(AppState {
-		db: db,
-		github_bot: github_bot,
-		matrix_bot: matrix_bot,
-		gitlab_bot: gitlab_bot,
+		db,
+		github_bot,
+		matrix_bot,
+		gitlab_bot,
 		bot_config: BotConfig::from_env(),
 		webhook_secret: config.webhook_secret,
 	}));

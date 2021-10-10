@@ -56,7 +56,7 @@ impl HasIssueDetails for PullRequest {
 				..
 			}) = self.repository.as_ref()
 			{
-				parse_repository_full_name(&full_name)
+				parse_repository_full_name(full_name)
 					.map(|(owner, name)| (owner, name, self.number))
 			} else {
 				None
@@ -124,7 +124,7 @@ impl HasIssueDetails for Issue {
 					None
 				}
 			})
-			.or_else(|| parse_issue_details_from_pr_html_url(&html_url)),
+			.or_else(|| parse_issue_details_from_pr_html_url(html_url)),
 			_ => None,
 		}
 	}
@@ -503,7 +503,7 @@ pub fn parse_issue_details_from_pr_html_url(
 	pr_html_url: &str,
 ) -> Option<IssueDetails> {
 	let re = Regex::new(PR_HTML_URL_REGEX!()).unwrap();
-	let matches = re.captures(&pr_html_url)?;
+	let matches = re.captures(pr_html_url)?;
 	let owner = matches.name("owner")?.as_str().to_owned();
 	let repo = matches.name("repo")?.as_str().to_owned();
 	let number = matches
@@ -516,7 +516,7 @@ pub fn parse_issue_details_from_pr_html_url(
 }
 
 pub fn parse_repository_full_name(full_name: &str) -> Option<(String, String)> {
-	let parts: Vec<&str> = full_name.split("/").collect();
+	let parts: Vec<&str> = full_name.split('/').collect();
 	parts
 		.get(0)
 		.map(|owner| {

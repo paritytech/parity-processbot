@@ -245,14 +245,16 @@ async fn handle_payload(
 			},
 		},
 		Payload::CommitStatus { sha, state: status } => {
-			(handle_status(&sha, status, state).await, Some(sha))
+			(handle_status(state, status, &sha).await, Some(sha))
 		}
 		Payload::CheckRun {
 			check_run: CheckRun {
-				status, head_sha, ..
+				status,
+				head_sha: sha,
+				..
 			},
 			..
-		} => (handle_check(&head_sha, status, state).await, Some(head_sha)),
+		} => (handle_check(state, status, &sha).await, Some(sha)),
 		_ => (Ok(()), None),
 	};
 
@@ -304,12 +306,12 @@ async fn handle_payload(
 
 /// If a check completes, query if all statuses and checks are complete.
 async fn handle_check(
-	commit_sha: &String,
-	status: CheckRunStatus,
 	state: &AppState,
+	status: CheckRunStatus,
+	commit_sha: &str,
 ) -> Result<()> {
 	if status == CheckRunStatus::Completed {
-		checks_and_status(state, &commit_sha).await
+		checks_and_status(state, commit_sha).await
 	} else {
 		Ok(())
 	}
@@ -317,9 +319,9 @@ async fn handle_check(
 
 /// If we receive a status other than `Pending`, query if all statuses and checks are complete.
 async fn handle_status(
-	commit_sha: &String,
-	status: StatusState,
 	state: &AppState,
+	status: StatusState,
+	commit_sha: &str,
 ) -> Result<()> {
 	if status == StatusState::Pending {
 		Ok(())
@@ -335,7 +337,7 @@ pub async fn get_latest_statuses_state(
 	commit_sha: &str,
 	html_url: &str,
 ) -> Result<Status> {
-	let status = github_bot.status(&owner, &repo, &commit_sha).await?;
+	let status = github_bot.status(owner, repo, commit_sha).await?;
 	log::info!("{:?}", status);
 
 	// Since Github only considers the latest instance of each status, we should abide by the same
@@ -1651,7 +1653,7 @@ fn get_troubleshoot_msg() -> String {
 fn display_errors_along_the_way(errors: Option<Vec<String>>) -> String {
 	errors
 		.map(|errors| {
-			if errors.len() == 0 {
+			if errors.is_empty() {
 				"".to_string()
 			} else {
 				format!(
@@ -1843,15 +1845,11 @@ async fn attempt_merge_as_companion_fallback_direct(
 					};
 					// Check if the MR provided to this function would be queued as a companion if we were to
 					// merge the MR parsed from the database (the current iteration's value)
-					if companions
-						.iter()
-						.find(|(_, owner, repo, number)| {
-							owner == &pr.base.repo.owner.login
-								&& repo == &pr.base.repo.name && *number
-								== pr.number
-						})
-						.is_none()
-					{
+					if !companions.iter().any(|(_, owner, repo, number)| {
+						owner == &pr.base.repo.owner.login
+							&& repo == &pr.base.repo.name
+							&& *number == pr.number
+					}) {
 						return Ok(false);
 					}
 
@@ -1916,9 +1914,9 @@ async fn attempt_merge_as_companion_fallback_direct(
 		was_queued_as_companion.unwrap_or(false)
 	};
 
-	if !was_queued_as_companion && ready_to_merge(github_bot, &pr).await? {
-		return match merge(state, &pr, requested_by, None).await? {
-			Ok(_) => merge_companions(state, &pr).await,
+	if !was_queued_as_companion && ready_to_merge(github_bot, pr).await? {
+		return match merge(state, pr, requested_by, None).await? {
+			Ok(_) => merge_companions(state, pr).await,
 			Err(Error::MergeFailureWillBeSolvedLater { .. }) => Ok(()),
 			Err(err) => Err(err),
 		};

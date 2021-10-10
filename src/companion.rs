@@ -234,7 +234,7 @@ async fn update_companion_repository(
 		}),
 	)
 	.await?;
-	if !String::from_utf8_lossy(&(&output).stdout[..])
+	if !String::from_utf8_lossy(&output.stdout[..])
 		.trim()
 		.is_empty()
 	{
