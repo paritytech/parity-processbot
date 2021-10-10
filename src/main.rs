@@ -44,7 +44,11 @@ async fn run() -> anyhow::Result<()> {
 		);
 		for entry in fs::read_dir(&config.db_path)? {
 			let entry = entry?;
-			fs::remove_file(entry.path())?;
+			if entry.metadata()?.is_dir() {
+				fs::remove_dir_all(entry.path())?;
+			} else {
+				fs::remove_file(entry.path())?;
+			}
 		}
 		fs::write(db_version_file, DATABASE_VERSION).unwrap();
 	}
