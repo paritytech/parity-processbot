@@ -257,76 +257,77 @@ async fn handle_payload(
 		_ => (Ok(()), None),
 	};
 
-	let merge_cancel_outcome = match result {
-		Ok(_) => MergeCancelOutcome::WasNotCancelled,
-		Err(ref err) => {
-			if err.stops_merge_attempt() {
-				if let Some(sha) = sha {
-					match state.db.get(sha.as_bytes()) {
-						Ok(Some(bytes)) => {
-							match bincode::deserialize::<MergeRequest>(&bytes)
-								.context(Bincode)
-							{
-								Ok(MergeRequest {
-									ref owner,
-									ref repo,
-									ref html_url,
-									number,
-									..
-								}) => {
-									match cleanup_pr(
-										state, &sha, owner, repo, number,
-									) {
-										Ok(_) => {
-											log::info!(
-												"Merge of {} (sha {}) was cancelled due to {:?}",
-												html_url,
-												sha,
-												err
-											);
-											MergeCancelOutcome::WasCancelled
-										}
-										Err(err) => {
-											log::error!(
-												"Failed to cancel merge of {} (sha {}) in handle_payload due to {:?}",
-												html_url,
-												sha,
-												err
-											);
-											MergeCancelOutcome::WasNotCancelled
-										}
-									}
-								}
-								Err(db_err) => {
-									log::error!(
-										"Failed to parse {} from the database due to {:?}",
-										&sha,
-										db_err
-									);
-									MergeCancelOutcome::WasNotCancelled
-								}
-							}
-						}
-						Ok(None) => MergeCancelOutcome::ShaNotFound,
-						Err(db_err) => {
-							log::info!(
-								"Failed to fetch {} from the database due to {:?}",
-								sha,
-								db_err
-							);
-							MergeCancelOutcome::WasNotCancelled
-						}
-					}
-				} else {
-					MergeCancelOutcome::ShaNotFound
-				}
-			} else {
-				MergeCancelOutcome::WasNotCancelled
-			}
-		}
+	// Without the SHA we'll not be able to fetch the database for more context, so exit early
+	let sha = match sha {
+		Some(sha) => sha,
+		None => return (MergeCancelOutcome::WasNotCancelled, result),
 	};
 
-	(merge_cancel_outcome, result)
+	// If it's not an error then don't bother with doing any further processing
+	let err = match result {
+		Ok(_) => return (MergeCancelOutcome::WasNotCancelled, Ok(())),
+		Err(err) => err,
+	};
+
+	if !err.stops_merge_attempt() {
+		return (MergeCancelOutcome::WasNotCancelled, Err(err));
+	};
+
+	match state.db.get(sha.as_bytes()) {
+		Ok(Some(bytes)) => {
+			match bincode::deserialize::<MergeRequest>(&bytes).context(Bincode)
+			{
+				Ok(mr) => {
+					let merge_cancel_outcome = match cleanup_pr(
+						state, &sha, &mr.owner, &mr.repo, mr.number,
+					) {
+						Ok(_) => {
+							log::info!(
+								"Merge of {} (sha {}) was cancelled due to {:?}",
+								&mr.html_url,
+								sha,
+								err
+							);
+							MergeCancelOutcome::WasCancelled
+						}
+						Err(err) => {
+							log::error!(
+									"Failed to cancel merge of {} (sha {}) in handle_payload due to {:?}",
+									&mr.html_url,
+									sha,
+									err
+								);
+							MergeCancelOutcome::WasNotCancelled
+						}
+					};
+
+					let err = match err {
+						Error::WithIssue { .. } => err,
+						err => err.map_issue((mr.owner, mr.repo, mr.number)),
+					};
+
+					(merge_cancel_outcome, Err(err))
+				}
+				Err(db_err) => {
+					log::error!(
+						"Failed to parse {} from the database due to {:?}",
+						&sha,
+						db_err
+					);
+					(MergeCancelOutcome::WasNotCancelled, Err(err))
+				}
+			}
+		}
+		Ok(None) => (MergeCancelOutcome::ShaNotFound, Err(err)),
+		Err(db_err) => {
+			log::info!(
+				"Failed to fetch {} from the database due to {:?}",
+				sha,
+				db_err
+			);
+			(MergeCancelOutcome::WasNotCancelled, Err(err))
+		}
+	}
 }
 
 /// If a check completes, query if all statuses and checks are complete.
@@ -678,12 +679,7 @@ async fn handle_command(
 								repo_name: pr.base.repo.name.to_owned(),
 								pr_number: pr.number,
 								created_approval_id: None,
-							}
-							.map_issue((
-								pr.base.repo.owner.login.to_owned(),
-								pr.base.repo.name.to_owned(),
-								pr.number,
-							)))
+							})
 						}
 						Err(e) => return Err(e),
 						_ => (),
@@ -1032,121 +1028,114 @@ async fn check_merge_is_allowed(
 		log::info!("{} is not mergeable", pr.html_url);
 	}
 
-	let result = async {
-		if !pr.mergeable && min_approvals_required.is_none() {
-			return Err(Error::Message {
-				msg: format!(
-					"Github API says {} is not mergeable",
-					pr.html_url
-				),
-			});
-		}
+	if !pr.mergeable && min_approvals_required.is_none() {
+		return Err(Error::Message {
+			msg: format!("Github API says {} is not mergeable", pr.html_url),
+		});
+	}
 
-		check_all_companions_are_mergeable(github_bot, &pr).await?;
+	check_all_companions_are_mergeable(github_bot, &pr).await?;
 
-		// Consider only the latest relevant review submitted per user
-		let latest_reviews = {
-			let reviews = github_bot.reviews(&pr.url).await?;
-			let mut latest_reviews = HashMap::new();
-			for review in reviews {
-				// Do not consider states such as "Commented" as having invalidated a previous
-				// approval. Note: this assumes approvals are not invalidated on comments or
-				// pushes.
-				if review
-					.state
-					.as_ref()
-					.map(|state| {
-						*state == ReviewState::Approved
-							|| *state == ReviewState::ChangesRequested
-					})
-					.unwrap_or(false)
-				{
-					if let Some(user) = review.user.as_ref() {
-						if latest_reviews
-							.get(&user.login)
-							.map(|(prev_id, _)| *prev_id < review.id)
-							.unwrap_or(true)
-						{
-							let user_login = (&user.login).to_owned();
-							latest_reviews
-								.insert(user_login, (review.id, review));
-						}
+	// Consider only the latest relevant review submitted per user
+	let latest_reviews = {
+		let reviews = github_bot.reviews(&pr.url).await?;
+		let mut latest_reviews = HashMap::new();
+		for review in reviews {
+			// Do not consider states such as "Commented" as having invalidated a previous
+			// approval. Note: this assumes approvals are not invalidated on comments or
+			// pushes.
+			if review
+				.state
+				.as_ref()
+				.map(|state| {
+					*state == ReviewState::Approved
+						|| *state == ReviewState::ChangesRequested
+				})
+				.unwrap_or(false)
+			{
+				if let Some(user) = review.user.as_ref() {
+					if latest_reviews
+						.get(&user.login)
+						.map(|(prev_id, _)| *prev_id < review.id)
+						.unwrap_or(true)
+					{
+						let user_login = (&user.login).to_owned();
+						latest_reviews.insert(user_login, (review.id, review));
 					}
 				}
 			}
-			latest_reviews
-		};
+		}
+		latest_reviews
+	};
 
-		let approved_reviews = latest_reviews
-			.values()
-			.filter_map(|(_, review)| {
-				if review.state == Some(ReviewState::Approved) {
-					Some(review)
-				} else {
-					None
-				}
+	let approved_reviews = latest_reviews
+		.values()
+		.filter_map(|(_, review)| {
+			if review.state == Some(ReviewState::Approved) {
+				Some(review)
+			} else {
+				None
+			}
+		})
+		.collect::<Vec<_>>();
+
+	let mut errors: Vec<String> = Vec::new();
+
+	let team_leads = github_bot
+		.substrate_team_leads(&pr.base.repo.owner.login)
+		.await
+		.unwrap_or_else(|e| {
+			let msg = format!(
+				"Error getting {}: `{}`",
+				SUBSTRATE_TEAM_LEADS_GROUP, e
+			);
+			log::error!("{}", msg);
+			errors.push(msg);
+			vec![]
+		});
+	let lead_approvals = approved_reviews
+		.iter()
+		.filter(|review| {
+			team_leads.iter().any(|team_lead| {
+				review
+					.user
+					.as_ref()
+					.map(|user| user.login == team_lead.login)
+					.unwrap_or(false)
 			})
-			.collect::<Vec<_>>();
+		})
+		.count();
 
-		let mut errors: Vec<String> = Vec::new();
-
-		let team_leads = github_bot
-			.substrate_team_leads(&pr.base.repo.owner.login)
-			.await
-			.unwrap_or_else(|e| {
-				let msg = format!(
-					"Error getting {}: `{}`",
-					SUBSTRATE_TEAM_LEADS_GROUP, e
-				);
-				log::error!("{}", msg);
-				errors.push(msg);
-				vec![]
-			});
-		let lead_approvals = approved_reviews
-			.iter()
-			.filter(|review| {
-				team_leads.iter().any(|team_lead| {
-					review
-						.user
-						.as_ref()
-						.map(|user| user.login == team_lead.login)
-						.unwrap_or(false)
-				})
+	let core_devs = github_bot
+		.core_devs(&pr.base.repo.owner.login)
+		.await
+		.unwrap_or_else(|e| {
+			let msg = format!("Error getting {}: `{}`", CORE_DEVS_GROUP, e);
+			log::error!("{}", msg);
+			errors.push(msg);
+			vec![]
+		});
+	let core_approvals = approved_reviews
+		.iter()
+		.filter(|review| {
+			core_devs.iter().any(|core_dev| {
+				review
+					.user
+					.as_ref()
+					.map(|user| user.login == core_dev.login)
+					.unwrap_or(false)
 			})
-			.count();
+		})
+		.count();
 
-		let core_devs = github_bot
-			.core_devs(&pr.base.repo.owner.login)
-			.await
-			.unwrap_or_else(|e| {
-				let msg = format!("Error getting {}: `{}`", CORE_DEVS_GROUP, e);
-				log::error!("{}", msg);
-				errors.push(msg);
-				vec![]
-			});
-		let core_approvals = approved_reviews
-			.iter()
-			.filter(|review| {
-				core_devs.iter().any(|core_dev| {
-					review
-						.user
-						.as_ref()
-						.map(|user| user.login == core_dev.login)
-						.unwrap_or(false)
-				})
-			})
-			.count();
+	let relevant_approvals_count = if core_approvals > lead_approvals {
+		core_approvals
+	} else {
+		lead_approvals
+	};
 
-		let relevant_approvals_count = if core_approvals > lead_approvals {
-			core_approvals
-		} else {
-			lead_approvals
-		};
-
-		let relevant_approvals_count = if team_leads
-			.iter()
-			.any(|lead| lead.login == requested_by)
-		{
+	let relevant_approvals_count =
+		if team_leads.iter().any(|lead| lead.login == requested_by) {
 			log::info!("{} merge requested by a team lead.", pr.html_url);
 			Ok(relevant_approvals_count)
 		} else {
@@ -1204,63 +1193,54 @@ async fn check_merge_is_allowed(
 			}
 		}?;
 
-		let min_approvals_required = match min_approvals_required {
-			Some(min_approvals_required) => min_approvals_required,
-			None => return Ok(None),
-		};
-
-		let has_bot_approved = approved_reviews.iter().any(|review| {
-			review
-				.user
-				.as_ref()
-				.map(|user| {
-					user.type_field
-						.as_ref()
-						.map(|type_field| *type_field == UserType::Bot)
-						.unwrap_or(false)
-				})
-				.unwrap_or(false)
-		});
-
-		// If the bot has already approved, then approving again will not make a
-		// difference.
-		if has_bot_approved
-		// If the bot's approval is not enough to reach the minimum, then don't bother with approving
-			|| relevant_approvals_count + 1 != min_approvals_required
-		{
-			return Ok(None);
-		}
-
-		let role = if team_leads
-			.iter()
-			.any(|team_lead| team_lead.login == requested_by)
-		{
-			Some("a team lead".to_string())
-		} else {
-			let (process, _) = process::get_process(
-				github_bot,
-				&pr.base.repo.owner.login,
-				&pr.base.repo.name,
-				pr.number,
-			)
-			.await?;
-			if process.is_owner(requested_by) {
-				Some("a project owner".to_string())
-			} else {
-				None
-			}
-		};
-
-		Ok(role)
+	let min_approvals_required = match min_approvals_required {
+		Some(min_approvals_required) => min_approvals_required,
+		None => return Ok(None),
 	};
 
-	result.await.map_err(|err| {
-		err.map_issue((
-			pr.base.repo.owner.login.to_owned(),
-			pr.base.repo.name.to_owned(),
+	let has_bot_approved = approved_reviews.iter().any(|review| {
+		review
+			.user
+			.as_ref()
+			.map(|user| {
+				user.type_field
+					.as_ref()
+					.map(|type_field| *type_field == UserType::Bot)
+					.unwrap_or(false)
+			})
+			.unwrap_or(false)
+	});
+
+	// If the bot has already approved, then approving again will not make a
+	// difference.
+	if has_bot_approved
+	// If the bot's approval is not enough to reach the minimum, then don't bother with approving
+		|| relevant_approvals_count + 1 != min_approvals_required
+	{
+		return Ok(None);
+	}
+
+	let role = if team_leads
+		.iter()
+		.any(|team_lead| team_lead.login == requested_by)
+	{
+		Some("a team lead".to_string())
+	} else {
+		let (process, _) = process::get_process(
+			github_bot,
+			&pr.base.repo.owner.login,
+			&pr.base.repo.name,
 			pr.number,
-		))
-	})
+		)
+		.await?;
+		if process.is_owner(requested_by) {
+			Some("a project owner".to_string())
+		} else {
+			None
+		}
+	};
+
+	Ok(role)
 }
 
 /// Query checks and statuses.
@@ -1870,7 +1850,7 @@ async fn attempt_merge_as_companion_fallback_direct(
 				);
 
 				let requested_by = db_mr.requested_by.to_string();
-				let result: Result<bool> = async {
+				let was_queued: Result<bool> = async {
 					let pr_from_db_mr = github_bot
 						.pull_request(&db_mr.owner, &db_mr.repo, db_mr.number)
 						.await?;
@@ -1947,7 +1927,7 @@ async fn attempt_merge_as_companion_fallback_direct(
 					Ok(true)
 				}
 				.await;
-				if let Ok(true) = result {
+				if let Ok(true) = was_queued {
 					was_queued_as_companion = Some(true);
 					break 'whole_db_iteration;
 				}

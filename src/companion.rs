@@ -356,8 +356,6 @@ pub async fn check_all_companions_are_mergeable(
 				continue;
 			}
 
-			log::info!("Parsed {} in the description of {}", html_url, pr.html_url);
-
 			let head_sha = companion.head_sha()?;
 
 			let has_user_owner = companion
@@ -426,7 +424,7 @@ pub async fn check_all_companions_are_mergeable(
 					return Err(Error::InvalidCompanionStatus {
 						value: InvalidCompanionStatusValue::Pending,
 						msg: format!(
-							"Companion {} has pending required statuses",
+							"Companion {} has pending statuses",
 							html_url
 						),
 					});
@@ -435,7 +433,7 @@ pub async fn check_all_companions_are_mergeable(
 					return Err(Error::InvalidCompanionStatus {
 						value: InvalidCompanionStatusValue::Failure,
 						msg: format!(
-							"Companion {} has failed required statuses",
+							"Companion {} has failed statuses",
 							html_url
 						),
 					});
@@ -456,7 +454,7 @@ pub async fn check_all_companions_are_mergeable(
 					return Err(Error::InvalidCompanionStatus {
 						value: InvalidCompanionStatusValue::Pending,
 						msg: format!(
-							"Companion {} has pending required checks",
+							"Companion {} has pending checks",
 							html_url
 						),
 					});
@@ -465,7 +463,7 @@ pub async fn check_all_companions_are_mergeable(
 					return Err(Error::InvalidCompanionStatus {
 						value: InvalidCompanionStatusValue::Failure,
 						msg: format!(
-							"Companion {} has failed required checks",
+							"Companion {} has failed checks",
 							html_url
 						),
 					});
