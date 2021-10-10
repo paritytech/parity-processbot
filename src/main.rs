@@ -8,6 +8,7 @@ mod logging;
 
 use parity_processbot::{
 	config::{BotConfig, MainConfig},
+	constants::*,
 	github_bot, gitlab_bot, matrix_bot,
 	server::*,
 	webhook::*,
@@ -29,13 +30,23 @@ async fn run() -> anyhow::Result<()> {
 
 	let db_version_file =
 		Path::new(&config.db_path).join("__PROCESSBOT_VERSION__");
-	if !db_version_file.exists() {
-		log::info!("Clearing database to start from version 1");
+	let is_at_current_db_version = match db_version_file.exists() {
+		true => {
+			let str = fs::read_to_string(&db_version_file)?;
+			str == DATABASE_VERSION
+		}
+		false => false,
+	};
+	if !is_at_current_db_version {
+		log::info!(
+			"Clearing database to start from version {}",
+			DATABASE_VERSION
+		);
 		for entry in fs::read_dir(&config.db_path)? {
 			let entry = entry?;
 			fs::remove_file(entry.path())?;
 		}
-		fs::write(db_version_file, "V1").unwrap();
+		fs::write(db_version_file, DATABASE_VERSION).unwrap();
 	}
 
 	let db = DB::open_default(&config.db_path)?;
