@@ -538,12 +538,8 @@ async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 async fn handle_command(
 	state: &AppState,
 	cmd: &CommentCommand,
-	owner: &str,
-	repo: &str,
-	number: i64,
-	html_url: &str,
-	requested_by: &str,
 	pr: &PullRequest,
+	requested_by: &str,
 ) -> Result<()> {
 	let AppState {
 		db,
@@ -557,11 +553,8 @@ async fn handle_command(
 			let pr_head_sha = pr.head_sha()?;
 
 			merge_allowed(
-				github_bot,
-				owner,
-				&repo,
+				state,
 				&pr,
-				bot_config,
 				requested_by,
 				None,
 				match cmd {
@@ -593,17 +586,7 @@ async fn handle_command(
 						}),
 					};
 					if ready_to_merge(github_bot, owner, &repo, &pr).await? {
-						match merge(
-							github_bot,
-							owner,
-							&repo,
-							&pr,
-							bot_config,
-							requested_by,
-							None,
-						)
-						.await?
-						{
+						match merge(state, pr, requested_by, None).await? {
 							// If the merge failure will be solved later, then register the PR in the database so that
 							// it'll eventually resume processing when later statuses arrive
 							Err(Error::MergeFailureWillBeSolvedLater {
@@ -671,13 +654,17 @@ async fn handle_command(
 			}
 
 			db.delete(pr_head_sha.as_bytes()).context(Db)?;
-			merge_companions(state, &repo, &pr).await
+			merge_companions(state, pr).await
 		}
 		CommentCommand::CancelMerge => {
 			log::info!("Deleting merge request for {}", html_url);
 
-			let pr_head_sha = pr.head_sha()?;
-			db.delete(pr_head_sha.as_bytes()).context(Db)?;
+			cleanup_pr(
+				state,
+				pr.base.repo.owner.login,
+				pr.base.repo.name,
+				pr.number,
+			);
 
 			if let Err(err) = github_bot
 				.create_issue_comment(
@@ -853,17 +840,7 @@ async fn handle_comment(
 		Err(err) => return (None, Err(err)),
 	};
 
-	let result = handle_command(
-		state,
-		&cmd,
-		owner,
-		repo,
-		number,
-		html_url,
-		requested_by,
-		&pr,
-	)
-	.await;
+	let result = handle_command(state, &cmd, &pr, requested_by).await;
 	let sha = match cmd {
 		CommentCommand::Merge(_) => {
 			pr.head_sha().ok().map(|head_sha| head_sha.to_owned())
@@ -970,15 +947,18 @@ async fn handle_burnin_request(
 /// because the merge might succeed regardless of them, thus it does not make
 /// sense to fail this scenario completely if the request fails for some reason.
 async fn merge_allowed(
-	github_bot: &GithubBot,
-	owner: &str,
-	repo_name: &str,
+	state: &AppState,
 	pr: &PullRequest,
-	bot_config: &BotConfig,
 	requested_by: &str,
 	min_approvals_required: Option<usize>,
 	allow_pending_required_status_for_companions: bool,
 ) -> Result<Option<String>> {
+	let AppState {
+		github_bot,
+		bot_config,
+		..
+	} = state;
+
 	let is_mergeable = pr.mergeable.unwrap_or(false);
 
 	if let Some(min_approvals_required) = &min_approvals_required {
@@ -994,8 +974,7 @@ async fn merge_allowed(
 
 	let result = async {
 		if let Err(err) =
-			check_all_companions_are_mergeable(github_bot, &pr, &repo_name)
-				.await
+			check_all_companions_are_mergeable(github_bot, &pr).await
 		{
 			match err {
 				Error::InvalidCompanionStatus { ref status, .. } => {
@@ -1065,7 +1044,7 @@ async fn merge_allowed(
 		let mut errors: Vec<String> = Vec::new();
 
 		let team_leads = github_bot
-			.substrate_team_leads(owner)
+			.substrate_team_leads(&pr.base.repo.owner.login)
 			.await
 			.unwrap_or_else(|e| {
 				let msg = format!(
@@ -1089,12 +1068,15 @@ async fn merge_allowed(
 			})
 			.count();
 
-		let core_devs = github_bot.core_devs(owner).await.unwrap_or_else(|e| {
-			let msg = format!("Error getting {}: `{}`", CORE_DEVS_GROUP, e);
-			log::error!("{}", msg);
-			errors.push(msg);
-			vec![]
-		});
+		let core_devs = github_bot
+			.core_devs(&pr.base.repo.owner.login)
+			.await
+			.unwrap_or_else(|e| {
+				let msg = format!("Error getting {}: `{}`", CORE_DEVS_GROUP, e);
+				log::error!("{}", msg);
+				errors.push(msg);
+				vec![]
+			});
 		let core_approvals = approved_reviews
 			.iter()
 			.filter(|review| {
@@ -1140,7 +1122,10 @@ async fn merge_allowed(
 				Ok(relevant_approvals_count)
 			} else {
 				let (process, process_warnings) = process::get_process(
-					github_bot, owner, repo_name, pr.number,
+					github_bot,
+					&pr.base.repo.owner.login,
+					&pr.base.repo.name,
+					pr.number,
 				)
 				.await?;
 
@@ -1205,9 +1190,13 @@ async fn merge_allowed(
 		{
 			Some("a team lead".to_string())
 		} else {
-			let (process, _) =
-				process::get_process(github_bot, owner, repo_name, pr.number)
-					.await?;
+			let (process, _) = process::get_process(
+				github_bot,
+				&pr.base.repo.owner.login,
+				&pr.base.repo.name,
+				pr.number,
+			)
+			.await?;
 			if process.is_owner(requested_by) {
 				Some("a project owner".to_string())
 			} else {
@@ -1219,7 +1208,7 @@ async fn merge_allowed(
 	};
 
 	result.await.map_err(|err| {
-		err.map_issue((owner.to_string(), repo_name.to_string(), pr.number))
+		err.map_issue((pr.base.repo.owner.login, pr.base.repo.name, pr.number))
 	})
 }
 
@@ -1229,8 +1218,6 @@ async fn merge_allowed(
 /// request and wait for checks -- if so they will later be handled by `checks_and_status`.
 pub async fn ready_to_merge(
 	github_bot: &GithubBot,
-	owner: &str,
-	repo_name: &str,
 	pr: &PullRequest,
 ) -> Result<bool> {
 	match pr.head_sha() {
@@ -1337,46 +1324,47 @@ pub async fn check_cleanup_merged_pr(
 		return false;
 	}
 
-	cleanup_merged_pr(
-		state,
-		&MergeRequestBase {
-			owner: pr.base.repo.owner.to_owned(),
-			repo: pr.base.repo.name.to_owned(),
-			number: pr.number,
-		},
-	);
+	cleanup_pr(state, pr.base.repo.owner, pr.base.repo.name, pr.number);
 
 	true
 }
 
-pub fn cleanup_merged_pr(state: &AppState, pr: &MergeRequestBase) {
+pub fn cleanup_pr(
+	state: &AppState,
+	main_key: &str,
+	owner: &str,
+	repo: &str,
+	number: i64,
+) {
 	let AppState { db, .. } = state;
+
 	let mut iter = db.iterator(rocksdb::IteratorMode::Start);
-	for (key, _) in iter {
+	for (key, value) in iter {
 		let db_mr: MergeRequest =
 			match bincode::deserialize(&value).context(Bincode) {
 				Ok(mr) => mr,
 				Err(err) => {
 					log::error!(
-						"Failed to deserialize {} during cleanup_merged_pr",
-						String::from_utf8_lossy(sha)
+						"Failed to deserialize {} during cleanup_pr",
+						String::from_utf8_lossy(key)
 					);
 					continue;
 				}
 			};
-		log::info!("Deserialized merge request: {:?}", db_mr);
 
-		if db_mr.owner == pr.owner
-			&& db_mr.repo_name == pr.repo
-			&& db_mr.number == pr.number
+		if db_mr.owner != owner
+			|| db_mr.repo_name != repo
+			|| db_mr.number != number
 		{
-			if let Err(err) = db.delete(key) {
-				log::error!(
-					"Failed to delete {} during cleanup_merged_pr due to {:?}",
-					String::from_utf8_lossy(key),
-					err
-				);
-			}
+			continue;
+		}
+
+		if let Err(err) = db.delete(key) {
+			log::error!(
+				"Failed to delete {} during cleanup_pr due to {:?}",
+				String::from_utf8_lossy(key),
+				err
+			);
 		}
 	}
 }
@@ -1387,8 +1375,6 @@ pub fn cleanup_merged_pr(state: &AppState, pr: &MergeRequestBase) {
 #[async_recursion]
 pub async fn merge(
 	state: &AppState,
-	owner: &str,
-	repo_name: &str,
 	pr: &PullRequest,
 	requested_by: &str,
 	created_approval_id: Option<i64>,
@@ -1397,14 +1383,19 @@ pub async fn merge(
 		return Ok(Ok());
 	}
 
+	let AppState {
+		github_bot,
+		bot_config,
+		..
+	} = state;
 	match pr.head_sha() {
 		Ok(pr_head_sha) => match github_bot
-			.merge_pull_request(owner, repo_name, pr.number, pr_head_sha)
+			.merge_pull_request(pr.base.repo.owner.login, pr.base.repo.name, pr.number, pr_head_sha)
 			.await
 		{
 			Ok(_) => {
 				log::info!("{} merged successfully.", pr.html_url);
-				cleanup_merged_pr(state, pr);
+				cleanup_pr(state, pr);
 				Ok(Ok(()))
 			}
 			Err(e) => match e {
@@ -1459,11 +1450,8 @@ pub async fn merge(
 										.parse::<usize>()
 										.unwrap();
 									match merge_allowed(
-										github_bot,
-										owner,
-										repo_name,
+										state,
 										pr,
-										bot_config,
 										requested_by,
 										Some(min_approvals_required),
 										false
@@ -1474,8 +1462,8 @@ pub async fn merge(
 											Some(requester_role) => {
 												if let Err(err) = github_bot
 													.create_issue_comment(
-														owner,
-														&repo_name,
+														pr.base.repo.owner.login,
+														pr.base.repo.name,
 														pr.number,
 														&format!(
 															"Bot will approve on the behalf of @{}, since they are {}, in an attempt to reach the minimum approval count",
@@ -1487,16 +1475,13 @@ pub async fn merge(
 													log::error!("Failed to post comment on {} due to {}", pr.html_url, err);
 												}
 												match github_bot.approve_merge_request(
-													owner,
-													repo_name,
+													pr.base.repo.owner,
+													pr.base.repo.name,
 													pr.number
 												).await {
 													Ok(review) => merge(
-														github_bot,
-														owner,
-														repo_name,
+														state,
 														pr,
-														bot_config,
 														requested_by,
 														Some(review.id)
 													).await,
@@ -1539,9 +1524,9 @@ Pull Request Merge Endpoint responded with unexpected body: `{}`",
 			.map_err(|e| Error::Merge {
 				source: Box::new(e),
 				commit_sha: pr_head_sha.to_string(),
-				pr_url: pr.url.to_string(),
-				owner: owner.to_string(),
-				repo_name: repo_name.to_string(),
+				pr_url: pr.url,
+				owner: pr.base.repo.owner.login,
+				repo_name: pr.base.repo.name,
 				pr_number: pr.number,
 				created_approval_id
 			}),
@@ -1549,7 +1534,11 @@ Pull Request Merge Endpoint responded with unexpected body: `{}`",
 		Err(e) => Err(e),
 	}
 	.map_err(|e| {
-		e.map_issue((owner.to_string(), repo_name.to_string(), pr.number))
+		e.map_issue((
+			pr.base.repo.owner.login.to_owned(),
+			pr.base.repo.name.to_owned(),
+			pr.number
+		))
 	})
 }
 
@@ -1778,9 +1767,14 @@ async fn handle_error(
 /// Try queueing this merge through the parent if some PR is depending on it
 async fn attempt_merge_as_companion_fallback_merge(
 	state: &AppState,
-	mr: &MergeRequestBase,
+	pr: &PullRequest,
 ) -> bool {
-	let AppState { db, github_bot, .. } = state;
+	let AppState {
+		db,
+		github_bot,
+		bot_config,
+		..
+	} = state;
 
 	// Iteration is restarted after merge because merges might clean up not only this key, but also
 	// others which could come before it
@@ -1793,13 +1787,12 @@ async fn attempt_merge_as_companion_fallback_merge(
 					Ok(mr) => mr,
 					Err(err) => {
 						log::error!(
-							"Failed to deserialize {} during attempt_merge",
+							"Failed to deserialize {} during attempt_merge_as_companion_fallback_merge",
 							String::from_utf8_lossy(sha)
 						);
 						continue;
 					}
 				};
-			log::info!("Deserialized merge request: {:?}", db_mr);
 
 			let companion_children = match db_mr.companion_children {
 				Some(companion_children) => companion_children,
@@ -1807,12 +1800,18 @@ async fn attempt_merge_as_companion_fallback_merge(
 			};
 
 			for child in companion_children {
-				if child.owner != mr.owner
-					|| child.repo != mr.repo
-					|| child.number != mr.number
+				if child.owner != pr.base.repo.owner
+					|| child.repo != pr.base.repo.name
+					|| child.number != pr.number
 				{
 					continue;
 				}
+
+				log::info!(
+					"{} is listed as a companion of {} in the database",
+					pr.html_url,
+					db_mr.html_url
+				);
 
 				if let Ok(true) = async {
 					let pr_from_db_mr = github_bot
@@ -1841,64 +1840,53 @@ async fn attempt_merge_as_companion_fallback_merge(
 					if companions
 						.iter()
 						.find(|(_, owner, repo, number)| {
-							owner == mr.owner
-								&& repo == mr.repo && number == mr.number
+							owner == pr.owner
+								&& repo == pr.repo && number == pr.number
 						})
 						.is_none()
 					{
 						return Ok(false);
 					}
 
+					log::info!(
+						"{} is listed as a companion of {} in the database",
+						pr.html_url,
+						db_mr.html_url
+					);
+
 					merge_allowed(
-						github_bot,
-						&owner,
-						&repo_name,
+						state,
 						&pr_from_db_mr,
-						bot_config,
-						&requested_by,
+						&db_mr.requested_by,
 						None,
 						false,
 					)
 					.await?;
-
-					if ready_to_merge(github_bot, owner, &repo, &pr_from_db_mr)
-						.await?
-					{
-						merge(
-							state,
-							db_mr.owner,
-							db_mr.repo,
-							&pr_from_db_mr,
-							bot_config,
-							db_mr.requested_by,
-							None,
-						)
-						.await??;
-						merge_companions(state, &repo, &pr_from_db_mr).await?;
+					if ready_to_merge(github_bot, &pr_from_db_mr).await? {
+						merge(state, &pr_from_db_mr, &db_mr.requested_by, None)
+							.await??;
+						merge_companions(state, &pr_from_db_mr).await?;
 					} else {
 						wait_to_merge(
 							state,
 							pr_from_db_mr.head_sha()?,
 							&MergeRequest {
-								owner: db_mr.owner,
-								repo_name: db_mr.repo_name,
-								number: db_mr.number,
-								html_url: db_mr.html_url,
+								owner: pr_from_db_mr.base.repo.owner,
+								repo_name: pr_from_db_mr.base.repo.name,
+								number: pr_from_db_mr.number,
+								html_url: pr_from_db_mr.html_url,
 								requested_by: db_mr.requested_by,
-								companion_children: pr.body.as_ref().map(
-									|body| {
-										parse_all_companions(body)
-											.into_iter()
-											.map(|(_, owner, repo, number)| {
-												MergeRequestBase {
-													owner,
-													repo,
-													number,
-												}
-											})
-											.collect()
-									},
-								),
+								// Reparse the companion's bodies so that we'll be able to
+								companion_children: companions
+									.into_iter()
+									.map(|(_, owner, repo, number)| {
+										MergeRequestBase {
+											owner,
+											repo,
+											number,
+										}
+									})
+									.collect(),
 							},
 							None,
 						)
