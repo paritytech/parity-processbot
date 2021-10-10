@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-mod auth;
 pub mod bamboo;
 pub mod cmd;
 mod macros;
@@ -51,7 +50,7 @@ pub enum CommentCommand {
 pub struct PlaceholderDeserializationItem {}
 
 pub enum MergeCancelOutcome {
-	ShaNotFound ,
+	ShaNotFound,
 	WasCancelled,
 	WasNotCancelled,
 }

@@ -43,3 +43,21 @@ Approval by \"Project Owners\" is only attempted if other means defined in the [
 "
 	}
 }
+
+#[macro_export]
+macro_rules! WEBHOOK_PARSING_ERROR_TEMPLATE {
+	() => {
+		"Webhook event parsing failed due to:
+
+```
+{}
+```
+
+Payload:
+
+```
+{}
+```
+"
+	};
+}

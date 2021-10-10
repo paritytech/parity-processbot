@@ -12,12 +12,12 @@ use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::{sync::Mutex, time::delay_for};
 
 use crate::{
-	auth::GithubUserAuthenticator, companion::parse_all_companions,
-	companion::*, config::BotConfig, constants::*, error::*, github::*,
-	github_bot::GithubBot, gitlab_bot::*, matrix_bot::MatrixBot, performance,
-	process, rebase::*, utils::parse_bot_comment_from_text, vanity_service,
-	CommentCommand, MergeCancelOutcome, MergeCommentCommand, Result, Status,
-	PROCESS_INFO_ERROR_TEMPLATE,
+	companion::parse_all_companions, companion::*, config::BotConfig,
+	constants::*, error::*, github::*, github_bot::GithubBot, gitlab_bot::*,
+	matrix_bot::MatrixBot, performance, process, rebase::*,
+	utils::parse_bot_comment_from_text, vanity_service, CommentCommand,
+	MergeCancelOutcome, MergeCommentCommand, Result, Status,
+	PROCESS_INFO_ERROR_TEMPLATE, WEBHOOK_PARSING_ERROR_TEMPLATE,
 };
 
 /// This data gets passed along with each webhook to the webhook handler.
@@ -169,18 +169,7 @@ pub async fn webhook_inner(
 			if let Some(pr_details) = pr_details {
 				Err(Error::Message {
 					msg: format!(
-						"Webhook event parsing failed due to:
-
-```
-{}
-```
-
-Payload:
-
-```
-{}
-```
-                ",
+						WEBHOOK_PARSING_ERROR_TEMPLATE!(),
 						err.to_string(),
 						String::from_utf8_lossy(&msg_bytes)
 					),
@@ -467,7 +456,8 @@ pub async fn get_latest_checks_state(
 /// Check that no commit has been pushed since the merge request was received.  Query checks and
 /// statuses and if they are green, attempt merge.
 async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
-	let AppState { db, .. } = state;
+	let AppState { db, github_bot, .. } = state;
+
 	let pr_bytes = match db.get(sha.as_bytes()).context(Db)? {
 		Some(pr_bytes) => pr_bytes,
 		None => return Ok(()),
@@ -476,91 +466,78 @@ async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 	let mr = bincode::deserialize(&pr_bytes).context(Bincode)?;
 	log::info!("Deserialized merge request: {:?}", mr);
 
-	async {
-		let MergeRequest {
-			owner,
-			repo,
-			number,
-			html_url,
-			requested_by,
-			..
-		} = &mr;
-		let AppState { github_bot, .. } = state;
+	let MergeRequest {
+		owner,
+		repo,
+		number,
+		html_url,
+		requested_by,
+		..
+	} = &mr;
 
-		let pr = github_bot.pull_request(owner, repo, *number).await?;
-		let pr_head_sha = pr.head_sha()?;
+	let pr = github_bot.pull_request(owner, repo, *number).await?;
+	let pr_head_sha = pr.head_sha()?;
 
-		if sha != pr_head_sha {
-			return Err(Error::HeadChanged {
-				expected: sha.to_string(),
-				actual: pr_head_sha.to_owned(),
-			});
-		}
-
-		let status = get_latest_statuses_state(
-			github_bot, &owner, &repo, sha, &html_url,
-		)
-		.await?;
-		match status {
-			Status::Success => {
-				let checks = get_latest_checks_state(
-					github_bot, &owner, &repo, sha, &html_url,
-				)
-				.await?;
-				match checks {
-					Status::Success => {
-						if let Err(err) = check_merge_is_allowed(
-							state,
-							&pr,
-							&requested_by,
-							None,
-						)
-						.await
-						{
-							return match err {
-								Error::InvalidCompanionStatus {
-									ref value,
-									..
-								} => match value {
-									InvalidCompanionStatusValue::Pending => {
-										Ok(())
-									}
-									InvalidCompanionStatusValue::Failure => {
-										Err(err)
-									}
-								},
-								_ => Err(err),
-							};
-						}
-
-						match attempt_merge_as_companion_fallback_direct(
-							state,
-							&pr,
-							requested_by,
-						)
-						.await
-						{
-							Ok(_) => Ok(()),
-							Err(Error::MergeFailureWillBeSolvedLater {
-								..
-							}) => Ok(()),
-							Err(err) => Err(err),
-						}
-					}
-					Status::Failure => Err(Error::ChecksFailed {
-						commit_sha: sha.to_string(),
-					}),
-					Status::Pending => Ok(()),
-				}
-			}
-			Status::Failure => Err(Error::ChecksFailed {
-				commit_sha: sha.to_string(),
-			}),
-			Status::Pending => Ok(()),
-		}
+	if sha != pr_head_sha {
+		return Err(Error::HeadChanged {
+			expected: sha.to_string(),
+			actual: pr_head_sha.to_owned(),
+		});
 	}
-	.await
-	.map_err(|err| err.map_issue((mr.owner, mr.repo, mr.number)))
+
+	let status =
+		get_latest_statuses_state(github_bot, &owner, &repo, sha, &html_url)
+			.await?;
+	match status {
+		Status::Success => {
+			let checks = get_latest_checks_state(
+				github_bot, &owner, &repo, sha, &html_url,
+			)
+			.await?;
+			match checks {
+				Status::Success => {
+					if let Err(err) =
+						check_merge_is_allowed(state, &pr, &requested_by, None)
+							.await
+					{
+						return match err {
+							Error::InvalidCompanionStatus {
+								ref value, ..
+							} => match value {
+								InvalidCompanionStatusValue::Pending => Ok(()),
+								InvalidCompanionStatusValue::Failure => {
+									Err(err)
+								}
+							},
+							_ => Err(err),
+						};
+					}
+
+					match attempt_merge_as_companion_fallback_direct(
+						state,
+						&pr,
+						requested_by,
+					)
+					.await
+					{
+						Ok(_) => Ok(()),
+						Err(Error::MergeFailureWillBeSolvedLater {
+							..
+						}) => Ok(()),
+						Err(err) => Err(err),
+					}
+				}
+				Status::Failure => Err(Error::ChecksFailed {
+					commit_sha: sha.to_string(),
+				}),
+				Status::Pending => Ok(()),
+			}
+		}
+		Status::Failure => Err(Error::ChecksFailed {
+			commit_sha: sha.to_string(),
+		}),
+		Status::Pending => Ok(()),
+	}
 }
 
 async fn handle_command(
@@ -852,9 +829,7 @@ async fn handle_comment(
 			msg: format!("Failed parsing repo name in url: {}", repo_url),
 		})?;
 
-		let auth =
-			GithubUserAuthenticator::new(requested_by, owner, &repo, number);
-		auth.check_org_membership(&github_bot).await?;
+		github_bot.org_member(owner, requested_by).await?;
 
 		if let CommentCommand::Merge(_) = cmd {
 			// We've noticed the bot failing for no human-discernable reason when, for instance, it
