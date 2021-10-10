@@ -128,33 +128,3 @@ impl GithubBot {
 			.map(|_| ())
 	}
 }
-
-#[cfg(test)]
-mod tests {
-	use super::*;
-
-	#[ignore]
-	#[test]
-	fn test_get_pr() {
-		dotenv::dotenv().ok();
-
-		let installation = dotenv::var("TEST_INSTALLATION_LOGIN")
-			.expect("TEST_INSTALLATION_LOGIN");
-		let private_key_path =
-			dotenv::var("PRIVATE_KEY_PATH").expect("PRIVATE_KEY_PATH");
-		let private_key = std::fs::read(&private_key_path)
-			.expect("Couldn't find private key.");
-
-		let mut rt = tokio::runtime::Runtime::new().expect("runtime");
-		rt.block_on(async {
-			let github_bot = GithubBot::new(private_key, &installation)
-				.await
-				.expect("github_bot");
-			let _ = dbg!(
-				github_bot
-					.pull_request("paritytech", "substrate", 6276)
-					.await
-			);
-		});
-	}
-}

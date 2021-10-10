@@ -7,22 +7,11 @@ use tokio::sync::Mutex;
 mod logging;
 
 use parity_processbot::{
-	config::{BotConfig, MainConfig},
-	constants::*,
-	github_bot, gitlab_bot, matrix_bot,
-	server::*,
+	config::MainConfig, constants::*, github::Payload, github_bot, server::*,
 	webhook::*,
 };
 
-#[tokio::main]
-async fn main() -> std::io::Result<()> {
-	match run().await {
-		Err(error) => panic!("{}", error),
-		_ => Ok(()),
-	}
-}
-
-async fn run() -> anyhow::Result<()> {
+fn main() {
 	let config = MainConfig::from_env();
 	env_logger::from_env(env_logger::Env::default().default_filter_or("info"))
 		.format(logging::gke::format)
@@ -32,7 +21,7 @@ async fn run() -> anyhow::Result<()> {
 		Path::new(&config.db_path).join("__PROCESSBOT_VERSION__");
 	let is_at_current_db_version = match db_version_path.exists() {
 		true => {
-			let str = fs::read_to_string(&db_version_path)?;
+			let str = fs::read_to_string(&db_version_path).unwrap();
 			str == DATABASE_VERSION
 		}
 		false => false,
@@ -42,96 +31,32 @@ async fn run() -> anyhow::Result<()> {
 			"Clearing database to start from version {}",
 			DATABASE_VERSION
 		);
-		for entry in fs::read_dir(&config.db_path)? {
-			let entry = entry?;
+		for entry in fs::read_dir(&config.db_path).unwrap() {
+			let entry = entry.unwrap();
 			if entry.path() == db_version_path {
 				continue;
 			}
-			if entry.metadata()?.is_dir() {
-				fs::remove_dir_all(entry.path())?;
+			if entry.metadata().unwrap().is_dir() {
+				fs::remove_dir_all(entry.path()).unwrap();
 			} else {
-				fs::remove_file(entry.path())?;
+				fs::remove_file(entry.path()).unwrap();
 			}
 		}
 		fs::write(db_version_path, DATABASE_VERSION).unwrap();
 	}
 
-	let db = DB::open_default(&config.db_path)?;
+	let db = DB::open_default(&config.db_path).unwrap();
 
-	log::info!(
-		"Connecting to Matrix homeserver {}",
-		config.matrix_homeserver,
-	);
-	let matrix_bot = matrix_bot::MatrixBot::new_with_token(
-		&config.matrix_homeserver,
-		&config.matrix_access_token,
-		&config.matrix_default_channel_id,
-		config.matrix_silent,
-	)?;
-
-	log::info!("Connecting to Github account {}", config.installation_login);
 	let github_bot = github_bot::GithubBot::new(
 		config.private_key.clone(),
 		&config.installation_login,
+		config.github_app_id,
 	)
-	.await?;
-
-	log::info!("Connecting to Gitlab https://{}", config.gitlab_hostname);
-	let gitlab_bot = gitlab_bot::GitlabBot::new_with_token(
-		&config.gitlab_hostname,
-		&config.gitlab_project,
-		&config.gitlab_job_name,
-		&config.gitlab_private_token,
-	)?;
-
-	// the bamboo queries can take a long time so only wait for it
-	// on launch. subsequently update in the background.
-	/*
-	{
-		let db_write = db.write();
-		if db_write.get(BAMBOO_DATA_KEY).ok().flatten().is_none() {
-			log::info!("Waiting for Bamboo data (may take a few minutes)");
-			match bamboo::github_to_matrix(&config.bamboo_token) {
-				Ok(h) => db_write
-					.put(
-						BAMBOO_DATA_KEY,
-						bincode::serialize(&h).expect("serialize bamboo"),
-					)
-					.expect("put bamboo"),
-				Err(e) => log::error!("Bamboo error: {}", e),
-			}
-		}
-	}
-	*/
-
-	// let config_clone = config.clone();
-	//	let db_clone = db.clone();
-	/*
-	std::thread::spawn(move || loop {
-		{
-			let db_write = db_clone.write();
-			match bamboo::github_to_matrix(&config_clone.bamboo_token) {
-				Ok(h) => {
-					db_write
-						.put(
-							BAMBOO_DATA_KEY,
-							bincode::serialize(&h).expect("serialize bamboo"),
-						)
-						.expect("put bamboo");
-				},
-				Err(e) => log::error!("Bamboo error: {}", e),
-			}
-		}
-		std::thread::sleep(Duration::from_secs(config_clone.bamboo_tick_secs));
-	});
-	*/
+	.unwrap();
 
 	let app_state = Arc::new(Mutex::new(AppState {
 		db,
 		github_bot,
-		matrix_bot,
-		gitlab_bot,
-		bot_config: BotConfig::from_env(),
 		webhook_secret: config.webhook_secret,
 	}));
 
@@ -140,7 +65,46 @@ async fn run() -> anyhow::Result<()> {
 		config.webhook_port.parse::<u16>().expect("webhook port"),
 	);
 
-	init_server(socket, app_state).await
+	let rt = tokio::runtime::Builder::new()
+		.threaded_scheduler()
+		.enable_all()
+		.build()
+		.unwrap();
+	if let Some(webhook_proxy_url) = config.webhook_proxy_url.as_ref() {
+		use eventsource::reqwest::Client;
+		use reqwest::Url;
+
+		let webhook_proxy_url = webhook_proxy_url.to_string();
+		let client = Client::new(Url::parse(&webhook_proxy_url).unwrap());
+
+		#[derive(serde::Deserialize)]
+		struct SmeePayload {
+			body: Payload,
+		}
+		for event in client {
+			let state = app_state.clone();
+			rt.spawn(async move {
+				let event = event.unwrap();
+
+				if let Ok(payload) =
+					serde_json::from_str::<SmeePayload>(event.data.as_str())
+				{
+					let state = &*state.lock().await;
+					let (merge_cancel_outcome, result) =
+						handle_payload(payload.body, &state).await;
+					if let Err(err) = result {
+						handle_error(merge_cancel_outcome, err, &state).await;
+					}
+				} else {
+					println!("Not parsed (1) {:?}", event);
+				}
+			});
+		}
+	} else {
+		rt.spawn(init_server(socket, app_state));
+	}
+
+	loop {}
 }
 
 #[cfg(test)]

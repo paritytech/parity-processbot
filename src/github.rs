@@ -361,6 +361,19 @@ impl HasIssueDetails for WebhookIssueComment {
 	}
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkflowJobConclusion {
+	Success,
+	#[serde(other)]
+	Unknown,
+}
+#[derive(PartialEq, Deserialize)]
+pub struct WorkflowJob {
+	pub head_sha: String,
+	pub conclusion: Option<WorkflowJobConclusion>,
+}
+
 #[derive(PartialEq, Deserialize)]
 #[serde(untagged)]
 pub enum Payload {
@@ -380,6 +393,9 @@ pub enum Payload {
 	},
 	CheckRun {
 		check_run: CheckRun,
+	},
+	WorkflowJob {
+		workflow_job: WorkflowJob,
 	},
 }
 

@@ -12,9 +12,8 @@ use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::{sync::Mutex, time::delay_for};
 
 use crate::{
-	companion::parse_all_companions, companion::*, config::BotConfig,
-	constants::*, error::*, github::*, github_bot::GithubBot, gitlab_bot::*,
-	matrix_bot::MatrixBot, process, rebase::*,
+	companion::parse_all_companions, companion::*, constants::*, error::*,
+	github::*, github_bot::GithubBot, process, rebase::*,
 	utils::parse_bot_comment_from_text, vanity_service, CommentCommand,
 	MergeCancelOutcome, MergeCommentCommand, Result, Status,
 	PROCESS_INFO_ERROR_TEMPLATE, WEBHOOK_PARSING_ERROR_TEMPLATE,
@@ -24,10 +23,6 @@ use crate::{
 pub struct AppState {
 	pub db: DB,
 	pub github_bot: GithubBot,
-	pub matrix_bot: MatrixBot,
-	pub gitlab_bot: GitlabBot,
-
-	pub bot_config: BotConfig,
 	pub webhook_secret: String,
 }
 
@@ -184,54 +179,60 @@ pub async fn webhook_inner(
 }
 
 /// Match different kinds of payload.
-async fn handle_payload(
+pub async fn handle_payload(
 	payload: Payload,
 	state: &AppState,
 ) -> (MergeCancelOutcome, Result<()>) {
 	let (result, sha) = match payload {
 		Payload::IssueComment {
+			action: IssueCommentAction::Unknown,
+			..
+		} => (Ok(()), None),
+		Payload::IssueComment {
 			action: IssueCommentAction::Created,
-			comment:
-				Comment {
-					ref body,
-					user:
-						Some(User {
-							ref login,
-							ref type_field,
-						}),
-					..
-				},
+			comment,
 			issue,
-		} => match type_field {
-			Some(UserType::Bot) => (Ok(()), None),
-			_ => match &issue {
-				WebhookIssueComment {
-					number,
-					html_url,
-					repository_url: Some(repo_url),
-					pull_request: Some(_),
-				} => {
-					let (sha, result) = handle_comment(
-						body, login, *number, html_url, repo_url, state,
-					)
-					.await;
-					(
-						result.map_err(|err| match err {
-							Error::WithIssue { .. } => err,
-							err => {
-								if let Some(details) = issue.get_issue_details()
-								{
-									err.map_issue(details)
-								} else {
-									err
+		} => match comment {
+			Comment {
+				ref body,
+				user: Some(User {
+					ref login,
+					ref type_field,
+				}),
+				..
+			} => match type_field {
+				Some(UserType::Bot) => (Ok(()), None),
+				_ => match &issue {
+					WebhookIssueComment {
+						number,
+						html_url,
+						repository_url: Some(repo_url),
+						pull_request: Some(_),
+					} => {
+						let (sha, result) = handle_comment(
+							body, login, *number, html_url, repo_url, state,
+						)
+						.await;
+						(
+							result.map_err(|err| match err {
+								Error::WithIssue { .. } => err,
+								err => {
+									if let Some(details) =
+										issue.get_issue_details()
+									{
+										err.map_issue(details)
+									} else {
+										err
+									}
 								}
-							}
-						}),
-						sha,
-					)
-				}
-				_ => (Ok(()), None),
+							}),
+							sha,
+						)
+					}
+					_ => (Ok(()), None),
+				},
 			},
+			_ => (Ok(()), None),
 		},
 		Payload::CommitStatus { sha, state: status } => {
 			(handle_status(state, status, &sha).await, Some(sha))
@@ -244,7 +245,18 @@ async fn handle_payload(
 			},
 			..
 		} => (handle_check(state, status, &sha).await, Some(sha)),
-		_ => (Ok(()), None),
+		Payload::WorkflowJob {
+			workflow_job:
+				WorkflowJob {
+					head_sha: sha,
+					conclusion,
+					..
+				},
+			..
+		} => (
+			handle_workflow_job(state, conclusion, &sha).await,
+			Some(sha),
+		),
 	};
 
 	// Without the SHA we'll not be able to fetch the database for more context, so exit early
@@ -320,29 +332,39 @@ async fn handle_payload(
 	}
 }
 
-/// If a check completes, query if all statuses and checks are complete.
 async fn handle_check(
 	state: &AppState,
 	status: CheckRunStatus,
-	commit_sha: &str,
+	sha: &str,
 ) -> Result<()> {
 	if status == CheckRunStatus::Completed {
-		checks_and_status(state, commit_sha).await
+		checks_and_status(state, sha).await
 	} else {
 		Ok(())
 	}
 }
 
-/// If we receive a status other than `Pending`, query if all statuses and checks are complete.
 async fn handle_status(
 	state: &AppState,
 	status: StatusState,
-	commit_sha: &str,
+	sha: &str,
 ) -> Result<()> {
 	if status == StatusState::Pending {
 		Ok(())
 	} else {
-		checks_and_status(state, commit_sha).await
+		checks_and_status(state, sha).await
+	}
+}
+
+async fn handle_workflow_job(
+	state: &AppState,
+	conclusion: Option<WorkflowJobConclusion>,
+	sha: &str,
+) -> Result<()> {
+	if conclusion.is_some() {
+		checks_and_status(state, sha).await
+	} else {
+		Ok(())
 	}
 }
 
@@ -720,9 +742,6 @@ async fn handle_command(
 			)
 			.await
 		}
-		CommentCommand::BurninRequest => {
-			handle_burnin_request(state, pr, requested_by).await
-		}
 		CommentCommand::CompareReleaseRequest => {
 			match pr.base.repo.name.as_str() {
 				"polkadot" => {
@@ -850,103 +869,6 @@ async fn handle_comment(
 	(sha, result)
 }
 
-async fn handle_burnin_request(
-	state: &AppState,
-	pr: &PullRequest,
-	requested_by: &str,
-) -> Result<()> {
-	let AppState {
-		gitlab_bot,
-		github_bot,
-		matrix_bot,
-		..
-	} = state;
-
-	let make_job_link =
-		|url| format!("<a href=\"{}\">CI job for burn-in deployment</a>", url);
-
-	let unexpected_error_msg = "Starting CI job for burn-in deployment failed with an unexpected error; see logs.".to_string();
-	let mut matrix_msg: Option<String> = None;
-
-	let msg = match gitlab_bot.build_artifact(&pr.head.sha) {
-		Ok(job) => {
-			let ci_job_link = make_job_link(job.url);
-
-			match job.status {
-				JobStatus::Started => {
-					format!("{} was started successfully.", ci_job_link)
-				}
-				JobStatus::AlreadyRunning => {
-					format!("{} is already running.", ci_job_link)
-				}
-				JobStatus::Finished => format!(
-					"{} already ran and finished with status `{}`.",
-					ci_job_link, job.status_raw,
-				),
-				JobStatus::Unknown => format!(
-					"{} has unexpected status `{}`.",
-					ci_job_link, job.status_raw,
-				),
-			}
-		}
-		Err(e) => {
-			log::error!("handle_burnin_request: {}", e);
-			match e {
-				Error::GitlabJobNotFound { commit_sha } => format!(
-					"No matching CI job was found for commit `{}`",
-					commit_sha
-				),
-				Error::StartingGitlabJobFailed { url, status, body } => {
-					let ci_job_link = make_job_link(url);
-
-					matrix_msg = Some(format!(
-						"Starting {} failed with HTTP status {} and body: {}",
-						ci_job_link, status, body,
-					));
-
-					format!(
-						"Starting {} failed with HTTP status {}",
-						ci_job_link, status,
-					)
-				}
-				Error::GitlabApi {
-					method,
-					url,
-					status,
-					body,
-				} => {
-					matrix_msg = Some(format!(
-						"Request {} {} failed with reponse status {} and body: {}",
-						method, url, status, body,
-					));
-
-					unexpected_error_msg
-				}
-				_ => unexpected_error_msg,
-			}
-		}
-	};
-
-	github_bot
-		.create_issue_comment(
-			&pr.base.repo.owner.login,
-			&pr.base.repo.name,
-			pr.number,
-			&msg,
-		)
-		.await?;
-
-	matrix_bot.send_html_to_default(
-		format!(
-		"Received burn-in request for <a href=\"{}\">{}#{}</a> from {}<br />\n{}",
-		pr.html_url, pr.base.repo.name, pr.number, requested_by, matrix_msg.unwrap_or(msg),
-	)
-		.as_str(),
-	)?;
-
-	Ok(())
-}
-
 /// Check if the pull request is mergeable and approved.
 /// Errors related to core-devs and substrateteamleads API requests are ignored
 /// because the merge might succeed regardless of them, thus it does not make
@@ -957,11 +879,7 @@ async fn check_merge_is_allowed(
 	requested_by: &str,
 	min_approvals_required: Option<usize>,
 ) -> Result<Option<String>> {
-	let AppState {
-		github_bot,
-		bot_config,
-		..
-	} = state;
+	let AppState { github_bot, .. } = state;
 
 	if let Some(min_approvals_required) = &min_approvals_required {
 		log::info!(
@@ -1093,7 +1011,7 @@ async fn check_merge_is_allowed(
 			{
 				1
 			} else {
-				bot_config.min_reviewers
+				2
 			};
 
 			let core_approved = core_approvals >= min_reviewers;
@@ -1590,7 +1508,7 @@ fn format_error(err: Error) -> String {
 	}
 }
 
-async fn handle_error(
+pub async fn handle_error(
 	merge_cancel_outcome: MergeCancelOutcome,
 	err: Error,
 	state: &AppState,
