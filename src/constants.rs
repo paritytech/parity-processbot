@@ -10,4 +10,4 @@ pub const BOT_NAME_FOR_COMMITS: &str = "parity-processbot[bot]";
 
 // Note: the old database will be deleted when switching to a new version, so do not change this
 // without checking the implementation first
-pub const DATABASE_VERSION: &str = "V1";
+pub const DATABASE_VERSION: &str = "v1.0";

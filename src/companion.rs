@@ -464,7 +464,7 @@ async fn update_then_merge_companion(
 	let AppState { github_bot, .. } = state;
 
 	let pr = github_bot.pull_request(&owner, &repo, *number).await?;
-	if check_cleanup_merged_pr(state, &pr) {
+	if check_cleanup_merged_pr(state, &pr)? {
 		return Ok(());
 	}
 
@@ -511,7 +511,7 @@ async fn update_then_merge_companion(
 				&updated_sha,
 				&MergeRequest {
 					owner: owner.to_owned(),
-					repo_name: repo.to_owned(),
+					repo: repo.to_owned(),
 					number: number.to_owned(),
 					html_url: html_url.to_owned(),
 					requested_by: BOT_NAME_FOR_COMMITS.to_owned(),

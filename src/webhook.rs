@@ -43,7 +43,7 @@ pub struct MergeRequestBase {
 #[repr(C)]
 pub struct MergeRequest {
 	pub owner: String,
-	pub repo_name: String,
+	pub repo: String,
 	pub number: i64,
 	pub html_url: String,
 	pub requested_by: String,
@@ -264,24 +264,50 @@ async fn handle_payload(
 			if err.stops_merge_attempt() {
 				if let Some(sha) = sha {
 					match state.db.get(sha.as_bytes()) {
-						Ok(Some(_)) => match state.db.delete(sha.as_bytes()) {
-							Ok(_) => {
-								log::info!(
-									"MR for {} was cancelled due to {:?}",
-									sha,
-									err
-								);
-								MergeCancelOutcome::WasCancelled
-							}
-							Err(db_err) => {
-								log::error!(
-										"Failed to delete {} from the database due to {:?}",
+						Ok(Some(bytes)) => {
+							match bincode::deserialize::<MergeRequest>(&bytes)
+								.context(Bincode)
+							{
+								Ok(MergeRequest {
+									ref owner,
+									ref repo,
+									ref html_url,
+									number,
+									..
+								}) => {
+									match cleanup_pr(
+										state, &sha, owner, repo, number,
+									) {
+										Ok(_) => {
+											log::info!(
+												"Merge of {} (sha {}) was cancelled due to {:?}",
+												html_url,
+												sha,
+												err
+											);
+											MergeCancelOutcome::WasCancelled
+										}
+										Err(err) => {
+											log::error!(
+												"Failed to cancel merge of {} (sha {}) in handle_payload due to {:?}",
+												html_url,
+												sha,
+												err
+											);
+											MergeCancelOutcome::WasNotCancelled
+										}
+									}
+								}
+								Err(db_err) => {
+									log::error!(
+										"Failed to parse {} from the database due to {:?}",
 										&sha,
 										db_err
 									);
-								MergeCancelOutcome::WasNotCancelled
+									MergeCancelOutcome::WasNotCancelled
+								}
 							}
-						},
+						}
 						Ok(None) => MergeCancelOutcome::ShaDidNotExist,
 						Err(db_err) => {
 							log::info!(
@@ -452,7 +478,7 @@ async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 	async {
 		let MergeRequest {
 			owner,
-			repo_name,
+			repo,
 			number,
 			html_url,
 			requested_by,
@@ -460,7 +486,7 @@ async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 		} = &mr;
 		let AppState { github_bot, .. } = state;
 
-		let pr = github_bot.pull_request(owner, repo_name, *number).await?;
+		let pr = github_bot.pull_request(owner, repo, *number).await?;
 		let pr_head_sha = pr.head_sha()?;
 
 		if sha != pr_head_sha {
@@ -471,13 +497,13 @@ async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 		}
 
 		let status = get_latest_statuses_state(
-			github_bot, &owner, &repo_name, sha, &html_url,
+			github_bot, &owner, &repo, sha, &html_url,
 		)
 		.await?;
 		match status {
 			Status::Success => {
 				let checks = get_latest_checks_state(
-					github_bot, &owner, &repo_name, sha, &html_url,
+					github_bot, &owner, &repo, sha, &html_url,
 				)
 				.await?;
 				match checks {
@@ -534,7 +560,7 @@ async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 		}
 	}
 	.await
-	.map_err(|err| err.map_issue((mr.owner, mr.repo_name, mr.number)))
+	.map_err(|err| err.map_issue((mr.owner, mr.repo, mr.number)))
 }
 
 async fn handle_command(
@@ -543,7 +569,7 @@ async fn handle_command(
 	pr: &PullRequest,
 	requested_by: &str,
 ) -> Result<()> {
-	let AppState { db, github_bot, .. } = state;
+	let AppState { github_bot, .. } = state;
 
 	match cmd {
 		CommentCommand::Merge(cmd) => {
@@ -569,7 +595,7 @@ async fn handle_command(
 				MergeCommentCommand::Normal => {
 					let mr = MergeRequest {
 						owner: pr.base.repo.owner.login.to_owned(),
-						repo_name: pr.base.repo.name.to_owned(),
+						repo: pr.base.repo.name.to_owned(),
 						number: pr.number,
 						html_url: pr.html_url.to_owned(),
 						requested_by: requested_by.to_owned(),
@@ -644,7 +670,6 @@ async fn handle_command(
 				}
 			}
 
-			db.delete(pr_head_sha.as_bytes()).context(Db)?;
 			merge_companions(state, pr).await
 		}
 		CommentCommand::CancelMerge => {
@@ -652,6 +677,7 @@ async fn handle_command(
 
 			cleanup_pr(
 				state,
+				pr.head_sha()?,
 				&pr.base.repo.owner.login,
 				&pr.base.repo.name,
 				pr.number,
@@ -802,7 +828,7 @@ async fn handle_comment(
 		Some(cmd) => cmd,
 		None => return (None, Ok(())),
 	};
-	log::info!("{:?} requested by {}", cmd, requested_by);
+	log::info!("{:?} requested by {} in {}", cmd, requested_by, html_url);
 
 	let AppState { github_bot, .. } = state;
 
@@ -1322,7 +1348,7 @@ pub async fn wait_to_merge(
 
 	let MergeRequest {
 		owner,
-		repo_name,
+		repo,
 		number,
 		..
 	} = mr;
@@ -1330,7 +1356,7 @@ pub async fn wait_to_merge(
 	let post_comment_result = github_bot
 		.create_issue_comment(
 			owner,
-			repo_name,
+			repo,
 			*number,
 			msg.unwrap_or("Waiting for commit status."),
 		)
@@ -1342,22 +1368,32 @@ pub async fn wait_to_merge(
 	Ok(())
 }
 
-pub fn check_cleanup_merged_pr(state: &AppState, pr: &PullRequest) -> bool {
+pub fn check_cleanup_merged_pr(
+	state: &AppState,
+	pr: &PullRequest,
+) -> Result<bool> {
 	if !pr.merged {
-		return false;
+		return Ok(false);
 	}
 
+	let key_to_guarantee_deleted = pr.head_sha()?;
 	cleanup_pr(
 		state,
+		key_to_guarantee_deleted,
 		&pr.base.repo.owner.login,
 		&pr.base.repo.name,
 		pr.number,
-	);
-
-	true
+	)
+	.map(|_| true)
 }
 
-pub fn cleanup_pr(state: &AppState, owner: &str, repo: &str, number: i64) {
+pub fn cleanup_pr(
+	state: &AppState,
+	key_to_guarantee_deleted: &str,
+	owner: &str,
+	repo: &str,
+	number: i64,
+) -> Result<()> {
 	let AppState { db, .. } = state;
 
 	let iter = db.iterator(rocksdb::IteratorMode::Start);
@@ -1375,9 +1411,7 @@ pub fn cleanup_pr(state: &AppState, owner: &str, repo: &str, number: i64) {
 				}
 			};
 
-		if db_mr.owner != owner
-			|| db_mr.repo_name != repo
-			|| db_mr.number != number
+		if db_mr.owner != owner || db_mr.repo != repo || db_mr.number != number
 		{
 			continue;
 		}
@@ -1390,6 +1424,17 @@ pub fn cleanup_pr(state: &AppState, owner: &str, repo: &str, number: i64) {
 			);
 		}
 	}
+
+	if let Some(_) = db.get(key_to_guarantee_deleted).context(Db)? {
+		return Err(Error::Message {
+			msg: format!(
+				"Key {} was not deleted from the database",
+				key_to_guarantee_deleted
+			),
+		});
+	}
+
+	Ok(())
 }
 
 /// Send a merge request.
@@ -1402,7 +1447,7 @@ pub async fn merge(
 	requested_by: &str,
 	created_approval_id: Option<i64>,
 ) -> Result<Result<()>> {
-	if check_cleanup_merged_pr(state, pr) {
+	if check_cleanup_merged_pr(state, pr)? {
 		return Ok(Ok(()));
 	}
 
@@ -1414,7 +1459,9 @@ pub async fn merge(
 		{
 			Ok(_) => {
 				log::info!("{} merged successfully.", pr.html_url);
-				cleanup_pr(state, &pr.base.repo.owner.login, &pr.base.repo.name, pr.number);
+				if let Err(err) = cleanup_pr(state, pr_head_sha, &pr.base.repo.owner.login, &pr.base.repo.name, pr.number) {
+					log::error!("{}", err);
+				};
 				Ok(Ok(()))
 			}
 			Err(e) => match e {
@@ -1791,11 +1838,10 @@ async fn attempt_merge_as_companion_fallback_direct(
 ) -> Result<()> {
 	let AppState { db, github_bot, .. } = state;
 
-	let iter = db.iterator(rocksdb::IteratorMode::Start);
-
 	let was_queued_as_companion = {
 		let mut was_queued_as_companion: Option<bool> = None;
 
+		let iter = db.iterator(rocksdb::IteratorMode::Start);
 		'whole_db_iteration: for (_, value) in iter {
 			let db_mr: MergeRequest =
 				bincode::deserialize(&value).context(Bincode)?;
@@ -1824,14 +1870,10 @@ async fn attempt_merge_as_companion_fallback_direct(
 				let requested_by = db_mr.requested_by.to_string();
 				let result: Result<bool> = async {
 					let pr_from_db_mr = github_bot
-						.pull_request(
-							&db_mr.owner,
-							&db_mr.repo_name,
-							db_mr.number,
-						)
+						.pull_request(&db_mr.owner, &db_mr.repo, db_mr.number)
 						.await?;
 
-					if check_cleanup_merged_pr(state, &pr_from_db_mr) {
+					if check_cleanup_merged_pr(state, &pr_from_db_mr)? {
 						return Ok(false);
 					}
 
@@ -1880,7 +1922,7 @@ async fn attempt_merge_as_companion_fallback_direct(
 							&pr_from_db_mr_head_sha,
 							&MergeRequest {
 								owner: pr_from_db_mr.base.repo.owner.login,
-								repo_name: pr_from_db_mr.base.repo.name,
+								repo: pr_from_db_mr.base.repo.name,
 								number: pr_from_db_mr.number,
 								html_url: pr_from_db_mr.html_url,
 								requested_by,
