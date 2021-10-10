@@ -1,4 +1,3 @@
-use crate::Status;
 use snafu::Snafu;
 
 // TODO this really should be struct { owner, repo, number }
@@ -13,6 +12,12 @@ pub struct CompanionDetailsWithErrorMessage {
 	pub number: i64,
 	pub html_url: String,
 	pub msg: String,
+}
+
+#[derive(Debug)]
+pub enum InvalidCompanionStatusValue {
+	Pending,
+	Failure,
 }
 
 #[derive(Debug, Snafu)]
@@ -194,7 +199,7 @@ pub enum Error {
 
 	#[snafu(display("{}", msg))]
 	InvalidCompanionStatus {
-		status: Status,
+		value: InvalidCompanionStatusValue,
 		msg: String,
 	},
 }

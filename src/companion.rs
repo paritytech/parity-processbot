@@ -28,6 +28,7 @@ async fn update_companion_repository(
 	contributor: &str,
 	contributor_repo: &str,
 	contributor_branch: &str,
+	merge_done_in: &str,
 ) -> Result<String> {
 	let token = github_bot.client.auth_key().await?;
 	let secrets_to_hide = [token.as_str()];
@@ -177,7 +178,7 @@ async fn update_companion_repository(
 
 	// Update the packages from 'merge_done_in' in the companion
 	let url_merge_was_done_in =
-		format!("https://github.com/{}/{}", owner, owner_repo);
+		format!("https://github.com/{}/{}", owner, merge_done_in);
 	let cargo_lock_path = Path::new(&repo_dir).join("Cargo.lock");
 	let lockfile =
 		cargo_lock::Lockfile::load(cargo_lock_path).map_err(|err| {
@@ -400,7 +401,7 @@ pub async fn check_all_companions_are_mergeable(
 			Status::Success => (),
 			Status::Pending => {
 				return Err(Error::InvalidCompanionStatus {
-					status: Status::Pending,
+					value: InvalidCompanionStatusValue::Pending,
 					msg: format!(
 						"Companion {} has pending required statuses",
 						html_url
@@ -409,7 +410,7 @@ pub async fn check_all_companions_are_mergeable(
 			}
 			Status::Failure => {
 				return Err(Error::InvalidCompanionStatus {
-					status: Status::Failure,
+					value: InvalidCompanionStatusValue::Failure,
 					msg: format!(
 						"Companion {} has failed required statuses",
 						html_url
@@ -430,7 +431,7 @@ pub async fn check_all_companions_are_mergeable(
 			Status::Success => (),
 			Status::Pending => {
 				return Err(Error::InvalidCompanionStatus {
-					status: checks,
+					value: InvalidCompanionStatusValue::Pending,
 					msg: format!(
 						"Companion {} has pending required checks",
 						html_url
@@ -439,7 +440,7 @@ pub async fn check_all_companions_are_mergeable(
 			}
 			Status::Failure => {
 				return Err(Error::InvalidCompanionStatus {
-					status: checks,
+					value: InvalidCompanionStatusValue::Failure,
 					msg: format!(
 						"Companion {} has failed required checks",
 						html_url
@@ -460,11 +461,7 @@ async fn update_then_merge_companion(
 	html_url: &str,
 	merge_done_in: &str,
 ) -> Result<()> {
-	let AppState {
-		bot_config,
-		github_bot,
-		..
-	} = state;
+	let AppState { github_bot, .. } = state;
 
 	let pr = github_bot.pull_request(&owner, &repo, *number).await?;
 	if check_cleanup_merged_pr(state, &pr) {
@@ -497,6 +494,7 @@ async fn update_then_merge_companion(
 			&contributor,
 			&contributor_repo,
 			&contributor_branch,
+			merge_done_in,
 		)
 		.await?;
 
