@@ -17,6 +17,7 @@ use crate::{
 	github_bot::GithubBot, gitlab_bot::*, matrix_bot::MatrixBot, performance,
 	process, rebase::*, utils::parse_bot_comment_from_text, vanity_service,
 	CommentCommand, MergeCancelOutcome, MergeCommentCommand, Result, Status,
+	PROCESS_INFO_ERROR_TEMPLATE,
 };
 
 /// This data gets passed along with each webhook to the webhook handler.
@@ -671,15 +672,7 @@ async fn handle_command(
 						// Even if the merge failure can be solved later, it does not matter because `merge force` is
 						// supposed to be immediate. We should give up here and yield the error message.
 						Err(Error::MergeFailureWillBeSolvedLater { msg }) => {
-							return Err(Error::Merge {
-								source: Box::new(Error::Message { msg }),
-								commit_sha: pr_head_sha.to_owned(),
-								pr_url: pr.html_url.to_owned(),
-								owner: pr.base.repo.owner.login.to_owned(),
-								repo_name: pr.base.repo.name.to_owned(),
-								pr_number: pr.number,
-								created_approval_id: None,
-							})
+							return Err(Error::Message { msg })
 						}
 						Err(e) => return Err(e),
 						_ => (),
@@ -1251,55 +1244,39 @@ pub async fn ready_to_merge(
 	github_bot: &GithubBot,
 	pr: &PullRequest,
 ) -> Result<bool> {
-	match pr.head_sha() {
-		Ok(pr_head_sha) => {
-			match get_latest_statuses_state(
+	let pr_head_sha = pr.head_sha()?;
+
+	match get_latest_statuses_state(
+		github_bot,
+		&pr.base.repo.owner.login,
+		&pr.base.repo.name,
+		pr_head_sha,
+		&pr.html_url,
+	)
+	.await?
+	{
+		Status::Success => {
+			match get_latest_checks_state(
 				github_bot,
 				&pr.base.repo.owner.login,
 				&pr.base.repo.name,
 				pr_head_sha,
 				&pr.html_url,
 			)
-			.await
+			.await?
 			{
-				Ok(status) => match status {
-					Status::Success => {
-						match get_latest_checks_state(
-							github_bot,
-							&pr.base.repo.owner.login,
-							&pr.base.repo.name,
-							pr_head_sha,
-							&pr.html_url,
-						)
-						.await
-						{
-							Ok(status) => match status {
-								Status::Success => Ok(true),
-								Status::Failure => Err(Error::ChecksFailed {
-									commit_sha: pr_head_sha.to_string(),
-								}),
-								_ => Ok(false),
-							},
-							Err(e) => Err(e),
-						}
-					}
-					Status::Failure => Err(Error::ChecksFailed {
-						commit_sha: pr_head_sha.to_string(),
-					}),
-					_ => Ok(false),
-				},
-				Err(e) => Err(e),
+				Status::Success => Ok(true),
+				Status::Failure => Err(Error::ChecksFailed {
+					commit_sha: pr_head_sha.to_string(),
+				}),
+				_ => Ok(false),
 			}
 		}
-		Err(e) => Err(e),
+		Status::Failure => Err(Error::ChecksFailed {
+			commit_sha: pr_head_sha.to_string(),
+		}),
+		_ => Ok(false),
 	}
-	.map_err(|e| {
-		e.map_issue((
-			pr.base.repo.owner.login.to_owned(),
-			pr.base.repo.name.to_owned(),
-			pr.number,
-		))
-	})
 }
 
 /// Create a merge request object.
@@ -1435,159 +1412,184 @@ pub async fn merge(
 	}
 
 	let AppState { github_bot, .. } = state;
-	match pr.head_sha() {
-		Ok(pr_head_sha) => match github_bot
-			.merge_pull_request(&pr.base.repo.owner.login, &pr.base.repo.name, pr.number, pr_head_sha)
+	let pr_head_sha = pr.head_sha()?;
+
+	if let Err(err) = async {
+		let err = match github_bot
+			.merge_pull_request(
+				&pr.base.repo.owner.login,
+				&pr.base.repo.name,
+				pr.number,
+				pr_head_sha,
+			)
 			.await
 		{
 			Ok(_) => {
 				log::info!("{} merged successfully.", pr.html_url);
-				if let Err(err) = cleanup_pr(state, pr_head_sha, &pr.base.repo.owner.login, &pr.base.repo.name, pr.number) {
+				if let Err(err) = cleanup_pr(
+					state,
+					pr_head_sha,
+					&pr.base.repo.owner.login,
+					&pr.base.repo.name,
+					pr.number,
+				) {
 					log::error!("{}", err);
 				};
-				Ok(Ok(()))
+				return Ok(());
 			}
-			Err(e) => match e {
-				Error::Response {
-					ref status,
-					ref body,
-				} => match *status {
-					StatusCode::METHOD_NOT_ALLOWED => {
-						match body.get("message") {
-							Some(msg) => {
-								// Matches the following
-								// - "Required status check ... is {pending,expected}."
-								// - "... required status checks have not succeeded: ... {pending,expected}."
-								let missing_status_matcher = RegexBuilder::new(
-									r"required\s+status\s+.*(pending|expected)",
-								)
-								.case_insensitive(true)
-								.build()
-								.unwrap();
+			Err(err) => err,
+		};
 
-								// Matches the following
-								// - "At least N approving reviews are required by reviewers with write access."
-								let insufficient_approval_quota_matcher =
-									RegexBuilder::new(r"([[:digit:]]+).*approving\s+reviews?\s+(is|are)\s+required")
-										.case_insensitive(true)
-										.build()
-										.unwrap();
-
-								if missing_status_matcher
-									.find(&msg.to_string())
-									.is_some()
-								{
-									// This problem will be solved automatically when all the
-									// required statuses are delivered, thus it can be ignored here
-									log::info!(
-										"Ignoring merge failure due to pending required status; message: {}",
-										msg
-									);
-									Ok(Err(Error::MergeFailureWillBeSolvedLater { msg: msg.to_string() }))
-								} else if let (
-									true,
-									Some(matches)
-								) = (
-									created_approval_id.is_none(),
-									insufficient_approval_quota_matcher
-										.captures(&msg.to_string())
-								) {
-									let min_approvals_required = matches
-										.get(1)
-										.unwrap()
-										.as_str()
-										.parse::<usize>()
-										.unwrap();
-									match check_merge_is_allowed(
-										state,
-										pr,
-										requested_by,
-										Some(min_approvals_required),
-									)
-									.await
-									{
-										Ok(requester_role) => match requester_role {
-											Some(requester_role) => {
-												if let Err(err) = github_bot
-													.create_issue_comment(
-														&pr.base.repo.owner.login,
-														&pr.base.repo.name,
-														pr.number,
-														&format!(
-															"Bot will approve on the behalf of @{}, since they are {}, in an attempt to reach the minimum approval count",
-															requested_by,
-															requester_role,
-														),
-													)
-													.await {
-													log::error!("Failed to post comment on {} due to {}", pr.html_url, err);
-												}
-												match github_bot.approve_merge_request(
-													&pr.base.repo.owner.login,
-													&pr.base.repo.name,
-													pr.number
-												).await {
-													Ok(review) => merge(
-														state,
-														pr,
-														requested_by,
-														Some(review.id)
-													).await,
-													Err(e) => Err(e)
-												}
-											},
-											None => Err(Error::Message {
-												msg: "Requester's approval is not enough to make the PR mergeable".to_string()
-											}),
-										},
-										Err(e) => Err(e)
-									}.map_err(|e| Error::Message {
-										msg: format!(
-											"Could not recover from: `{}` due to: `{}`",
-											msg,
-											e
-										)
-									})
-								} else {
-									Err(Error::Message {
-										msg: msg.to_string(),
-									})
-								}
-							}
-							_ => Err(Error::Message {
-								msg: format!(
-									"
-While trying to recover from failed HTTP request (status {}):
-
-Pull Request Merge Endpoint responded with unexpected body: `{}`",
-									status, body
-								),
-							}),
-						}
-					}
-					_ => Err(e),
-				},
-				_ => Err(e),
+		let msg = match err {
+			Error::Response {
+				ref status,
+				ref body,
+			} if *status == StatusCode::METHOD_NOT_ALLOWED => {
+				match body.get("message") {
+					Some(msg) => match msg.as_str() {
+						Some(msg) => msg,
+						None => return Err(err),
+					},
+					None => return Err(err),
+				}
 			}
-			.map_err(|e| Error::Merge {
-				source: Box::new(e),
-				commit_sha: pr_head_sha.to_string(),
-				pr_url: pr.url.to_owned(),
-				owner: pr.base.repo.owner.login.to_owned(),
-				repo_name: pr.base.repo.name.to_owned(),
-				pr_number: pr.number,
-				created_approval_id
-			}),
-		},
-		Err(e) => Err(e),
-	}
-	.map_err(|e| {
-		e.map_issue((
-			pr.base.repo.owner.login.to_owned(),
-			pr.base.repo.name.to_owned(),
+			_ => return Err(err),
+		};
+
+		// Matches the following
+		// - "Required status check ... is {pending,expected}."
+		// - "... required status checks have not succeeded: ... {pending,expected}."
+		let missing_status_matcher = RegexBuilder::new(
+			r"required\s+status\s+.*(pending|expected)",
+		)
+		.case_insensitive(true)
+		.build()
+		.unwrap();
+
+		// Matches the following
+		// - "At least N approving reviews are required by reviewers with write access."
+		let insufficient_approval_quota_matcher =
+			RegexBuilder::new(r"([[:digit:]]+).*approving\s+reviews?\s+(is|are)\s+required")
+				.case_insensitive(true)
+				.build()
+				.unwrap();
+
+		if missing_status_matcher
+			.find(&msg.to_string())
+			.is_some()
+		{
+			// This problem will be solved automatically when all the required statuses are delivered, thus
+			// it can be ignored here
+			log::info!(
+				"Ignoring merge failure due to pending required status; message: {}",
+				msg
+			);
+			return Err(Error::MergeFailureWillBeSolvedLater { msg: msg.to_string() });
+		}
+
+		// From this point onwards we'll attempt to recover from "Missing N approvals case"
+
+		// The bot has already approved once. The error can't be solved by going further, so exit early.
+		if created_approval_id.is_some() {
+			return Err(Error::Message { msg: msg.to_string() })
+		}
+
+		let min_approvals_required = {
+			match insufficient_approval_quota_matcher.captures(&msg.to_string()) {
+				Some(matches) => matches
+					.get(1)
+					.unwrap()
+					.as_str()
+					.parse::<usize>()
+					.unwrap(),
+				None => return Err(Error::Message { msg: msg.to_string() })
+			}
+		};
+
+		let requester_role = match check_merge_is_allowed(
+			state,
+			pr,
+			requested_by,
+			Some(min_approvals_required),
+		)
+		.await
+		{
+			Ok(requester_role) => match requester_role {
+				Some(requester_role) => requester_role,
+				None => return Err(Error::Message {
+					msg: "Requester's approval is not enough to make the PR mergeable".to_string()
+				}),
+			},
+			Err(err) => {
+				log::info!("Failed to get requested role for approval of {} due to {}", pr.html_url, err);
+				return Err(Error::Message { msg: msg.to_string() });
+			}
+		};
+
+		if let Err(err) = github_bot
+			.create_issue_comment(
+				&pr.base.repo.owner.login,
+				&pr.base.repo.name,
+				pr.number,
+				&format!(
+					"Bot will approve on the behalf of @{}, since they are {}, in an attempt to reach the minimum approval count",
+					requested_by,
+					requester_role,
+				),
+			)
+			.await
+		{
+			log::error!("Failed to post comment on aproval of {} due to {}", pr.html_url, err);
+		}
+
+		let review = match github_bot.approve_merge_request(
+			&pr.base.repo.owner.login,
+			&pr.base.repo.name,
 			pr.number
-		))
-	})
+		).await {
+			Ok(review) => review,
+			Err(err) => {
+				log::error!(
+					"Failed to create a review for approving the merge request {} due to {:?}",
+					pr.html_url,
+					err
+				);
+				return Err(Error::Message { msg: msg.to_string() });
+			}
+		};
+
+		merge(
+			state,
+			pr,
+			requested_by,
+			Some(review.id)
+		).await??;
+
+		Ok(())
+	}
+	.await
+	{
+		if let Some(approval_id) = created_approval_id {
+			if let Err(clear_err) = github_bot
+				.clear_merge_request_approval(
+					&pr.base.repo.owner.login,
+					&pr.base.repo.name,
+					pr.number,
+					approval_id,
+				)
+				.await
+			{
+				log::error!(
+					"Failed to cleanup a bot review in {} due to {}",
+					pr.html_url,
+					clear_err
+				)
+			}
+		}
+		return Err(err);
+	}
+
+	Ok(Ok(()))
 }
 
 #[allow(dead_code)]
@@ -1697,59 +1699,13 @@ fn display_errors_along_the_way(errors: Option<Vec<String>>) -> String {
 #[async_recursion]
 async fn handle_error_inner(err: Error, state: &AppState) -> String {
 	match err {
-		Error::Merge {
-			source,
-			commit_sha,
-			pr_url,
-			owner,
-			repo_name,
-			pr_number,
-			created_approval_id,
-		} => {
-			if let Err(db_err) = state.db.delete(commit_sha.as_bytes()) {
-				log::error!(
-					"Failed to delete {} from database due to {:?}",
-					commit_sha,
-					db_err
-				);
-			}
-
-			let github_bot = &state.github_bot;
-			if let Some(created_approval_id) = created_approval_id {
-				if let Err(clear_err) = github_bot
-					.clear_merge_request_approval(
-						&owner,
-						&repo_name,
-						pr_number,
-						created_approval_id,
-					)
-					.await
-				{
-					log::error!(
-						"Failed to cleanup a bot review in {} due to {}",
-						pr_url,
-						clear_err
-					)
-				}
-			}
-
-			handle_error_inner(*source, state).await
-		}
 		Error::ProcessInfo { errors } => {
 			format!(
-					"
-Error: When trying to meet the \"Project Owners\" approval requirements: this pull request does not belong to a project defined in {}.
-
-Approval by \"Project Owners\" is only attempted if other means defined in the [criteria for merge](https://github.com/paritytech/parity-processbot#criteria-for-merge) are not satisfied first.
-
-{}
-
-{}
-",
-					PROCESS_FILE,
-					display_errors_along_the_way(errors),
-					get_troubleshoot_msg()
-				)
+				PROCESS_INFO_ERROR_TEMPLATE!(),
+				PROCESS_FILE,
+				display_errors_along_the_way(errors),
+				get_troubleshoot_msg()
+			)
 		}
 		Error::Approval { errors } => format!(
 			"Approval criteria was not satisfied.\n\n{}\n\n{}",

@@ -34,17 +34,6 @@ pub enum Error {
 		field: String,
 	},
 
-	#[snafu(display("Error merging: {}", source))]
-	Merge {
-		source: Box<Error>,
-		commit_sha: String,
-		pr_url: String,
-		owner: String,
-		repo_name: String,
-		pr_number: i64,
-		created_approval_id: Option<i64>,
-	},
-
 	#[snafu(display("Checks failed for {}", commit_sha))]
 	ChecksFailed {
 		commit_sha: String,
@@ -216,9 +205,7 @@ impl Error {
 	}
 	pub fn stops_merge_attempt(&self) -> bool {
 		match self {
-			Self::WithIssue { source, .. } | Self::Merge { source, .. } => {
-				source.stops_merge_attempt()
-			}
+			Self::WithIssue { source, .. } => source.stops_merge_attempt(),
 			Self::MergeFailureWillBeSolvedLater { .. } => false,
 			_ => true,
 		}
