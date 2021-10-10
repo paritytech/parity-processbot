@@ -376,11 +376,16 @@ pub async fn check_all_companions_are_mergeable(
 			});
 		}
 
-		let is_mergeable = companion
-			.mergeable
-			.map(|mergeable| mergeable)
-			.unwrap_or(false);
-		if !is_mergeable {
+		if !companion.maintainer_can_modify {
+			return Err(Error::Message {
+				msg: format!(
+					"Github API says \"Allow edits from maintainers\" is not enabled for {}. The bot would use that permission to push the lockfile update after merging this PR. Please check https://docs.github.com/en/github/collaborating-with-pull-requests/working-with-forks/allowing-changes-to-a-pull-request-branch-created-from-a-fork.",
+					html_url
+				),
+			});
+		}
+
+		if !companion.mergeable {
 			return Err(Error::Message {
 				msg: format!(
 					"Github API says companion {} is not mergeable",

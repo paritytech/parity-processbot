@@ -16,8 +16,7 @@ use crate::{
 	companion::*, config::BotConfig, constants::*, error::*, github::*,
 	github_bot::GithubBot, gitlab_bot::*, matrix_bot::MatrixBot, performance,
 	process, rebase::*, utils::parse_bot_comment_from_text, vanity_service,
-	CommentCommand, MergeCancelOutcome, MergeCommentCommand,
-	PendingCompanionStatusesRestriction, Result, Status,
+	CommentCommand, MergeCancelOutcome, MergeCommentCommand, Result, Status,
 };
 
 /// This data gets passed along with each webhook to the webhook handler.
@@ -513,7 +512,6 @@ async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 							&pr,
 							&requested_by,
 							None,
-							PendingCompanionStatusesRestriction::Disallow,
 						)
 						.await
 						{
@@ -575,44 +573,57 @@ async fn handle_command(
 		CommentCommand::Merge(cmd) => {
 			let pr_head_sha = pr.head_sha()?;
 
-			check_merge_is_allowed(
-				state,
-				&pr,
-				requested_by,
-				None,
-				match cmd {
-					MergeCommentCommand::Normal => {
-						PendingCompanionStatusesRestriction::Allow
-					}
-					MergeCommentCommand::Force => {
-						PendingCompanionStatusesRestriction::Disallow
-					}
-				},
-			)
-			.await?;
+			let mr = MergeRequest {
+				owner: pr.base.repo.owner.login.to_owned(),
+				repo: pr.base.repo.name.to_owned(),
+				number: pr.number,
+				html_url: pr.html_url.to_owned(),
+				requested_by: requested_by.to_owned(),
+				companion_children: pr.body.as_ref().map(|body| {
+					parse_all_companions(body)
+						.into_iter()
+						.map(|(_, owner, repo, number)| MergeRequestBase {
+							owner,
+							repo,
+							number,
+						})
+						.collect()
+				}),
+			};
+
+			let should_wait_for_companions =
+				match check_merge_is_allowed(state, &pr, requested_by, None)
+					.await
+				{
+					Ok(_) => false,
+					Err(err) => match err {
+						Error::InvalidCompanionStatus { ref value, .. } => {
+							match value {
+								InvalidCompanionStatusValue::Pending => {
+									match cmd {
+										MergeCommentCommand::Normal => true,
+										MergeCommentCommand::Force => false,
+									}
+								}
+								InvalidCompanionStatusValue::Failure => {
+									match cmd {
+										MergeCommentCommand::Normal => {
+											return Err(err)
+										}
+										MergeCommentCommand::Force => false,
+									}
+								}
+							}
+						}
+						_ => return Err(err),
+					},
+				};
 
 			match cmd {
 				MergeCommentCommand::Normal => {
-					let mr = MergeRequest {
-						owner: pr.base.repo.owner.login.to_owned(),
-						repo: pr.base.repo.name.to_owned(),
-						number: pr.number,
-						html_url: pr.html_url.to_owned(),
-						requested_by: requested_by.to_owned(),
-						companion_children: pr.body.as_ref().map(|body| {
-							parse_all_companions(body)
-								.into_iter()
-								.map(|(_, owner, repo, number)| {
-									MergeRequestBase {
-										owner,
-										repo,
-										number,
-									}
-								})
-								.collect()
-						}),
-					};
-					if ready_to_merge(github_bot, &pr).await? {
+					if !should_wait_for_companions
+						&& ready_to_merge(github_bot, &pr).await?
+					{
 						match merge(state, pr, requested_by, None).await? {
 							// If the merge failure will be solved later, then register the PR in the database so that
 							// it'll eventually resume processing when later statuses arrive
@@ -640,7 +651,17 @@ async fn handle_command(
 							_ => (),
 						}
 					} else {
-						wait_to_merge(state, pr_head_sha, &mr, None).await?;
+						wait_to_merge(
+							state,
+							pr_head_sha,
+							&mr,
+							if should_wait_for_companions {
+								Some("Waiting for companions statuses and this PR's statuses")
+							} else {
+								None
+							},
+						)
+						.await?;
 						return Ok(());
 					}
 				}
@@ -993,7 +1014,6 @@ async fn check_merge_is_allowed(
 	pr: &PullRequest,
 	requested_by: &str,
 	min_approvals_required: Option<usize>,
-	pending_companion_statuses_restriction: PendingCompanionStatusesRestriction,
 ) -> Result<Option<String>> {
 	let AppState {
 		github_bot,
@@ -1001,38 +1021,19 @@ async fn check_merge_is_allowed(
 		..
 	} = state;
 
-	let is_mergeable = pr.mergeable.unwrap_or(false);
-
 	if let Some(min_approvals_required) = &min_approvals_required {
 		log::info!(
 			"Attempting to reach minimum number of approvals {}",
 			min_approvals_required
 		);
-	} else if is_mergeable {
+	} else if pr.mergeable {
 		log::info!("{} is mergeable", pr.html_url);
 	} else {
 		log::info!("{} is not mergeable", pr.html_url);
 	}
 
 	let result = async {
-		if let Err(err) =
-			check_all_companions_are_mergeable(github_bot, &pr).await
-		{
-			match err {
-				Error::InvalidCompanionStatus { ref value, .. } => {
-					match (pending_companion_statuses_restriction, value) {
-						(
-							PendingCompanionStatusesRestriction::Allow,
-							InvalidCompanionStatusValue::Pending,
-						) => (),
-						_ => return Err(err),
-					}
-				}
-				err => return Err(err),
-			}
-		}
-
-		if !is_mergeable && min_approvals_required.is_none() {
+		if !pr.mergeable && min_approvals_required.is_none() {
 			return Err(Error::Message {
 				msg: format!(
 					"Github API says {} is not mergeable",
@@ -1040,6 +1041,8 @@ async fn check_merge_is_allowed(
 				),
 			});
 		}
+
+		check_all_companions_are_mergeable(github_bot, &pr).await?;
 
 		// Consider only the latest relevant review submitted per user
 		let latest_reviews = {
@@ -1520,7 +1523,6 @@ pub async fn merge(
 										pr,
 										requested_by,
 										Some(min_approvals_required),
-										PendingCompanionStatusesRestriction::Disallow
 									)
 									.await
 									{
@@ -1906,7 +1908,6 @@ async fn attempt_merge_as_companion_fallback_direct(
 						&pr_from_db_mr,
 						&requested_by,
 						None,
-						PendingCompanionStatusesRestriction::Disallow,
 					)
 					.await?;
 

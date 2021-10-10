@@ -31,11 +31,12 @@ pub struct PullRequest {
 	pub user: Option<User>,
 	pub body: Option<String>,
 	pub labels: Vec<Label>,
-	pub mergeable: Option<bool>,
 	pub head: Option<Head>,
 	pub base: Base,
 	pub repository: Option<Repository>,
+	pub mergeable: bool,
 	pub merged: bool,
+	pub maintainer_can_modify: bool,
 }
 
 impl HasIssueDetails for PullRequest {
