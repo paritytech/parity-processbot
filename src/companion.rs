@@ -14,10 +14,9 @@ use crate::{
 	github::*,
 	github_bot::GithubBot,
 	webhook::{
-		check_cleanup_merged_pr, check_merge_is_allowed,
-		get_latest_checks_state, get_latest_statuses_state, merge,
-		ready_to_merge, wait_to_merge, AppState, MergeRequest,
-		MergeRequestBase,
+		check_merge_is_allowed, cleanup_merged_pr, get_latest_checks_state,
+		get_latest_statuses_state, merge, ready_to_merge, wait_to_merge,
+		AppState, MergeRequest, MergeRequestBase,
 	},
 	Result, Status, COMPANION_LONG_REGEX, COMPANION_PREFIX_REGEX,
 	COMPANION_SHORT_REGEX, PR_HTML_URL_REGEX,
@@ -242,7 +241,11 @@ async fn update_companion_repository(
 	{
 		run_cmd(
 			"git",
-			&["commit", "-am", "update Substrate"],
+			&[
+				"commit",
+				"-am",
+				&format!("update lockfile for {}", merge_done_in),
+			],
 			&repo_dir,
 			CommandMessage::Configured(CommandMessageConfiguration {
 				secrets_to_hide,
@@ -338,19 +341,25 @@ pub async fn check_all_companions_are_mergeable(
 	github_bot: &GithubBot,
 	pr: &PullRequest,
 ) -> Result<()> {
-	// TODO: get rid of this limitation by breaking cycles in companion descriptions across repositories
-	if pr.base.repo.name != "substrate"
-		&& pr.base.repo.name != MAIN_REPO_FOR_STAGING
-	{
-		return Ok(());
-	}
-
 	let body = match pr.body.as_ref() {
 		Some(body) => body,
 		None => return Ok(()),
 	};
 
-	for (html_url, owner, repo, number) in parse_all_companions(body) {
+	let companions = parse_all_companions(body);
+	if companions.is_empty() {
+		return Ok(());
+	}
+
+	if pr.base.repo.name != "substrate"
+		&& pr.base.repo.name != MAIN_REPO_FOR_STAGING
+	{
+		return Err(Error::Message {
+			msg: "Companion merges are not enabled for this repository due to a processbot limitation. See https://github.com/paritytech/parity-processbot/issues/321 for more information.".to_owned()
+		});
+	}
+
+	for (html_url, owner, repo, number) in companions {
 		let companion = github_bot.pull_request(&owner, &repo, number).await?;
 
 		if companion.merged {
@@ -467,7 +476,7 @@ async fn update_then_merge_companion(
 	let AppState { github_bot, .. } = state;
 
 	let companion = github_bot.pull_request(&owner, &repo, *number).await?;
-	if check_cleanup_merged_pr(state, &companion)? {
+	if cleanup_merged_pr(state, &companion)? {
 		return Ok(());
 	}
 
@@ -578,14 +587,7 @@ pub async fn merge_companions(
 	pr: &PullRequest,
 	requested_by: &str,
 ) -> Result<()> {
-	// TODO: get rid of this limitation by breaking cycles in companion descriptions across repositories
-	if pr.base.repo.name != "substrate"
-		&& pr.base.repo.name != MAIN_REPO_FOR_STAGING
-	{
-		return Ok(());
-	}
-
-	log::info!("Checking for companion in  {}", pr.html_url);
+	log::info!("Checking for companion in {}", pr.html_url);
 
 	let companions_groups = {
 		let body = match pr.body.as_ref() {
@@ -595,7 +597,6 @@ pub async fn merge_companions(
 
 		let companions = parse_all_companions(body);
 		if companions.is_empty() {
-			log::info!("No companion found.");
 			return Ok(());
 		}
 
@@ -631,7 +632,7 @@ pub async fn merge_companions(
 						&repo,
 						number,
 						&html_url,
-						&pr.base.repo.owner.login,
+						&pr.base.repo.name,
 						requested_by,
 					)
 					.await

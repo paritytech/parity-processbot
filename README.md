@@ -47,6 +47,16 @@ Unstable statuses will have `allow_failure: true` encoded in their descriptions
 ([delivered from vanity-service](https://gitlab.parity.io/parity/websites/vanity-service/-/blob/ddc0af0ec8520a99a35b9e33de57d28d37678686/service.js#L77))
 which will allow processbot to detect and disregard them.
 
+# Development
+
+The bot requires some environment variables listed in
+[./src/config.rs][config.rs]. They can, optionally, be set through an `.env`
+file to be placed.
+
+During **development**, it's handy to use a [smee.io](https://smee.io/) proxy,
+through the `WEBHOOK_PROXY_URL` variable, for receiving Github Webhook Events
+in your local instance of processbot.
+
 # Deployment
 
 The bot is automatically deployed by pushing a tag with one of the following formats
