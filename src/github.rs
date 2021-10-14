@@ -16,7 +16,6 @@ pub struct PullRequest {
 	pub number: i64,
 	pub user: Option<User>,
 	pub body: Option<String>,
-	pub labels: Vec<Label>,
 	pub head: Head,
 	pub base: Base,
 	pub repository: Option<Repository>,

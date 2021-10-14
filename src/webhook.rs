@@ -1228,15 +1228,12 @@ pub async fn check_merge_is_allowed(
 			log::info!("{} merge requested by a team lead.", pr.html_url);
 			Ok(relevant_approvals_count)
 		} else {
-			let min_reviewers = if pr
-				.labels
-				.iter()
-				.find(|label| label.name.contains("insubstantial"))
-				.is_some()
-			{
-				1
-			} else {
-				2
+			// TODO have this be based on the repository's settings from the API
+			// (https://github.com/paritytech/parity-processbot/issues/319)
+			let min_reviewers = match pr.base.repo.name.as_str() {
+				"substrate" => 2,
+				"polkadot" => 1,
+				_ => 0,
 			};
 
 			let core_approved = core_dev_approvals >= min_reviewers;

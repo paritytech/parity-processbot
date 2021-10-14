@@ -100,6 +100,7 @@ fn main() -> anyhow::Result<()> {
 				} else {
 					match event.event_type.as_ref().map(|t| t.as_str()) {
 						Some("ping") => (),
+						Some("ready") => log::info!("Webhook proxy is ready!"),
 						_ => log::info!("Not parsed {:?}", event),
 					}
 				}
