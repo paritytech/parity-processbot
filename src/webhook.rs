@@ -517,6 +517,8 @@ async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 		},
 	};
 
+	let mut parent_pr_was_merged = false;
+
 	match async {
 		if sha != pr.head.sha {
 			return Err(Error::HeadChanged {
@@ -619,6 +621,7 @@ async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 						}),
 					};
 				};
+				parent_pr_was_merged = true;
 
 				// Merge the parent (which should also merge this one, since it is a companion)
 				log::info!(
@@ -732,26 +735,30 @@ async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 	{
 		Ok(_) | Err(Error::MergeFailureWillBeSolvedLater { .. }) => Ok(()),
 		Err(err) => {
-			if let Some((parent_sha, parent)) = parent {
-				cleanup_pr(
-					state,
-					&parent_sha,
-					&parent.owner,
-					&parent.repo,
-					parent.number,
-				)?;
-				handle_error(
-					MergeCancelOutcome::WasCancelled,
-					Error::Message {
-						msg: format!(
-							"Companion {} has error: {}",
-							pr.html_url, err
-						),
-					}
-					.map_issue((parent.owner, parent.repo, parent.number)),
-					state,
-				)
-				.await;
+			// There's no point in cancelling the merge of the parent and communicating and error there
+			// if it already has been merged
+			if !parent_pr_was_merged {
+				if let Some((parent_sha, parent)) = parent {
+					cleanup_pr(
+						state,
+						&parent_sha,
+						&parent.owner,
+						&parent.repo,
+						parent.number,
+					)?;
+					handle_error(
+						MergeCancelOutcome::WasCancelled,
+						Error::Message {
+							msg: format!(
+								"Companion {} has error: {}",
+								pr.html_url, err
+							),
+						}
+						.map_issue((parent.owner, parent.repo, parent.number)),
+						state,
+					)
+					.await;
+				}
 			}
 			Err(err.map_issue((
 				pr.base.repo.owner.login,
