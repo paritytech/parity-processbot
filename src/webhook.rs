@@ -13,10 +13,9 @@ use tokio::{sync::Mutex, time::delay_for};
 
 use crate::{
 	auth::GithubUserAuthenticator, companion::*, config::BotConfig,
-	constants::*, error::*, github::*, github_bot::GithubBot,
-	performance, process, rebase::*,
-	utils::parse_bot_comment_from_text, vanity_service, CommentCommand,
-	MergeCommentCommand, Result, Status,
+	constants::*, error::*, github::*, github_bot::GithubBot, performance,
+	process, rebase::*, utils::parse_bot_comment_from_text, vanity_service,
+	CommentCommand, MergeCommentCommand, Result, Status,
 };
 
 /// This data gets passed along with each webhook to the webhook handler.
