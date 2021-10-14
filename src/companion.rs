@@ -18,8 +18,8 @@ use crate::{
 		get_latest_statuses_state, merge, ready_to_merge, wait_to_merge,
 		AppState, MergeRequest, MergeRequestBase,
 	},
-	Result, Status, COMPANION_LONG_REGEX, COMPANION_PREFIX_REGEX,
-	COMPANION_SHORT_REGEX, PR_HTML_URL_REGEX,
+	MergeAllowedOutcome, Result, Status, COMPANION_LONG_REGEX,
+	COMPANION_PREFIX_REGEX, COMPANION_SHORT_REGEX, PR_HTML_URL_REGEX,
 };
 
 async fn update_companion_repository(
@@ -370,9 +370,11 @@ pub fn parse_all_companions(body: &str) -> Vec<IssueDetailsWithRepositoryURL> {
 	body.lines().filter_map(companion_parse).collect()
 }
 
+#[async_recursion]
 pub async fn check_all_companions_are_mergeable(
-	github_bot: &GithubBot,
+	state: &AppState,
 	pr: &PullRequest,
+	requested_by: &str,
 ) -> Result<()> {
 	let body = match pr.body.as_ref() {
 		Some(body) => body,
@@ -393,6 +395,7 @@ pub async fn check_all_companions_are_mergeable(
 		});
 	}
 
+	let AppState { github_bot, .. } = state;
 	for (html_url, owner, repo, number) in companions {
 		let companion = github_bot.pull_request(&owner, &repo, number).await?;
 
@@ -436,13 +439,13 @@ pub async fn check_all_companions_are_mergeable(
 			});
 		}
 
-		if !companion.mergeable.unwrap_or(false) {
-			return Err(Error::Message {
-				msg: format!(
-					"Github API says companion {} is not mergeable",
-					html_url
-				),
-			});
+		match check_merge_is_allowed(state, &companion, &requested_by, None)
+			.await?
+		{
+			MergeAllowedOutcome::Disallowed(msg) => {
+				return Err(Error::Message { msg })
+			}
+			_ => (),
 		}
 
 		match get_latest_statuses_state(
@@ -458,13 +461,19 @@ pub async fn check_all_companions_are_mergeable(
 			Status::Pending => {
 				return Err(Error::InvalidCompanionStatus {
 					value: InvalidCompanionStatusValue::Pending,
-					msg: format!("Companion {} has pending statuses", html_url),
+					msg: format!(
+						"Companion {} has pending statuses",
+						companion.html_url
+					),
 				});
 			}
 			Status::Failure => {
 				return Err(Error::InvalidCompanionStatus {
 					value: InvalidCompanionStatusValue::Failure,
-					msg: format!("Companion {} has failed statuses", html_url),
+					msg: format!(
+						"Companion {} has failed statuses",
+						companion.html_url
+					),
 				});
 			}
 		};
@@ -482,13 +491,19 @@ pub async fn check_all_companions_are_mergeable(
 			Status::Pending => {
 				return Err(Error::InvalidCompanionStatus {
 					value: InvalidCompanionStatusValue::Pending,
-					msg: format!("Companion {} has pending checks", html_url),
+					msg: format!(
+						"Companion {} has pending checks",
+						companion.html_url
+					),
 				});
 			}
 			Status::Failure => {
 				return Err(Error::InvalidCompanionStatus {
 					value: InvalidCompanionStatusValue::Failure,
-					msg: format!("Companion {} has failed checks", html_url),
+					msg: format!(
+						"Companion {} has failed checks",
+						companion.html_url
+					),
 				});
 			}
 		};

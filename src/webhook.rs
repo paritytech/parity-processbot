@@ -1148,7 +1148,7 @@ pub async fn check_merge_is_allowed(
 		});
 	}
 
-	check_all_companions_are_mergeable(github_bot, &pr).await?;
+	check_all_companions_are_mergeable(state, &pr, &requested_by).await?;
 
 	// TODO have this be based on the repository's settings from the API
 	// (https://github.com/paritytech/parity-processbot/issues/319)
@@ -1338,7 +1338,10 @@ pub async fn check_merge_is_allowed(
 	// If the bot's approval is not enough to reach the minimum, then don't bother with approving
 		|| relevant_approvals_count + 1 != min_approvals
 	{
-		return Ok(MergeAllowedOutcome::Disallowed);
+		return Ok(MergeAllowedOutcome::Disallowed(format!(
+			"It's not possible to meet the minimal approval count of {} in {}",
+			min_approvals, pr.html_url
+		)));
 	}
 
 	let role = if team_leads
@@ -1357,7 +1360,10 @@ pub async fn check_merge_is_allowed(
 		if process.is_owner(requested_by) {
 			"a project owner".to_string()
 		} else {
-			return Ok(MergeAllowedOutcome::Disallowed);
+			return Ok(MergeAllowedOutcome::Disallowed(format!(
+				"@{} 's approval is not enough to make {} mergeable by processbot's rules",
+				requested_by, pr.html_url
+			)));
 		}
 	};
 
@@ -1645,14 +1651,14 @@ pub async fn merge(
 			}
 		};
 
-		match check_merge_is_allowed(
+		let review = match check_merge_is_allowed(
 			state,
 			pr,
 			requested_by,
 			Some(min_approvals_required),
 		)
 		.await {
-			Ok(MergeAllowedOutcome::Allowed) => (),
+			Ok(MergeAllowedOutcome::Allowed) => None,
 			Ok(MergeAllowedOutcome::GrantApprovalForRole(role)) => {
 				if let Err(err) = github_bot
 					.create_issue_comment(
@@ -1675,14 +1681,7 @@ pub async fn merge(
 					&pr.base.repo.name,
 					pr.number
 				).await {
-					Ok(review) => {
-						merge(
-							state,
-							pr,
-							requested_by,
-							Some(review.id)
-						).await??;
-					},
+					Ok(review) => Some(review.id),
 					Err(err) => {
 						log::error!(
 							"Failed to create a review for approving the merge request {} due to {:?}",
@@ -1691,18 +1690,23 @@ pub async fn merge(
 						);
 						return Err(Error::Message { msg: msg.to_string() });
 					}
-				};
+				}
 			},
-			Ok(MergeAllowedOutcome::Disallowed) => {
-				return Err(Error::Message {
-					msg: "Requester's approval is not enough to make the PR mergeable".to_string()
-				});
+			Ok(MergeAllowedOutcome::Disallowed(msg)) => {
+				return Err(Error::Message { msg });
 			},
 			Err(err) => {
 				log::info!("Failed to get requested role for approval of {} due to {}", pr.html_url, err);
 				return Err(Error::Message { msg: msg.to_string() });
 			}
 		};
+
+		merge(
+			state,
+			pr,
+			requested_by,
+			review
+		).await??;
 
 		Ok(())
 	}
