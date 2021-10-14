@@ -15,7 +15,7 @@ pub struct CompanionDetailsWithErrorMessage {
 	pub msg: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum InvalidCompanionStatusValue {
 	Pending,
 	Failure,

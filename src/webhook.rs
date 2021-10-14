@@ -519,7 +519,17 @@ async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 
 	let mut parent_pr_was_merged = false;
 
+	log::info!(
+		"SHA {} got mapped to PR {} in checks_and_status",
+		sha,
+		pr.html_url,
+	);
+
 	match async {
+		if cleanup_merged_pr(state, &pr)? {
+			return Ok(());
+		}
+
 		if sha != pr.head.sha {
 			return Err(Error::HeadChanged {
 				expected: sha.to_string(),
@@ -528,6 +538,7 @@ async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 		}
 
 		if !ready_to_merge(github_bot, &pr).await? {
+			log::info!("{} is not ready", pr.html_url);
 			return Ok(());
 		}
 
@@ -560,8 +571,8 @@ async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 				}))
 				.unwrap_or(false);
 
-			if is_still_companion {
-				if let Err(err) = match check_merge_is_allowed(
+			if is_still_companion && !parent_pr.merged {
+				if let Err(err) = check_merge_is_allowed(
 					state,
 					&parent_pr,
 					&requested_by,
@@ -569,28 +580,47 @@ async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 				)
 				.await
 				{
-					Ok(_) => Ok(()),
-					Err(err) => match err {
-						Error::InvalidCompanionStatus { ref value, .. } => {
-							match value {
-								InvalidCompanionStatusValue::Pending => {
-									log::info!("In checks_and_status, skipped merging {} as a companion because the parent {} had other companions pending", pr.html_url, parent.html_url);
-									return Ok(())
-								}
-								InvalidCompanionStatusValue::Failure => Err(err),
+					match err {
+						Error::InvalidCompanionStatus { ref value, .. } if *value == InvalidCompanionStatusValue::Pending => {
+							log::info!(
+								"Skipped merging {} because parent {} had pending companion statuses",
+								pr.html_url,
+								parent_pr.html_url
+							);
+						},
+						_ => {
+							log::info!(
+								"Will not attempt to merge {} because the parent PR {} is not mergeable due to {:?}",
+								pr.html_url,
+								parent_pr.html_url,
+								err
+							);
+
+							if let Err(cleanup_err) = cleanup_pr(
+								state,
+								&parent_sha,
+								&parent_pr.base.repo.owner.login,
+								&parent_pr.base.repo.name,
+								parent_pr.number,
+							) {
+								log::error!(
+									"Failed to cleanup {} (parent of {}) due to {:?}",
+									parent_pr.html_url,
+									pr.html_url,
+									cleanup_err
+								);
 							}
 						}
-						err => Err(err),
-					},
-				} {
-					let msg = format!(
-						"Failed to merge (parent) {} due to {}",
-						parent_pr.html_url, err
-					);
-					return Err(Error::Message { msg });
+					}
+					return Ok(());
 				}
 
 				if !ready_to_merge(github_bot, &parent_pr).await? {
+					log::info!(
+						"Skipped merging {} because parent {} had pending companion statuses",
+						pr.html_url,
+						parent_pr.html_url
+					);
 					return Ok(());
 				}
 
@@ -603,15 +633,33 @@ async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 				if let Err(err) =
 					merge(state, &parent_pr, &requested_by, None).await?
 				{
-					return match err {
-						Error::MergeFailureWillBeSolvedLater { .. } => Ok(()),
-						err => Err(Error::Message {
-							msg: format!(
-								"Failed to merge (parent) {} due to {}",
-								parent_pr.html_url, err
-							),
-						}),
+					match err {
+						Error::MergeFailureWillBeSolvedLater { .. } => (),
+						err => {
+							log::info!(
+								"Will cancel the merge of {} because the parent PR {} failed to be merged due to {:?}",
+								pr.html_url,
+								parent_pr.html_url,
+								err
+							);
+
+							if let Err(cleanup_err) = cleanup_pr(
+								state,
+								&parent_sha,
+								&parent_pr.base.repo.owner.login,
+								&parent_pr.base.repo.name,
+								parent_pr.number,
+							) {
+								log::error!(
+									"Failed to cleanup {} (parent of {}) due to {:?}",
+									parent_pr.html_url,
+									pr.html_url,
+									cleanup_err
+								);
+							}
+						},
 					};
+					return Ok(());
 				};
 				parent_pr_was_merged = true;
 
@@ -621,7 +669,6 @@ async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 					parent_pr.html_url,
 					pr.html_url
 				);
-
 				let should_confirm_pr_merged = match merge_companions(state, &parent_pr, &requested_by, Some(&pr.html_url)).await {
 					// Since the parent's companions have been merged, and this PR is a companion, it should have
 					// been merged as well.
@@ -658,9 +705,9 @@ async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 					}
 				};
 
-				// From the parent companion merges being executed above, at this point this pull request will
-				// either be merged later or it has already been merged. For sanity's sake we'll confirm those
-				// assumptions here.
+				// From the parent's companion merges being finished above, at this point this pull request
+				// will either be merged later or it has already been merged. For sanity's sake we'll confirm
+				// those assumptions here.
 				if should_confirm_pr_merged {
 					let pr = github_bot.pull_request(&pr.base.repo.owner.login, &pr.base.repo.name, pr.number).await?;
 					if pr.merged || db.get(&pr.head.sha.as_bytes()).context(Db)?.is_some() {
@@ -728,7 +775,7 @@ async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 		Ok(_) | Err(Error::MergeFailureWillBeSolvedLater { .. }) => Ok(()),
 		Err(err) => {
 			// There's no point in cancelling the merge of the parent and communicating and error there
-			// if it already has been merged
+			// if the parent already has been merged
 			if !parent_pr_was_merged {
 				if let Some((parent_sha, parent)) = parent {
 					cleanup_pr(
