@@ -690,7 +690,7 @@ async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 				// those assumptions here.
 				if expect_pr_was_merged_as_companion {
 					if db.get(&pr.head.sha.as_bytes()).context(Db)?.is_some() {
-						log::info!("{} was queued as a companion after merging {}", pr.html_url, parent_pr.html_url);
+						log::info!("Companion {} was queued after merging {}", pr.html_url, parent_pr.html_url);
 						return Ok(());
 					} else {
 						let pr = github_bot.pull_request(&pr.base.repo.owner.login, &pr.base.repo.name, pr.number).await?;
@@ -711,7 +711,7 @@ async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 							return Ok(());
 						} else {
 							log::error!(
-								"Expected {} to have been merged in merge_companions of {}, but it did not happen. This could be a bug.",
+								"Expected to have been merged {} as a companion in merge_companions of {}, but it did not happen. This could be a bug.",
 								pr.html_url,
 								parent_pr.html_url
 							);
