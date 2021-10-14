@@ -9,7 +9,6 @@ pub fn parse_bot_comment_from_text(text: &str) -> Option<CommentCommand> {
 		"bot merge force" => CommentCommand::Merge(MergeCommentCommand::Force),
 		"bot merge cancel" => CommentCommand::CancelMerge,
 		"bot rebase" => CommentCommand::Rebase,
-		"bot burnin" => CommentCommand::BurninRequest,
 		"bot compare substrate" => CommentCommand::CompareReleaseRequest,
 		_ => return None,
 	};

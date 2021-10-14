@@ -6,7 +6,7 @@ mod logging;
 
 use parity_processbot::{
 	config::{BotConfig, MainConfig},
-	github_bot, gitlab_bot, matrix_bot,
+	github_bot,
 	server::*,
 	webhook::*,
 };
@@ -27,31 +27,12 @@ async fn run() -> anyhow::Result<()> {
 
 	let db = DB::open_default(&config.db_path)?;
 
-	log::info!(
-		"Connecting to Matrix homeserver {}",
-		config.matrix_homeserver,
-	);
-	let matrix_bot = matrix_bot::MatrixBot::new_with_token(
-		&config.matrix_homeserver,
-		&config.matrix_access_token,
-		&config.matrix_default_channel_id,
-		config.matrix_silent,
-	)?;
-
 	log::info!("Connecting to Github account {}", config.installation_login);
 	let github_bot = github_bot::GithubBot::new(
 		config.private_key.clone(),
 		&config.installation_login,
 	)
 	.await?;
-
-	log::info!("Connecting to Gitlab https://{}", config.gitlab_hostname);
-	let gitlab_bot = gitlab_bot::GitlabBot::new_with_token(
-		&config.gitlab_hostname,
-		&config.gitlab_project,
-		&config.gitlab_job_name,
-		&config.gitlab_private_token,
-	)?;
 
 	// the bamboo queries can take a long time so only wait for it
 	// on launch. subsequently update in the background.
@@ -98,8 +79,6 @@ async fn run() -> anyhow::Result<()> {
 	let app_state = Arc::new(Mutex::new(AppState {
 		db: db,
 		github_bot: github_bot,
-		matrix_bot: matrix_bot,
-		gitlab_bot: gitlab_bot,
 		bot_config: BotConfig::from_env(),
 		webhook_secret: config.webhook_secret,
 	}));

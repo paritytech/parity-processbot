@@ -14,7 +14,6 @@ have the command**.
 - `bot compare substrate`: see a diff between current branch's Substrate
   version and the latest Polkadot release's Substrate version.
 - `bot rebase`: create a merge commit from origin/master into the PR.
-- `bot burnin`: build and deploy the PR for a burn-in test.
 
 Note: The commands will only work if you are a member of the organization where
 this bot is installed. Organization membership is always gotten fresh from the
@@ -114,7 +113,7 @@ A Pull Request needs either
   are defined in `Process.json`. If the PR does not belong to any project or if
   it has been approved by a project owner which is not the PR's project owner,
   then this rule will not take effect.
-  
+
 This criteria strictly matters only for the bot's internal logic irrespective
 of Github Repository Settings and will not trump the latter in any case. For
 instance, the rule:
