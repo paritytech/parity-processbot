@@ -47,69 +47,6 @@ Unstable statuses will have `allow_failure: true` encoded in their descriptions
 ([delivered from vanity-service](https://gitlab.parity.io/parity/websites/vanity-service/-/blob/ddc0af0ec8520a99a35b9e33de57d28d37678686/service.js#L77))
 which will allow processbot to detect and disregard them.
 
-# Development
-
-The bot requires some environment variables listed in
-[./src/config.rs][config.rs]. They can, optionally, be set through an `.env`
-file to be placed.
-
-During **development**, it's handy to use a [smee.io](https://smee.io/) proxy,
-through the `WEBHOOK_PROXY_URL` variable, for receiving Github Webhook Events
-in your local instance of processbot.
-
-# Deployment
-
-The bot is automatically deployed by pushing a tag with one of the following formats
-
-- `/^v[0-9]+\.[0-9]+.*$/`, e.g. `v1.1`, will deploy it to production (cluster
-  `parity-prod`).
-
-- `/^pre-v[0-9]+\.[0-9]+.*$/`, e.g. `pre-v0.6` will deploy to staging (cluster
-  `parity-stg`).
-  - The staging package is deployed to a dedicated separate Github App. There's
-    [a (private) repository for staging](https://github.com/paritytech/polkadot-for-processbot-staging)
-    which has it installed, already set up with a mirrored
-	[a (private) project on Gitlab](https://gitlab.parity.io/parity/polkadot-for-processbot-staging)
-	for CI.
-
-The deployment's status can be followed through
-[Gitlab Pipelines on the parity-processbot mirror](https://gitlab.parity.io/parity/parity-processbot/-/pipelines)
-([example](https://gitlab.parity.io/parity/parity-processbot/-/jobs/867102)).
-
-## Notes
-
-- All of the relevant configuration for deployment lives in the
-  [./kubernetes/processbot](./kubernetes/processbot) folder. The environment
-  variables for both staging and production are in `values*.yml`; if you add
-  one, it also needs to be added to `templates/processbot.yaml`.
- - Secrets are managed through Gitlab.
-
-# Configuration
-
-## Project Owners <a name="project-owners"></a>
-
-Project owners can be configured by placing a `Process.json` file in the root
-of your repository. **The bot always considers only the `master` branch's
-version of the file**. See [./Process.json](./Process.json) or
-[Substrate's Process.json](https://github.com/paritytech/substrate/blob/master/Process.json)
-for examples.
-
-The file should have a valid JSON array of
-`{ "project_name": string, "owner": string, "matrix_room_id": string }`
-where:
-
-- `project_name` is the [Github Project](#github-project)'s name
-- `owner` is the Github Username of the project's lead
-- `matrix_room_id` is the project's room address on Matrix, like
-  `"!yBKstWVBkwzUkPslsp:matrix.parity.io"`. It's not currently used, but needs to
-  be defined.
-
-## Runtime
-
-Some of the bot's configuration (e.g. the number of required reviewers for a
-pull request) can be managed through environment variables defined in
-[./src/config.rs](./src/config.rs)
-
 # Criteria for merge
 
 ## Approvals
@@ -160,6 +97,83 @@ an Allowed Developer. The reasoning for this feature is as follows:
 
 All [Important and above](#relation-to-ci) checks should be green when using
 `bot merge` (can be bypassed by using `bot merge force`).
+
+# Project Owners <a name="project-owners"></a>
+
+Project owners can be configured by placing a `Process.json` file in the root
+of your repository. **The bot always considers only the `master` branch's
+version of the file**. See [./Process.json](./Process.json) or
+[Substrate's Process.json](https://github.com/paritytech/substrate/blob/master/Process.json)
+for examples.
+
+The file should have a valid JSON array of
+`{ "project_name": string, "owner": string, "matrix_room_id": string }`
+where:
+
+- `project_name` is the [Github Project](#github-project)'s name
+- `owner` is the Github Username of the project's lead
+- `matrix_room_id` is the project's room address on Matrix, like
+  `"!yBKstWVBkwzUkPslsp:matrix.parity.io"`. It's not currently used, but needs to
+  be defined.
+
+# Github App Configuration
+
+Repository permissions
+
+- Contents: Read & write
+- Issues: Read & write
+- Metadata: Read-only
+- Pull requests: Read & write
+- Projects: Read-only
+- Commit statuses: Read-only
+
+Organization permissions
+
+- Members: Read-only
+
+Events:
+
+- Check run
+- Issue comment
+- Status
+- Workflow job
+
+# Development
+
+The bot requires some environment variables listed in
+[./src/config.rs][config.rs]. They can, optionally, be set through an `.env`
+file to be placed.
+
+During **development**, it's handy to use a [smee.io](https://smee.io/) proxy,
+through the `WEBHOOK_PROXY_URL` variable, for receiving Github Webhook Events
+in your local instance of processbot.
+
+# Deployment
+
+The bot is automatically deployed by pushing a tag with one of the following formats
+
+- `/^v[0-9]+\.[0-9]+.*$/`, e.g. `v1.1`, will deploy it to production (cluster
+  `parity-prod`).
+
+- `/^pre-v[0-9]+\.[0-9]+.*$/`, e.g. `pre-v0.6` will deploy to staging (cluster
+  `parity-stg`).
+  - The staging package is deployed to a dedicated separate Github App. There's
+    [a (private) repository for staging](https://github.com/paritytech/polkadot-for-processbot-staging)
+    which has it installed, already set up with a mirrored
+	[a (private) project on Gitlab](https://gitlab.parity.io/parity/polkadot-for-processbot-staging)
+	for CI.
+
+The deployment's status can be followed through
+[Gitlab Pipelines on the parity-processbot mirror](https://gitlab.parity.io/parity/parity-processbot/-/pipelines)
+([example](https://gitlab.parity.io/parity/parity-processbot/-/jobs/867102)).
+
+## Notes
+
+- All of the relevant configuration for deployment lives in the
+  [./kubernetes/processbot](./kubernetes/processbot) folder. The environment
+  variables for both staging and production are in `values*.yml`; if you add
+  one, it also needs to be added to `templates/processbot.yaml`.
+ - Secrets are managed through Gitlab.
 
 # FAQ
 
