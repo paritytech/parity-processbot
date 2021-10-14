@@ -553,9 +553,14 @@ async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 			let is_still_companion = parent_pr
 				.body
 				.as_ref()
-				.map(|body| parse_all_companions(body).iter().any(|(html_url, _, _, _)| {
-					html_url == &pr.html_url
-				}))
+				.map(|body|
+					parse_all_companions(
+						&pr.base.repo.owner.login,
+						&pr.base.repo.name,
+						body
+					).iter().any(|(html_url, _, _, _)| {
+						html_url == &pr.html_url
+					}))
 				.unwrap_or(false);
 
 			if is_still_companion && !parent_pr.merged {
@@ -810,14 +815,18 @@ async fn handle_command(
 				html_url: pr.html_url.to_owned(),
 				requested_by: requested_by.to_owned(),
 				companion_children: pr.body.as_ref().map(|body| {
-					parse_all_companions(body)
-						.into_iter()
-						.map(|(_, owner, repo, number)| MergeRequestBase {
-							owner,
-							repo,
-							number,
-						})
-						.collect()
+					parse_all_companions(
+						&pr.base.repo.owner.login,
+						&pr.base.repo.name,
+						body,
+					)
+					.into_iter()
+					.map(|(_, owner, repo, number)| MergeRequestBase {
+						owner,
+						repo,
+						number,
+					})
+					.collect()
 				}),
 			};
 

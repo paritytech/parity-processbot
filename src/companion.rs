@@ -9,7 +9,6 @@ use tokio::time::delay_for;
 
 use crate::{
 	cmd::*,
-	constants::MAIN_REPO_FOR_STAGING,
 	error::*,
 	github::*,
 	github_bot::GithubBot,
@@ -366,8 +365,25 @@ fn companion_parse_short(body: &str) -> Option<IssueDetailsWithRepositoryURL> {
 	Some((html_url, owner, repo, number))
 }
 
-pub fn parse_all_companions(body: &str) -> Vec<IssueDetailsWithRepositoryURL> {
-	body.lines().filter_map(companion_parse).collect()
+pub fn parse_all_companions(
+	source_owner: &str,
+	source_repo: &str,
+	body: &str,
+) -> Vec<IssueDetailsWithRepositoryURL> {
+	body.lines()
+		.filter_map(|line| {
+			companion_parse(line).map(|comp| {
+				// Break cyclical references between dependency and dependents because we're only
+				// interested in the dependency -> dependent relationship, not the other way around
+				if &comp.1 == source_owner && &comp.2 == source_repo {
+					return None;
+				} else {
+					return Some(comp);
+				}
+			})
+		})
+		.flatten()
+		.collect()
 }
 
 #[async_recursion]
@@ -381,18 +397,14 @@ pub async fn check_all_companions_are_mergeable(
 		None => return Ok(()),
 	};
 
-	let companions = parse_all_companions(body);
+	let companions = parse_all_companions(
+		&pr.base.repo.owner.login,
+		&pr.base.repo.name,
+		body,
+	);
 	if companions.is_empty() {
 		log::info!("Found no companions in the body of {}", pr.html_url);
 		return Ok(());
-	}
-
-	if pr.base.repo.name != "substrate"
-		&& pr.base.repo.name != MAIN_REPO_FOR_STAGING
-	{
-		return Err(Error::Message {
-			msg: format!("Companion merges are not enabled for {} due to a processbot limitation (https://github.com/paritytech/parity-processbot/issues/321). The error occurred because processbot found companions in the description of {}.", pr.html_url, pr.html_url)
-		});
 	}
 
 	let AppState { github_bot, .. } = state;
@@ -600,14 +612,18 @@ async fn update_then_merge_companion(
 		log::info!("Companion updated; waiting for checks on {}", html_url);
 
 		let companion_companions = companion.body.as_ref().map(|body| {
-			parse_all_companions(body)
-				.into_iter()
-				.map(|(_, owner, repo, number)| MergeRequestBase {
-					owner,
-					repo,
-					number,
-				})
-				.collect()
+			parse_all_companions(
+				&companion.base.repo.owner.login,
+				&companion.base.repo.name,
+				body,
+			)
+			.into_iter()
+			.map(|(_, owner, repo, number)| MergeRequestBase {
+				owner,
+				repo,
+				number,
+			})
+			.collect()
 		});
 
 		let msg = companion_companions
@@ -654,7 +670,11 @@ pub async fn merge_companions(
 			None => return Ok(()),
 		};
 
-		let companions = parse_all_companions(body);
+		let companions = parse_all_companions(
+			&pr.base.repo.owner.login,
+			&pr.base.repo.name,
+			body,
+		);
 		if companions.is_empty() {
 			return Ok(());
 		}
@@ -844,15 +864,49 @@ mod tests {
 			repo.to_owned(),
 			pr_number,
 		);
+		let does_not_matter = "does not matter";
 		assert_eq!(
-			parse_all_companions(&format!(
-				"
+			parse_all_companions(
+				does_not_matter,
+				does_not_matter,
+				&format!(
+					"
 					first companion: {}
 					second companion: {}
 				",
-				&companion_url, &companion_url
-			)),
+					&companion_url, &companion_url
+				)
+			),
 			vec![expected_companion.clone(), expected_companion.clone()]
+		);
+	}
+
+	#[test]
+	fn test_cyclical_references() {
+		let owner = "paritytech";
+		let repo = "polkadot";
+		let companion_description = format!(
+			"
+				{} companion: https://github.com/{}/{}/pull/123
+				",
+			owner, owner, repo,
+		);
+
+		// If the source is not referenced in the description, something is parsed
+		let does_not_matter = "does not matter";
+		assert_ne!(
+			parse_all_companions(
+				does_not_matter,
+				does_not_matter,
+				&companion_description
+			),
+			vec![]
+		);
+
+		// If the source is referenced in the description, it is omitted
+		assert_eq!(
+			parse_all_companions(owner, repo, &companion_description),
+			vec![]
 		);
 	}
 }
