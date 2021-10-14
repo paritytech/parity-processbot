@@ -626,7 +626,7 @@ async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 					Ok(false) => return Ok(()),
 					Err(err) => {
 						log::info!(
-							"Will not attempt to merge {} because the parent PR {} failed to be merged to {:?}",
+							"Will not attempt to merge {} because the parent PR {} failed to be merged due to {:?}",
 							pr.html_url,
 							parent_pr.html_url,
 							err
@@ -657,7 +657,12 @@ async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 					parent_pr.html_url,
 					pr.html_url
 				);
-				let should_confirm_pr_merged = match merge_companions(state, &parent_pr, &requested_by, Some(&pr.html_url)).await {
+				let expect_pr_was_merged_as_companion = match merge_companions(
+					state,
+					&parent_pr,
+					&requested_by,
+					Some(&pr.html_url)
+				).await {
 					// Since the parent's companions have been merged, and this PR is a companion, it should have
 					// been merged as well.
 					Ok(_) => true,
@@ -696,7 +701,7 @@ async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 				// From the parent's companion merges being finished above, at this point this pull request
 				// will either be merged later or it has already been merged. For sanity's sake we'll confirm
 				// those assumptions here.
-				if should_confirm_pr_merged {
+				if expect_pr_was_merged_as_companion {
 					let pr = github_bot.pull_request(&pr.base.repo.owner.login, &pr.base.repo.name, pr.number).await?;
 					if pr.merged || db.get(&pr.head.sha.as_bytes()).context(Db)?.is_some() {
 						if let Err(err) = cleanup_pr(
