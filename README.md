@@ -114,10 +114,10 @@ pull request) can be managed through environment variables defined in
 
 ## Approvals
 
-A Pull Request needs **either** (meaning, only **one of** the following
+A Pull Request needs either (meaning, only **one of** the following
 requirements needs to be fulfilled)
 
-- [core-dev](#core-devs) member approvals (2 for Substrate, otherwise 1), or
+- [core-dev](#core-devs) member approvals (2 for Substrate, 1 for Polkadot), or
 - One [substrateteamleads](#substrateteamleads) member approval, or
 - One approval from the project owner **for the PR**. Projects are managed
   [through the Github UI](#github-project) and its [owners](#project-owners)

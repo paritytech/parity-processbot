@@ -557,18 +557,10 @@ async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 				.as_ref()
 				.map(|body| parse_all_companions(body).iter().any(|(html_url, _, _, _)| {
 					html_url == &pr.html_url
-				})).unwrap_or(false);
+				}))
+				.unwrap_or(false);
 
 			if is_still_companion {
-				if parent_sha != parent_pr.head.sha.as_str() {
-					return Err(Error::Message {
-						msg: format!(
-							"Parent HEAD changed from {} to {}",
-							parent_sha, parent_pr.head.sha
-						),
-					});
-				}
-
 				if let Err(err) = match check_merge_is_allowed(
 					state,
 					&parent_pr,
@@ -1117,6 +1109,17 @@ pub async fn check_merge_is_allowed(
 
 	check_all_companions_are_mergeable(github_bot, &pr).await?;
 
+	// TODO have this be based on the repository's settings from the API
+	// (https://github.com/paritytech/parity-processbot/issues/319)
+	let min_approvals = match min_approvals_required {
+		Some(min_approvals_required) => min_approvals_required,
+		None => match pr.base.repo.name.as_str() {
+			"substrate" => 2,
+			"polkadot" => 1,
+			_ => return Ok(None),
+		},
+	};
+
 	// Consider only the latest relevant review submitted per user
 	let latest_reviews = {
 		let reviews = github_bot.reviews(&pr.url).await?;
@@ -1228,18 +1231,10 @@ pub async fn check_merge_is_allowed(
 			log::info!("{} merge requested by a team lead.", pr.html_url);
 			Ok(relevant_approvals_count)
 		} else {
-			// TODO have this be based on the repository's settings from the API
-			// (https://github.com/paritytech/parity-processbot/issues/319)
-			let min_reviewers = match pr.base.repo.name.as_str() {
-				"substrate" => 2,
-				"polkadot" => 1,
-				_ => 0,
-			};
+			let core_approved = core_dev_approvals >= min_approvals;
+			let leads_approved = team_lead_approvals >= 1;
 
-			let core_approved = core_dev_approvals >= min_reviewers;
-			let lead_approved = team_lead_approvals >= 1;
-
-			if core_approved || lead_approved {
+			if core_approved || leads_approved {
 				log::info!("{} has core or team lead approval.", pr.html_url);
 				Ok(relevant_approvals_count)
 			} else {
@@ -1279,11 +1274,6 @@ pub async fn check_merge_is_allowed(
 			}
 		}?;
 
-	let min_approvals_required = match min_approvals_required {
-		Some(min_approvals_required) => min_approvals_required,
-		None => return Ok(None),
-	};
-
 	let has_bot_approved = approved_reviews.iter().any(|review| {
 		review
 			.user
@@ -1301,7 +1291,7 @@ pub async fn check_merge_is_allowed(
 	// difference.
 	if has_bot_approved
 	// If the bot's approval is not enough to reach the minimum, then don't bother with approving
-		|| relevant_approvals_count + 1 != min_approvals_required
+		|| relevant_approvals_count + 1 != min_approvals
 	{
 		return Ok(None);
 	}
@@ -1371,17 +1361,18 @@ pub async fn ready_to_merge(
 }
 
 /// Create a merge request object.
-///
-/// If this has been called, error handling must remove the db entry.
 async fn register_merge_request(
 	state: &AppState,
 	sha: &str,
 	mr: &MergeRequest,
 ) -> Result<()> {
+	// Keep only one instance of the PR in the database so that companions are sure to find the latest
+	// active parent
+	cleanup_pr(state, sha, &mr.owner, &mr.repo, mr.number)?;
 	let AppState { db, .. } = state;
 	log::info!("Registering merge request (sha: {}): {:?}", sha, mr);
 	let bytes = bincode::serialize(mr).context(Bincode)?;
-	db.put(sha.trim().as_bytes(), bytes).context(Db)
+	db.put(sha.as_bytes(), bytes).context(Db)
 }
 
 /// Create a merge request, add it to the database, and post a comment stating the merge is
@@ -1809,6 +1800,12 @@ async fn get_match_from_registered_companions(
 				.await?;
 			// TODO: consider that a PR could be a companion of multiple parents
 			if &pr.head.sha == sha {
+				log::info!(
+					"Matched pull request {} for sha {} with parent {:?}",
+					pr.html_url,
+					sha,
+					parent
+				);
 				return Ok(Some((
 					(String::from_utf8_lossy(&parent_sha).to_string(), parent),
 					pr,

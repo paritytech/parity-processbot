@@ -536,10 +536,11 @@ async fn update_then_merge_companion(
 	)
 	.await?;
 
-	// Wait a bit for all the statuses to settle after we've updated the companion
+	// Wait a bit for the statuses to settle after we've updated the companion
 	delay_for(Duration::from_millis(4096)).await;
 
-	// Fetch it again since we've pushed some commits and therefore something might have failed already
+	// Fetch it again since we've pushed some commits and therefore some status or check might have
+	// failed already
 	let companion = github_bot.pull_request(&owner, &repo, *number).await?;
 
 	let should_wait_for_companions =
@@ -581,7 +582,7 @@ async fn update_then_merge_companion(
 	} else {
 		log::info!("Companion updated; waiting for checks on {}", html_url);
 
-		let companion_children = companion.body.as_ref().map(|body| {
+		let companion_companions = companion.body.as_ref().map(|body| {
 			parse_all_companions(body)
 				.into_iter()
 				.map(|(_, owner, repo, number)| MergeRequestBase {
@@ -592,7 +593,7 @@ async fn update_then_merge_companion(
 				.collect()
 		});
 
-		let msg = companion_children
+		let msg = companion_companions
 			.as_ref()
 			.map(|children: &Vec<MergeRequestBase>| {
 				if children.is_empty() {
@@ -612,7 +613,7 @@ async fn update_then_merge_companion(
 				number: companion.number,
 				html_url: companion.html_url,
 				requested_by: requested_by.to_owned(),
-				companion_children,
+				companion_children: companion_companions,
 			},
 			msg,
 		)
