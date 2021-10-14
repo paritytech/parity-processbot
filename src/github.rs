@@ -20,7 +20,7 @@ pub struct PullRequest {
 	pub head: Head,
 	pub base: Base,
 	pub repository: Option<Repository>,
-	pub mergeable: bool,
+	pub mergeable: Option<bool>,
 	pub merged: bool,
 	pub maintainer_can_modify: bool,
 }

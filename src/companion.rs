@@ -115,6 +115,32 @@ async fn update_companion_repository(
 
 	// The contributor's branch might exist from a previous run (not expected for a fresh clone).
 	// If so, delete it so that it can be recreated.
+	// Before deleting the branch, it's first required to checkout to a detached SHA so that any
+	// branch can be deleted without problems (e.g. the branch we're trying to deleted might be the
+	// one that is currently active, and so deleting it would fail).
+	let head_sha_output = run_cmd_with_output(
+		"git",
+		&["rev-parse", "HEAD"],
+		&repo_dir,
+		CommandMessage::Configured(CommandMessageConfiguration {
+			secrets_to_hide,
+			are_errors_silenced: false,
+		}),
+	)
+	.await?;
+	run_cmd(
+		"git",
+		&[
+			"checkout",
+			&String::from_utf8_lossy(&head_sha_output.stdout[..]).trim(),
+		],
+		&repo_dir,
+		CommandMessage::Configured(CommandMessageConfiguration {
+			secrets_to_hide,
+			are_errors_silenced: true,
+		}),
+	)
+	.await?;
 	let _ = run_cmd(
 		"git",
 		&["branch", "-D", contributor_branch],
@@ -180,6 +206,11 @@ async fn update_companion_repository(
 	// Update the packages from 'merge_done_in' in the companion
 	let url_merge_was_done_in =
 		format!("https://github.com/{}/{}", owner, merge_done_in);
+	log::info!(
+		"Updating references of {} in the Cargo.lock of {}",
+		url_merge_was_done_in,
+		repo_dir
+	);
 	let cargo_lock_path = Path::new(&repo_dir).join("Cargo.lock");
 	let lockfile =
 		cargo_lock::Lockfile::load(cargo_lock_path).map_err(|err| {
@@ -347,7 +378,8 @@ pub async fn check_all_companions_are_mergeable(
 	};
 
 	let companions = parse_all_companions(body);
-	if !companions.is_empty() {
+	if companions.is_empty() {
+		log::info!("Found no companions in the body of {}", pr.html_url);
 		return Ok(());
 	}
 
@@ -402,7 +434,7 @@ pub async fn check_all_companions_are_mergeable(
 			});
 		}
 
-		if !companion.mergeable {
+		if !companion.mergeable.unwrap_or(false) {
 			return Err(Error::Message {
 				msg: format!(
 					"Github API says companion {} is not mergeable",
@@ -510,19 +542,27 @@ async fn update_then_merge_companion(
 	// Fetch it again since we've pushed some commits and therefore something might have failed already
 	let companion = github_bot.pull_request(&owner, &repo, *number).await?;
 
-	if let Err(err) =
-		check_merge_is_allowed(state, &companion, requested_by, None).await
-	{
-		match err {
-			Error::InvalidCompanionStatus { ref value, .. } => match value {
-				InvalidCompanionStatusValue::Pending => (),
-				InvalidCompanionStatusValue::Failure => return Err(err),
+	let should_wait_for_companions =
+		match check_merge_is_allowed(state, &companion, requested_by, None)
+			.await
+		{
+			Ok(_) => false,
+			Err(err) => match err {
+				Error::InvalidCompanionStatus { ref value, .. } => {
+					match value {
+						InvalidCompanionStatusValue::Pending => true,
+						InvalidCompanionStatusValue::Failure => {
+							return Err(err)
+						}
+					}
+				}
+				err => return Err(err),
 			},
-			err => return Err(err),
 		};
-	}
 
-	if ready_to_merge(&state.github_bot, &companion).await? {
+	if !should_wait_for_companions
+		&& ready_to_merge(&state.github_bot, &companion).await?
+	{
 		if let Err(err) = merge(state, &companion, requested_by, None).await? {
 			return match err {
 				Error::MergeFailureWillBeSolvedLater { .. } => Ok(()),
@@ -530,10 +570,10 @@ async fn update_then_merge_companion(
 			};
 		}
 		if let Err(err) =
-			merge_companions(state, &companion, &requested_by).await
+			merge_companions(state, &companion, &requested_by, None).await
 		{
 			log::error!(
-				"Failed to merge companions of {} due to {:?}",
+				"Failed to merge companions of {} (a companion) due to {:?}",
 				companion.html_url,
 				err
 			);
@@ -558,7 +598,7 @@ async fn update_then_merge_companion(
 				if children.is_empty() {
 					None
 				} else {
-					Some("Waiting for both companions statuses and this PR's statuses")
+					Some("Waiting for companions' statuses and this PR's statuses")
 				}
 			})
 			.flatten();
@@ -586,8 +626,9 @@ pub async fn merge_companions(
 	state: &AppState,
 	pr: &PullRequest,
 	requested_by: &str,
+	prevent_error_post_of: Option<&str>,
 ) -> Result<()> {
-	log::info!("Checking for companion in {}", pr.html_url);
+	log::info!("Checking for companions in {}", pr.html_url);
 
 	let companions_groups = {
 		let body = match pr.body.as_ref() {
@@ -652,35 +693,36 @@ pub async fn merge_companions(
 		})
 		.collect::<Vec<_>>();
 
-	let mut errors: Vec<String> = vec![];
+	let mut errors: Vec<CompanionDetailsWithErrorMessage> = vec![];
 	while !remaining_futures.is_empty() {
 		let (result, _, next_remaining_futures) =
 			futures::future::select_all(remaining_futures).await;
-		for CompanionDetailsWithErrorMessage {
-			ref owner,
-			ref repo,
-			ref number,
-			ref html_url,
-			ref msg,
-		} in result
-		{
-			let _ = github_bot
-				.create_issue_comment(owner, repo, *number, msg)
-				.await
-				.map_err(|e| {
-					log::error!("Error posting comment: {}", e);
-				});
-			errors.push(format!("{} {}", html_url, msg));
-		}
 		remaining_futures = next_remaining_futures;
+
+		for error in result {
+			let CompanionDetailsWithErrorMessage {
+				ref owner,
+				ref repo,
+				ref number,
+				ref html_url,
+				ref msg,
+			} = error;
+			if prevent_error_post_of != Some(html_url) {
+				let _ = github_bot
+					.create_issue_comment(owner, repo, *number, msg)
+					.await
+					.map_err(|e| {
+						log::error!("Error posting comment: {}", e);
+					});
+			}
+			errors.push(error);
+		}
 	}
 
 	if errors.is_empty() {
 		Ok(())
 	} else {
-		Err(Error::Message {
-			msg: format!("Companion update failed: {}", errors.join("\n")),
-		})
+		Err(Error::CompanionsFailedMerge { errors })
 	}
 }
 

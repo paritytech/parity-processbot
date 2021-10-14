@@ -6,6 +6,7 @@ pub type IssueDetails = (String, String, i64);
 // TODO this really should be struct { repository_url, owner, repo, number }
 pub type IssueDetailsWithRepositoryURL = (String, String, String, i64);
 
+#[derive(Debug)]
 pub struct CompanionDetailsWithErrorMessage {
 	pub owner: String,
 	pub repo: String,
@@ -190,6 +191,11 @@ pub enum Error {
 	InvalidCompanionStatus {
 		value: InvalidCompanionStatusValue,
 		msg: String,
+	},
+
+	#[snafu(display("Failed to merge companions: {:?}", errors))]
+	CompanionsFailedMerge {
+		errors: Vec<CompanionDetailsWithErrorMessage>,
 	},
 }
 

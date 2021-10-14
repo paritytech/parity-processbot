@@ -373,7 +373,7 @@ pub async fn get_latest_statuses_state(
 	html_url: &str,
 ) -> Result<Status> {
 	let status = github_bot.status(owner, repo, commit_sha).await?;
-	log::info!("{:?}", status);
+	log::info!("{} statuses: {:?}", html_url, status);
 
 	// Since Github only considers the latest instance of each status, we should abide by the same
 	// rule. Each instance is uniquely identified by "context".
@@ -403,7 +403,7 @@ pub async fn get_latest_statuses_state(
 			latest_statuses.insert(s.context, (s.id, s.state));
 		}
 	}
-	log::info!("{:?}", latest_statuses);
+	log::info!("{} latest_statuses: {:?}", html_url, latest_statuses);
 
 	Ok(
 		if latest_statuses
@@ -435,7 +435,7 @@ pub async fn get_latest_checks_state(
 	let checks = github_bot
 		.check_runs(&owner, &repo_name, commit_sha)
 		.await?;
-	log::info!("{:?}", checks);
+	log::info!("{} checks: {:?}", html_url, checks);
 
 	// Since Github only considers the latest instance of each check, we should abide by the same
 	// rule. Each instance is uniquely identified by "name".
@@ -452,6 +452,7 @@ pub async fn get_latest_checks_state(
 			latest_checks.insert(c.name, (c.id, c.status, c.conclusion));
 		}
 	}
+	log::info!("{} latest_checks,: {:?}", html_url, latest_checks);
 
 	Ok(
 		if latest_checks.values().all(|(_, _, conclusion)| {
@@ -625,17 +626,47 @@ async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 					parent_pr.html_url,
 					pr.html_url
 				);
-				if let Err(err) = merge_companions(state, &parent_pr, &requested_by).await
-				{
-					log::error!(
-						"Failed to merge companions of {} due to {:?}",
-						pr.html_url,
-						err
-					);
-				} else {
-					// Since the parent companion merges have been executed without errors, this pull request will
-					// either be merged later or it has already been at this point. For sanity's sake we'll
-					// confirm those assumptions here.
+
+				let should_confirm_pr_merged = match merge_companions(state, &parent_pr, &requested_by, Some(&pr.html_url)).await {
+					// Since the parent's companions have been merged, and this PR is a companion, it should have
+					// been merged as well.
+					Ok(_) => true,
+					Err(err) => match err {
+						Error::CompanionsFailedMerge { errors } => {
+							let this_pr_error = errors.into_iter().find(|CompanionDetailsWithErrorMessage {
+								html_url,
+								..
+							}| {
+								html_url == &pr.html_url
+							});
+							if let Some(this_pr_error) = this_pr_error {
+								return Err(Error::Message {
+									msg: format!(
+										"Failed to merge {} as a companion of {} due to {}",
+										pr.html_url,
+										parent_pr.html_url,
+										this_pr_error.msg
+									)
+								});
+							} else {
+								true
+							}
+						},
+						_ => {
+							log::error!(
+								"Failed to merge companions of {} due to {:?}",
+								parent_pr.html_url,
+								err
+							);
+							false
+						}
+					}
+				};
+
+				// From the parent companion merges being executed above, at this point this pull request will
+				// either be merged later or it has already been merged. For sanity's sake we'll confirm those
+				// assumptions here.
+				if should_confirm_pr_merged {
 					let pr = github_bot.pull_request(&pr.base.repo.owner.login, &pr.base.repo.name, pr.number).await?;
 					if pr.merged || db.get(&pr.head.sha.as_bytes()).context(Db)?.is_some() {
 						if let Err(err) = cleanup_pr(
@@ -659,7 +690,7 @@ async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 							parent_pr.html_url
 						);
 					}
-				};
+				}
 			}
 		}
 
@@ -687,7 +718,7 @@ async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 			};
 		}
 
-		if let Err(err) = merge_companions(state, &pr, &requested_by).await {
+		if let Err(err) = merge_companions(state, &pr, &requested_by, None).await {
 			log::error!(
 				"Failed to merge companions of {} due to {}",
 				pr.html_url,
@@ -824,7 +855,7 @@ async fn handle_command(
 							&pr.head.sha,
 							&mr,
 							if should_wait_for_companions {
-								Some("Waiting for both companions statuses and this PR's statuses")
+								Some("Waiting for companions' statuses and this PR's statuses")
 							} else {
 								None
 							},
@@ -847,7 +878,9 @@ async fn handle_command(
 			}
 
 			log::info!("Merging companions of {}", pr.html_url);
-			if let Err(err) = merge_companions(state, pr, requested_by).await {
+			if let Err(err) =
+				merge_companions(state, pr, requested_by, None).await
+			{
 				log::error!(
 					"Failed to merge the companions of {} due to {:?}",
 					pr.html_url,
@@ -1054,20 +1087,22 @@ pub async fn check_merge_is_allowed(
 	requested_by: &str,
 	min_approvals_required: Option<usize>,
 ) -> Result<Option<String>> {
-	let AppState { github_bot, .. } = state;
+	let AppState {
+		github_bot, config, ..
+	} = state;
 
 	if let Some(min_approvals_required) = &min_approvals_required {
 		log::info!(
 			"Attempting to reach minimum number of approvals {}",
 			min_approvals_required
 		);
-	} else if pr.mergeable {
+	} else if pr.mergeable.unwrap_or(false) {
 		log::info!("{} is mergeable", pr.html_url);
 	} else {
 		log::info!("{} is not mergeable", pr.html_url);
 	}
 
-	if !pr.mergeable && min_approvals_required.is_none() {
+	if !pr.mergeable.unwrap_or(false) && min_approvals_required.is_none() {
 		return Err(Error::Message {
 			msg: format!("Github API says {} is not mergeable", pr.html_url),
 		});
@@ -1120,19 +1155,23 @@ pub async fn check_merge_is_allowed(
 
 	let mut errors: Vec<String> = Vec::new();
 
-	let team_leads = github_bot
-		.substrate_team_leads(&pr.base.repo.owner.login)
-		.await
-		.unwrap_or_else(|e| {
-			let msg = format!(
-				"Error getting {}: `{}`",
-				SUBSTRATE_TEAM_LEADS_GROUP, e
-			);
-			log::error!("{}", msg);
-			errors.push(msg);
-			vec![]
-		});
-	let lead_approvals = approved_reviews
+	let team_leads = if config.disable_org_check {
+		vec![]
+	} else {
+		github_bot
+			.substrate_team_leads(&pr.base.repo.owner.login)
+			.await
+			.unwrap_or_else(|e| {
+				let msg = format!(
+					"Error getting {}: `{}`",
+					SUBSTRATE_TEAM_LEADS_GROUP, e
+				);
+				log::error!("{}", msg);
+				errors.push(msg);
+				vec![]
+			})
+	};
+	let team_lead_approvals = approved_reviews
 		.iter()
 		.filter(|review| {
 			team_leads.iter().any(|team_lead| {
@@ -1145,16 +1184,20 @@ pub async fn check_merge_is_allowed(
 		})
 		.count();
 
-	let core_devs = github_bot
-		.core_devs(&pr.base.repo.owner.login)
-		.await
-		.unwrap_or_else(|e| {
-			let msg = format!("Error getting {}: `{}`", CORE_DEVS_GROUP, e);
-			log::error!("{}", msg);
-			errors.push(msg);
-			vec![]
-		});
-	let core_approvals = approved_reviews
+	let core_devs = if config.disable_org_check {
+		vec![]
+	} else {
+		github_bot
+			.core_devs(&pr.base.repo.owner.login)
+			.await
+			.unwrap_or_else(|e| {
+				let msg = format!("Error getting {}: `{}`", CORE_DEVS_GROUP, e);
+				log::error!("{}", msg);
+				errors.push(msg);
+				vec![]
+			})
+	};
+	let core_dev_approvals = approved_reviews
 		.iter()
 		.filter(|review| {
 			core_devs.iter().any(|core_dev| {
@@ -1167,10 +1210,10 @@ pub async fn check_merge_is_allowed(
 		})
 		.count();
 
-	let relevant_approvals_count = if core_approvals > lead_approvals {
-		core_approvals
+	let relevant_approvals_count = if core_dev_approvals > team_lead_approvals {
+		core_dev_approvals
 	} else {
-		lead_approvals
+		team_lead_approvals
 	};
 
 	let relevant_approvals_count =
@@ -1189,8 +1232,8 @@ pub async fn check_merge_is_allowed(
 				2
 			};
 
-			let core_approved = core_approvals >= min_reviewers;
-			let lead_approved = lead_approvals >= 1;
+			let core_approved = core_dev_approvals >= min_reviewers;
+			let lead_approved = team_lead_approvals >= 1;
 
 			if core_approved || lead_approved {
 				log::info!("{} has core or team lead approval.", pr.html_url);

@@ -98,7 +98,10 @@ fn main() -> anyhow::Result<()> {
 						handle_error(merge_cancel_outcome, err, &state).await;
 					}
 				} else {
-					log::info!("Not parsed {:?}", event);
+					match event.event_type.as_ref().map(|t| t.as_str()) {
+						Some("ping") => (),
+						_ => log::info!("Not parsed {:?}", event),
+					}
 				}
 			});
 		}
