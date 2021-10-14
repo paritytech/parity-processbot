@@ -294,18 +294,6 @@ pub struct WorkflowJob {
 	pub conclusion: Option<WorkflowJobConclusion>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum CheckSuiteConclusion {
-	#[serde(other)]
-	Unknown,
-}
-#[derive(PartialEq, Deserialize)]
-pub struct CheckSuite {
-	pub head_sha: String,
-	pub conclusion: Option<CheckSuiteConclusion>,
-}
-
 #[derive(PartialEq, Deserialize)]
 #[serde(untagged)]
 pub enum Payload {
@@ -328,9 +316,6 @@ pub enum Payload {
 	},
 	WorkflowJob {
 		workflow_job: WorkflowJob,
-	},
-	CheckSuite {
-		check_suite: CheckSuite,
 	},
 }
 

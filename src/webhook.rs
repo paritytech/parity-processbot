@@ -273,20 +273,6 @@ pub async fn handle_payload(
 			},
 			Some(sha),
 		),
-		Payload::CheckSuite {
-			check_suite: CheckSuite {
-				head_sha: sha,
-				conclusion,
-			},
-			..
-		} => (
-			if conclusion.is_some() {
-				checks_and_status(state, &sha).await
-			} else {
-				Ok(())
-			},
-			Some(sha),
-		),
 	};
 
 	// From this point onwards we'll clean the SHA from the database if this is a fatal error which
