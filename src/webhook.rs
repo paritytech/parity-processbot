@@ -572,96 +572,84 @@ async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 				.unwrap_or(false);
 
 			if is_still_companion && !parent_pr.merged {
-				if let Err(err) = check_merge_is_allowed(
-					state,
-					&parent_pr,
-					&requested_by,
-					None,
-				)
-				.await
-				{
-					match err {
-						Error::InvalidCompanionStatus { ref value, .. } if *value == InvalidCompanionStatusValue::Pending => {
-							log::info!(
-								"Skipped merging {} because parent {} had pending companion statuses",
-								pr.html_url,
-								parent_pr.html_url
-							);
-						},
-						_ => {
-							log::info!(
-								"Will not attempt to merge {} because the parent PR {} is not mergeable due to {:?}",
-								pr.html_url,
-								parent_pr.html_url,
-								err
-							);
-
-							if let Err(cleanup_err) = cleanup_pr(
-								state,
-								&parent_sha,
-								&parent_pr.base.repo.owner.login,
-								&parent_pr.base.repo.name,
-								parent_pr.number,
-							) {
-								log::error!(
-									"Failed to cleanup {} (parent of {}) due to {:?}",
-									parent_pr.html_url,
+				let was_parent_merged = async {
+					if let Err(err) = check_merge_is_allowed(
+						state,
+						&parent_pr,
+						&requested_by,
+						None,
+					)
+					.await
+					{
+						return match err {
+							Error::InvalidCompanionStatus { ref value, .. } if *value == InvalidCompanionStatusValue::Pending => {
+								log::info!(
+									"Skipped merging {} because parent {} had pending companion statuses",
 									pr.html_url,
-									cleanup_err
+									parent_pr.html_url
 								);
-							}
+								Ok(false)
+							},
+							_ => Err(err)
 						}
 					}
-					return Ok(());
-				}
 
-				if !ready_to_merge(github_bot, &parent_pr).await? {
+					if !ready_to_merge(github_bot, &parent_pr).await? {
+						log::info!(
+							"Skipped merging {} because parent {} had pending companion statuses",
+							pr.html_url,
+							parent_pr.html_url
+						);
+						return Ok(false);
+					}
+
+					// Merge the parent (which should also merge this one, since it is a companion)
 					log::info!(
-						"Skipped merging {} because parent {} had pending companion statuses",
-						pr.html_url,
-						parent_pr.html_url
+						"Merging {} (parent of {}, which will be merged later as a companion)",
+						parent_pr.html_url,
+						pr.html_url
 					);
-					return Ok(());
-				}
-
-				// Merge the parent (which should also merge this one, since it is a companion)
-				log::info!(
-					"Merging {} (parent of {}, which will be merged later as a companion)",
-					parent_pr.html_url,
-					pr.html_url
-				);
-				if let Err(err) =
-					merge(state, &parent_pr, &requested_by, None).await?
-				{
-					match err {
-						Error::MergeFailureWillBeSolvedLater { .. } => (),
-						err => {
-							log::info!(
-								"Will cancel the merge of {} because the parent PR {} failed to be merged due to {:?}",
-								pr.html_url,
-								parent_pr.html_url,
-								err
-							);
-
-							if let Err(cleanup_err) = cleanup_pr(
-								state,
-								&parent_sha,
-								&parent_pr.base.repo.owner.login,
-								&parent_pr.base.repo.name,
-								parent_pr.number,
-							) {
-								log::error!(
-									"Failed to cleanup {} (parent of {}) due to {:?}",
-									parent_pr.html_url,
-									pr.html_url,
-									cleanup_err
-								);
-							}
-						},
+					if let Err(err) =
+						merge(state, &parent_pr, &requested_by, None).await?
+					{
+						return match err {
+							Error::MergeFailureWillBeSolvedLater { .. } => Ok(false),
+							err => Err(err),
+						};
 					};
-					return Ok(());
+
+					Ok(true)
+				}.await;
+
+				match was_parent_merged {
+					Ok(true) => parent_pr_was_merged = true,
+					Ok(false) => return Ok(()),
+					Err(err) => {
+						log::info!(
+							"Will not attempt to merge {} because the parent PR {} failed to be merged to {:?}",
+							pr.html_url,
+							parent_pr.html_url,
+							err
+						);
+
+						if let Err(cleanup_err) = cleanup_pr(
+							state,
+							&parent_sha,
+							&parent_pr.base.repo.owner.login,
+							&parent_pr.base.repo.name,
+							parent_pr.number,
+						) {
+							log::error!(
+								"Failed to cleanup {} (parent of {}) due to {:?}",
+								parent_pr.html_url,
+								pr.html_url,
+								cleanup_err
+							);
+						}
+
+						return Ok(());
+					},
 				};
-				parent_pr_was_merged = true;
 
 				// Merge the parent (which should also merge this one, since it is a companion)
 				log::info!(

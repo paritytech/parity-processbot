@@ -132,7 +132,9 @@ async fn update_companion_repository(
 		"git",
 		&[
 			"checkout",
-			&String::from_utf8_lossy(&head_sha_output.stdout[..]).trim(),
+			&String::from_utf8(head_sha_output.stdout)
+				.context(Utf8)?
+				.trim(),
 		],
 		&repo_dir,
 		CommandMessage::Configured(CommandMessageConfiguration {
