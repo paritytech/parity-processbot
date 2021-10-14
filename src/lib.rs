@@ -52,3 +52,9 @@ pub enum MergeCancelOutcome {
 	WasCancelled,
 	WasNotCancelled,
 }
+
+pub enum MergeAllowedOutcome {
+	Allowed,
+	GrantApprovalForRole(String),
+	Disallowed,
+}

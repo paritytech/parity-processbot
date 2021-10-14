@@ -15,8 +15,9 @@ use crate::{
 	companion::parse_all_companions, companion::*, config::MainConfig,
 	constants::*, error::*, github::*, github_bot::GithubBot, process,
 	rebase::*, utils::parse_bot_comment_from_text, vanity_service,
-	CommentCommand, MergeCancelOutcome, MergeCommentCommand, Result, Status,
-	PROCESS_INFO_ERROR_TEMPLATE, WEBHOOK_PARSING_ERROR_TEMPLATE,
+	CommentCommand, MergeAllowedOutcome, MergeCancelOutcome,
+	MergeCommentCommand, Result, Status, PROCESS_INFO_ERROR_TEMPLATE,
+	WEBHOOK_PARSING_ERROR_TEMPLATE,
 };
 
 /// This data gets passed along with each webhook to the webhook handler.
@@ -596,7 +597,7 @@ async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 
 					if !ready_to_merge(github_bot, &parent_pr).await? {
 						log::info!(
-							"Skipped merging {} because parent {} had pending companion statuses",
+							"Skipped merging {} because parent {} was not ready to merge",
 							pr.html_url,
 							parent_pr.html_url
 						);
@@ -1125,7 +1126,7 @@ pub async fn check_merge_is_allowed(
 	pr: &PullRequest,
 	requested_by: &str,
 	min_approvals_required: Option<usize>,
-) -> Result<Option<String>> {
+) -> Result<MergeAllowedOutcome> {
 	let AppState {
 		github_bot, config, ..
 	} = state;
@@ -1156,7 +1157,7 @@ pub async fn check_merge_is_allowed(
 		None => match pr.base.repo.name.as_str() {
 			"substrate" => 2,
 			"polkadot" => 1,
-			_ => return Ok(None),
+			_ => return Ok(MergeAllowedOutcome::Allowed),
 		},
 	};
 
@@ -1314,6 +1315,10 @@ pub async fn check_merge_is_allowed(
 			}
 		}?;
 
+	if relevant_approvals_count > min_approvals {
+		return Ok(MergeAllowedOutcome::Allowed);
+	}
+
 	let has_bot_approved = approved_reviews.iter().any(|review| {
 		review
 			.user
@@ -1333,14 +1338,14 @@ pub async fn check_merge_is_allowed(
 	// If the bot's approval is not enough to reach the minimum, then don't bother with approving
 		|| relevant_approvals_count + 1 != min_approvals
 	{
-		return Ok(None);
+		return Ok(MergeAllowedOutcome::Disallowed);
 	}
 
 	let role = if team_leads
 		.iter()
 		.any(|team_lead| team_lead.login == requested_by)
 	{
-		Some("a team lead".to_string())
+		"a team lead".to_string()
 	} else {
 		let (process, _) = process::get_process(
 			github_bot,
@@ -1350,13 +1355,13 @@ pub async fn check_merge_is_allowed(
 		)
 		.await?;
 		if process.is_owner(requested_by) {
-			Some("a project owner".to_string())
+			"a project owner".to_string()
 		} else {
-			None
+			return Ok(MergeAllowedOutcome::Disallowed);
 		}
 	};
 
-	Ok(role)
+	Ok(MergeAllowedOutcome::GrantApprovalForRole(role))
 }
 
 /// Query checks and statuses.
@@ -1640,64 +1645,64 @@ pub async fn merge(
 			}
 		};
 
-		let requester_role = match check_merge_is_allowed(
+		match check_merge_is_allowed(
 			state,
 			pr,
 			requested_by,
 			Some(min_approvals_required),
 		)
-		.await
-		{
-			Ok(requester_role) => match requester_role {
-				Some(requester_role) => requester_role,
-				None => return Err(Error::Message {
+		.await {
+			Ok(MergeAllowedOutcome::Allowed) => (),
+			Ok(MergeAllowedOutcome::GrantApprovalForRole(role)) => {
+				if let Err(err) = github_bot
+					.create_issue_comment(
+						&pr.base.repo.owner.login,
+						&pr.base.repo.name,
+						pr.number,
+						&format!(
+							"Bot will approve on the behalf of @{}, since they are {}, in an attempt to reach the minimum approval count",
+							requested_by,
+							role,
+						),
+					)
+					.await
+				{
+					log::error!("Failed to post comment on bot approval of {} due to {}", pr.html_url, err);
+				}
+
+				match github_bot.approve_merge_request(
+					&pr.base.repo.owner.login,
+					&pr.base.repo.name,
+					pr.number
+				).await {
+					Ok(review) => {
+						merge(
+							state,
+							pr,
+							requested_by,
+							Some(review.id)
+						).await??;
+					},
+					Err(err) => {
+						log::error!(
+							"Failed to create a review for approving the merge request {} due to {:?}",
+							pr.html_url,
+							err
+						);
+						return Err(Error::Message { msg: msg.to_string() });
+					}
+				};
+			},
+			Ok(MergeAllowedOutcome::Disallowed) => {
+				return Err(Error::Message {
 					msg: "Requester's approval is not enough to make the PR mergeable".to_string()
-				}),
+				});
 			},
 			Err(err) => {
 				log::info!("Failed to get requested role for approval of {} due to {}", pr.html_url, err);
 				return Err(Error::Message { msg: msg.to_string() });
 			}
 		};
-
-		if let Err(err) = github_bot
-			.create_issue_comment(
-				&pr.base.repo.owner.login,
-				&pr.base.repo.name,
-				pr.number,
-				&format!(
-					"Bot will approve on the behalf of @{}, since they are {}, in an attempt to reach the minimum approval count",
-					requested_by,
-					requester_role,
-				),
-			)
-			.await
-		{
-			log::error!("Failed to post comment on bot approval of {} due to {}", pr.html_url, err);
-		}
-
-		let review = match github_bot.approve_merge_request(
-			&pr.base.repo.owner.login,
-			&pr.base.repo.name,
-			pr.number
-		).await {
-			Ok(review) => review,
-			Err(err) => {
-				log::error!(
-					"Failed to create a review for approving the merge request {} due to {:?}",
-					pr.html_url,
-					err
-				);
-				return Err(Error::Message { msg: msg.to_string() });
-			}
-		};
-
-		merge(
-			state,
-			pr,
-			requested_by,
-			Some(review.id)
-		).await??;
 
 		Ok(())
 	}
