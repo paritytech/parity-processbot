@@ -86,7 +86,7 @@ spec:
             - name: WEBHOOK_PORT
               value: {{ quote .Values.processbot.config.WEBHOOK_PORT }}
             - name: GITHUB_APP_ID
-              value: {{ quote .Values.processbot.config.GITHUB_APP_ID }}
+              value: {{ quote .Values.processbot.secret.GITHUB_APP_ID }}
             - name: DB_PATH
               value: /usr/local/share/db
             - name: BAMBOO_TICK_SECS
