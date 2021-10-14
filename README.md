@@ -126,6 +126,7 @@ Repository permissions
 - Pull requests: Read & write
 - Projects: Read-only
 - Commit statuses: Read-only
+- Checks: Read-only
 
 Organization permissions
 

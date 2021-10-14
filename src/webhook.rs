@@ -689,28 +689,33 @@ async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 				// will either be merged later or it has already been merged. For sanity's sake we'll confirm
 				// those assumptions here.
 				if expect_pr_was_merged_as_companion {
-					let pr = github_bot.pull_request(&pr.base.repo.owner.login, &pr.base.repo.name, pr.number).await?;
-					if pr.merged || db.get(&pr.head.sha.as_bytes()).context(Db)?.is_some() {
-						if let Err(err) = cleanup_pr(
-							state,
-							&pr.head.sha,
-							&pr.base.repo.owner.login,
-							&pr.base.repo.name,
-							pr.number
-						) {
-							log::error!(
-								"Failed to cleanup PR {} after it has been merged in merge_companions of checks_and_status due to {}",
-								pr.html_url,
-								err
-							);
-						};
+					if db.get(&pr.head.sha.as_bytes()).context(Db)?.is_some() {
+						log::info!("{} was queued as a companion after merging {}", pr.html_url, parent_pr.html_url);
 						return Ok(());
 					} else {
-						log::error!(
-							"Expected {} to have been merged in merge_companions of {}, but it did not happen. This could be a bug.",
-							pr.html_url,
-							parent_pr.html_url
-						);
+						let pr = github_bot.pull_request(&pr.base.repo.owner.login, &pr.base.repo.name, pr.number).await?;
+						if pr.merged {
+							if let Err(err) = cleanup_pr(
+								state,
+								&pr.head.sha,
+								&pr.base.repo.owner.login,
+								&pr.base.repo.name,
+								pr.number
+							) {
+								log::error!(
+									"Failed to cleanup PR {} after it has been merged in merge_companions of checks_and_status due to {}",
+									pr.html_url,
+									err
+								);
+							};
+							return Ok(());
+						} else {
+							log::error!(
+								"Expected {} to have been merged in merge_companions of {}, but it did not happen. This could be a bug.",
+								pr.html_url,
+								parent_pr.html_url
+							);
+						}
 					}
 				}
 			}
