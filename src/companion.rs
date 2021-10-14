@@ -347,7 +347,7 @@ pub async fn check_all_companions_are_mergeable(
 	};
 
 	let companions = parse_all_companions(body);
-	if companions.is_empty() {
+	if !companions.is_empty() {
 		return Ok(());
 	}
 
@@ -355,7 +355,7 @@ pub async fn check_all_companions_are_mergeable(
 		&& pr.base.repo.name != MAIN_REPO_FOR_STAGING
 	{
 		return Err(Error::Message {
-			msg: "Companion merges are not enabled for this repository due to a processbot limitation. See https://github.com/paritytech/parity-processbot/issues/321 for more information.".to_owned()
+			msg: format!("Companion merges are not enabled for {} due to a processbot limitation (https://github.com/paritytech/parity-processbot/issues/321). The error occurred because processbot found companions in the description of {}.", pr.html_url, pr.html_url)
 		});
 	}
 
