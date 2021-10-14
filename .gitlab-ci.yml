@@ -116,7 +116,7 @@ dockerize-processbot:
     WEBHOOK_SECRET:
       vault:                       cicd/gitlab/$CI_PROJECT_PATH/$CI_ENVIRONMENT_NAME/WEBHOOK_SECRET@kv
       file:                        false
-  # PROCESSBOT_KEY should be in base64 format. helm will handle it
+  # PROCESSBOT_KEY should be base64 encoded
   script:
     - helm upgrade processbot kubernetes/processbot
       --install
