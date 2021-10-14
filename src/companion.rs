@@ -223,8 +223,8 @@ async fn update_companion_repository(
 		.await?;
 	}
 
-	// Check if `cargo update` resulted in any changes. If the master merge commit already had the
-	// latest lockfile then no changes might have been made.
+	// Check if `cargo update` resulted in any changes. If the master merge commit already had an
+	// up-to-date lockfile then no changes might have been made.
 	let output = run_cmd_with_output(
 		"git",
 		&["status", "--short"],
