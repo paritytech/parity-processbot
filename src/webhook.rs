@@ -13,18 +13,15 @@ use tokio::{sync::Mutex, time::delay_for};
 
 use crate::{
 	auth::GithubUserAuthenticator, companion::*, config::BotConfig,
-	constants::*, error::*, github::*, github_bot::GithubBot, gitlab_bot::*,
-	matrix_bot::MatrixBot, performance, process, rebase::*,
-	utils::parse_bot_comment_from_text, vanity_service, CommentCommand,
-	MergeCommentCommand, Result, Status,
+	constants::*, error::*, github::*, github_bot::GithubBot, performance,
+	process, rebase::*, utils::parse_bot_comment_from_text, vanity_service,
+	CommentCommand, MergeCommentCommand, Result, Status,
 };
 
 /// This data gets passed along with each webhook to the webhook handler.
 pub struct AppState {
 	pub db: DB,
 	pub github_bot: GithubBot,
-	pub matrix_bot: MatrixBot,
-	pub gitlab_bot: GitlabBot,
 
 	pub bot_config: BotConfig,
 	pub webhook_secret: String,
@@ -712,18 +709,6 @@ async fn handle_comment(
 				});
 			}
 		}
-		CommentCommand::BurninRequest => {
-			handle_burnin_request(
-				github_bot,
-				&state.gitlab_bot,
-				&state.matrix_bot,
-				owner,
-				requested_by,
-				&repo_name,
-				&pr,
-			)
-			.await?;
-		}
 		CommentCommand::CompareReleaseRequest => match repo_name.as_str() {
 			"polkadot" => {
 				let pr_head_sha = pr.head_sha()?;
@@ -760,97 +745,6 @@ async fn handle_comment(
 			}
 		},
 	};
-
-	Ok(())
-}
-
-async fn handle_burnin_request(
-	github_bot: &GithubBot,
-	gitlab_bot: &GitlabBot,
-	matrix_bot: &MatrixBot,
-	owner: &str,
-	requested_by: &str,
-	repo_name: &str,
-	pr: &PullRequest,
-) -> Result<()> {
-	let make_job_link =
-		|url| format!("<a href=\"{}\">CI job for burn-in deployment</a>", url);
-
-	let unexpected_error_msg = "Starting CI job for burn-in deployment failed with an unexpected error; see logs.".to_string();
-	let mut matrix_msg: Option<String> = None;
-
-	let pr_head_sha = pr.head_sha()?;
-
-	let msg = match gitlab_bot.build_artifact(pr_head_sha) {
-		Ok(job) => {
-			let ci_job_link = make_job_link(job.url);
-
-			match job.status {
-				JobStatus::Started => {
-					format!("{} was started successfully.", ci_job_link)
-				}
-				JobStatus::AlreadyRunning => {
-					format!("{} is already running.", ci_job_link)
-				}
-				JobStatus::Finished => format!(
-					"{} already ran and finished with status `{}`.",
-					ci_job_link, job.status_raw,
-				),
-				JobStatus::Unknown => format!(
-					"{} has unexpected status `{}`.",
-					ci_job_link, job.status_raw,
-				),
-			}
-		}
-		Err(e) => {
-			log::error!("handle_burnin_request: {}", e);
-			match e {
-				Error::GitlabJobNotFound { commit_sha } => format!(
-					"No matching CI job was found for commit `{}`",
-					commit_sha
-				),
-				Error::StartingGitlabJobFailed { url, status, body } => {
-					let ci_job_link = make_job_link(url);
-
-					matrix_msg = Some(format!(
-						"Starting {} failed with HTTP status {} and body: {}",
-						ci_job_link, status, body,
-					));
-
-					format!(
-						"Starting {} failed with HTTP status {}",
-						ci_job_link, status,
-					)
-				}
-				Error::GitlabApi {
-					method,
-					url,
-					status,
-					body,
-				} => {
-					matrix_msg = Some(format!(
-						"Request {} {} failed with reponse status {} and body: {}",
-						method, url, status, body,
-					));
-
-					unexpected_error_msg
-				}
-				_ => unexpected_error_msg,
-			}
-		}
-	};
-
-	github_bot
-		.create_issue_comment(owner, &repo_name, pr.number, &msg)
-		.await?;
-
-	matrix_bot.send_html_to_default(
-		format!(
-		"Received burn-in request for <a href=\"{}\">{}#{}</a> from {}<br />\n{}",
-		pr.html_url, repo_name, pr.number, requested_by, matrix_msg.unwrap_or(msg),
-	)
-		.as_str(),
-	)?;
 
 	Ok(())
 }

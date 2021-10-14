@@ -9,5 +9,4 @@ ingress:
     traefik.ingress.kubernetes.io/router.tls: "true"
 processbot:
   config:
-    GITHUB_APP_ID: 81160
     GITLAB_PROJECT: parity/polkadot-for-processbot-staging

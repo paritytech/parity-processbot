@@ -40,6 +40,5 @@ pub enum CommentCommand {
 	Merge(MergeCommentCommand),
 	CancelMerge,
 	Rebase,
-	BurninRequest,
 	CompareReleaseRequest,
 }

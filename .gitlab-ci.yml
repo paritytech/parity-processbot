@@ -113,6 +113,9 @@ dockerize-processbot:
     PROCESSBOT_KEY:
       vault:                       cicd/gitlab/$CI_PROJECT_PATH/$CI_ENVIRONMENT_NAME/PROCESSBOT_KEY@kv
       file:                        false
+    GITHUB_APP_ID:
+      vault:                       cicd/gitlab/$CI_PROJECT_PATH/$CI_ENVIRONMENT_NAME/GITHUB_APP_ID@kv
+      file:                        false
     WEBHOOK_SECRET:
       vault:                       cicd/gitlab/$CI_PROJECT_PATH/$CI_ENVIRONMENT_NAME/WEBHOOK_SECRET@kv
       file:                        false
@@ -128,6 +131,7 @@ dockerize-processbot:
       --set processbot.secret.MATRIX_ACCESS_TOKEN=${MATRIX_ACCESS_TOKEN}
       --set processbot.secret.WEBHOOK_SECRET=${WEBHOOK_SECRET}
       --set processbot.secret.GITLAB_PRIVATE_TOKEN=${GITLAB_PRIVATE_TOKEN}
+      --set processbot.secret.GITHUB_APP_ID=${GITHUB_APP_ID}
 
 deploy-staging:
   stage:                           deploy-staging
