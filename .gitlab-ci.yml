@@ -122,6 +122,7 @@ dockerize-processbot:
       --namespace ${KUBE_NAMESPACE}
       --values kubernetes/processbot/values-${CI_ENVIRONMENT_NAME}.yaml
       --set dockerTag=${CI_COMMIT_REF_NAME}
+      # PROCESSBOT_KEY should be in base64 format. helm will decode it
       --set processbot.secret.PROCESSBOT_KEY=${PROCESSBOT_KEY}
       --set processbot.secret.BAMBOO_TOKEN=${BAMBOO_TOKEN}
       --set processbot.secret.MATRIX_ACCESS_TOKEN=${MATRIX_ACCESS_TOKEN}
