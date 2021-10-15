@@ -113,20 +113,25 @@ dockerize-processbot:
     PROCESSBOT_KEY:
       vault:                       cicd/gitlab/$CI_PROJECT_PATH/$CI_ENVIRONMENT_NAME/PROCESSBOT_KEY@kv
       file:                        false
+    GITHUB_APP_ID:
+      vault:                       cicd/gitlab/$CI_PROJECT_PATH/$CI_ENVIRONMENT_NAME/GITHUB_APP_ID@kv
+      file:                        false
     WEBHOOK_SECRET:
       vault:                       cicd/gitlab/$CI_PROJECT_PATH/$CI_ENVIRONMENT_NAME/WEBHOOK_SECRET@kv
       file:                        false
+  # PROCESSBOT_KEY should be base64 encoded
   script:
     - helm upgrade processbot kubernetes/processbot
       --install
-      --namespace ${KUBE_NAMESPACE}
-      --values kubernetes/processbot/values-${CI_ENVIRONMENT_NAME}.yaml
-      --set dockerTag=${CI_COMMIT_REF_NAME}
-      --set processbot.secret.PROCESSBOT_KEY=${PROCESSBOT_KEY}
-      --set processbot.secret.BAMBOO_TOKEN=${BAMBOO_TOKEN}
-      --set processbot.secret.MATRIX_ACCESS_TOKEN=${MATRIX_ACCESS_TOKEN}
-      --set processbot.secret.WEBHOOK_SECRET=${WEBHOOK_SECRET}
-      --set processbot.secret.GITLAB_PRIVATE_TOKEN=${GITLAB_PRIVATE_TOKEN}
+      --namespace "${KUBE_NAMESPACE}"
+      --values "kubernetes/processbot/values-${CI_ENVIRONMENT_NAME}.yaml"
+      --set "dockerTag=${CI_COMMIT_REF_NAME}"
+      --set "processbot.secret.PROCESSBOT_KEY=${PROCESSBOT_KEY}"
+      --set "processbot.secret.BAMBOO_TOKEN=${BAMBOO_TOKEN}"
+      --set "processbot.secret.MATRIX_ACCESS_TOKEN=${MATRIX_ACCESS_TOKEN}"
+      --set "processbot.secret.WEBHOOK_SECRET=${WEBHOOK_SECRET}"
+      --set "processbot.secret.GITLAB_PRIVATE_TOKEN=${GITLAB_PRIVATE_TOKEN}"
+      --set "processbot.secret.GITHUB_APP_ID=${GITHUB_APP_ID}"
 
 deploy-staging:
   stage:                           deploy-staging
