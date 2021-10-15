@@ -142,12 +142,14 @@ Events:
 # Development
 
 The bot requires some environment variables listed in
-[./src/config.rs][config.rs]. They can, optionally, be set through an `.env`
+[config.rs](./src/config.rs). They can, optionally, be set through an `.env`
 file which should be placed at the root of this repository.
 
 During **development**, it's handy to use a [smee.io](https://smee.io/) proxy,
-through the `WEBHOOK_PROXY_URL` variable, for receiving Github Webhook Events
-in your local instance of processbot.
+through the `WEBHOOK_PROXY_URL` environment variable, for receiving Github
+Webhook Events in your local instance of processbot.
+
+After setting up the environment, run: `cargo run`
 
 # Deployment
 
