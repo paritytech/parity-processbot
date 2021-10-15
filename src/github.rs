@@ -28,27 +28,35 @@ pub struct PullRequest {
 impl PullRequest {
 	pub fn parse_all_companions(
 		&self,
+		companion_reference_trail: &Vec<(String, String)>,
 	) -> Option<Vec<IssueDetailsWithRepositoryURL>> {
-		self.body.as_ref().map(|body| {
-			parse_all_companions(
-				&self.base.repo.owner.login,
-				&self.base.repo.name,
-				body,
-			)
-		})
+		let mut next_trail: Vec<(String, String)> =
+			Vec::with_capacity(companion_reference_trail.len() + 1);
+		next_trail.extend_from_slice(&companion_reference_trail[..]);
+		next_trail.push((
+			self.base.repo.owner.login.to_owned(),
+			self.base.repo.name.to_owned(),
+		));
+		self.body
+			.as_ref()
+			.map(|body| parse_all_companions(&next_trail, body))
 	}
 
-	pub fn parse_all_mr_base(&self) -> Option<Vec<MergeRequestBase>> {
-		self.parse_all_companions().map(|companions| {
-			companions
-				.into_iter()
-				.map(|(_, owner, repo, number)| MergeRequestBase {
-					owner,
-					repo,
-					number,
-				})
-				.collect()
-		})
+	pub fn parse_all_mr_base(
+		&self,
+		companion_reference_trail: &Vec<(String, String)>,
+	) -> Option<Vec<MergeRequestBase>> {
+		self.parse_all_companions(companion_reference_trail)
+			.map(|companions| {
+				companions
+					.into_iter()
+					.map(|(_, owner, repo, number)| MergeRequestBase {
+						owner,
+						repo,
+						number,
+					})
+					.collect()
+			})
 	}
 }
 
