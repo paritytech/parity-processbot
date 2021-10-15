@@ -547,19 +547,7 @@ async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 			return Ok(());
 		}
 
-		if let Err(err) =
-			check_merge_is_allowed(state, &pr, &requested_by, None, &vec![]).await
-		{
-			return match err {
-				Error::InvalidCompanionStatus { ref value, .. } => {
-					match value {
-						InvalidCompanionStatusValue::Pending => Ok(()),
-						InvalidCompanionStatusValue::Failure => Err(err),
-					}
-				}
-				err => Err(err),
-			};
-		}
+		check_merge_is_allowed(state, &pr, &requested_by, None, &vec![]).await?;
 
 		if let Some((parent_sha, parent)) = parent.as_ref() {
 			let parent_pr = github_bot
@@ -579,27 +567,14 @@ async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 
 			if is_still_companion && !parent_pr.merged {
 				let was_parent_merged = async {
-					if let Err(err) = check_merge_is_allowed(
+					check_merge_is_allowed(
 						state,
 						&parent_pr,
 						&requested_by,
 						None,
 						&vec![]
 					)
-					.await
-					{
-						return match err {
-							Error::InvalidCompanionStatus { ref value, .. } if *value == InvalidCompanionStatusValue::Pending => {
-								log::info!(
-									"Skipped merging {} because parent {} had pending companion statuses",
-									pr.html_url,
-									parent_pr.html_url
-								);
-								Ok(false)
-							},
-							_ => Err(err)
-						}
-					}
+					.await?;
 
 					if !ready_to_merge(github_bot, &parent_pr).await? {
 						log::info!(
@@ -741,22 +716,7 @@ async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 			}
 		}
 
-		if let Err(err) =
-			check_merge_is_allowed(state, &pr, &requested_by, None, &vec![]).await
-		{
-			return match err {
-				Error::InvalidCompanionStatus { ref value, .. } => {
-					match value {
-						InvalidCompanionStatusValue::Pending => {
-							log::info!("In checks_and_status, skipped merging {} because it had companions pending", pr.html_url);
-							Ok(())
-						},
-						InvalidCompanionStatusValue::Failure => Err(err),
-					}
-				}
-				err => Err(err),
-			};
-		};
+		check_merge_is_allowed(state, &pr, &requested_by, None, &vec![]).await?;
 
 		if let Err(err) = merge(state, &pr, &requested_by, None).await? {
 			return match err {
@@ -832,38 +792,12 @@ async fn handle_command(
 				companion_children: pr.parse_all_mr_base(&vec![]),
 			};
 
-			let should_wait_for_companions = match check_merge_is_allowed(
-				state,
-				&pr,
-				requested_by,
-				None,
-				&vec![],
-			)
-			.await
-			{
-				Ok(_) => false,
-				Err(err) => match err {
-					Error::InvalidCompanionStatus { ref value, .. } => {
-						match value {
-							InvalidCompanionStatusValue::Pending => match cmd {
-								MergeCommentCommand::Normal => true,
-								MergeCommentCommand::Force => false,
-							},
-							InvalidCompanionStatusValue::Failure => match cmd {
-								MergeCommentCommand::Normal => return Err(err),
-								MergeCommentCommand::Force => false,
-							},
-						}
-					}
-					_ => return Err(err),
-				},
-			};
+			check_merge_is_allowed(state, &pr, requested_by, None, &vec![])
+				.await?;
 
 			match cmd {
 				MergeCommentCommand::Normal => {
-					if !should_wait_for_companions
-						&& ready_to_merge(github_bot, &pr).await?
-					{
+					if ready_to_merge(github_bot, &pr).await? {
 						match merge(state, pr, requested_by, None).await? {
 							// If the merge failure will be solved later, then register the PR in the database so that
 							// it'll eventually resume processing when later statuses arrive
@@ -891,17 +825,7 @@ async fn handle_command(
 							_ => (),
 						}
 					} else {
-						wait_to_merge(
-							state,
-							&pr.head.sha,
-							&mr,
-							if should_wait_for_companions {
-								Some("Waiting for companions' statuses and this PR's statuses")
-							} else {
-								None
-							},
-						)
-						.await?;
+						wait_to_merge(state, &pr.head.sha, &mr, None).await?;
 						return Ok(());
 					}
 				}
