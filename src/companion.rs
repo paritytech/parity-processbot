@@ -366,8 +366,7 @@ fn companion_parse_short(body: &str) -> Option<IssueDetailsWithRepositoryURL> {
 }
 
 pub fn parse_all_companions(
-	source_owner: &str,
-	source_repo: &str,
+	companion_reference_trail: &Vec<(String, String)>,
 	body: &str,
 ) -> Vec<IssueDetailsWithRepositoryURL> {
 	body.lines()
@@ -376,15 +375,12 @@ pub fn parse_all_companions(
 				.map(|comp| {
 					// Break cyclical references between dependency and dependents because we're only
 					// interested in the dependency -> dependent relationship, not the other way around.
-					// We're only interested in first-degree relationships because companion merges are resolved
-					// one relationship degree at a time, and so even if a third-degree relationship would appear,
-					// the parents will already be merged by then and therefore be skipped from the future checks
-					// (companion.merged).
-					if &comp.1 == source_owner && &comp.2 == source_repo {
-						return None;
-					} else {
-						return Some(comp);
+					for (owner, repo) in companion_reference_trail {
+						if &comp.1 == owner && &comp.2 == repo {
+							return None;
+						}
 					}
+					Some(comp)
 				})
 				.flatten()
 		})
@@ -396,15 +392,18 @@ pub async fn check_all_companions_are_mergeable(
 	state: &AppState,
 	pr: &PullRequest,
 	requested_by: &str,
+	companion_reference_trail: &Vec<(String, String)>,
 ) -> Result<()> {
-	let companions = match pr.parse_all_companions() {
-		Some(companions) => companions,
+	let companions = match pr.parse_all_companions(companion_reference_trail) {
+		Some(companions) => {
+			if companions.is_empty() {
+				return Ok(());
+			} else {
+				companions
+			}
+		}
 		_ => return Ok(()),
 	};
-	if companions.is_empty() {
-		log::info!("Found no companions in the body of {}", pr.html_url);
-		return Ok(());
-	}
 
 	let AppState { github_bot, .. } = state;
 	for (html_url, owner, repo, number) in companions {
@@ -450,8 +449,26 @@ pub async fn check_all_companions_are_mergeable(
 			});
 		}
 
-		match check_merge_is_allowed(state, &companion, &requested_by, None)
-			.await?
+		// Keeping track of the trail of references is necessary to break chains like A -> B -> C -> A
+		// TODO: of course this should be tested
+		let next_companion_reference_trail = {
+			let mut next_trail: Vec<(String, String)> =
+				Vec::with_capacity(companion_reference_trail.len() + 1);
+			next_trail.extend_from_slice(&companion_reference_trail[..]);
+			next_trail.push((
+				pr.base.repo.owner.login.to_owned(),
+				pr.base.repo.name.to_owned(),
+			));
+			next_trail
+		};
+		match check_merge_is_allowed(
+			state,
+			&companion,
+			&requested_by,
+			None,
+			&next_companion_reference_trail,
+		)
+		.await?
 		{
 			MergeAllowedOutcome::Disallowed(msg) => {
 				return Err(Error::Message { msg })
@@ -541,7 +558,8 @@ async fn update_then_merge_companion(
 	}
 
 	if let Err(err) =
-		check_merge_is_allowed(state, &companion, requested_by, None).await
+		check_merge_is_allowed(state, &companion, requested_by, None, &vec![])
+			.await
 	{
 		match err {
 			Error::InvalidCompanionStatus { ref value, .. } => match value {
@@ -571,23 +589,24 @@ async fn update_then_merge_companion(
 	// failed already
 	let companion = github_bot.pull_request(&owner, &repo, *number).await?;
 
-	let should_wait_for_companions =
-		match check_merge_is_allowed(state, &companion, requested_by, None)
-			.await
-		{
-			Ok(_) => false,
-			Err(err) => match err {
-				Error::InvalidCompanionStatus { ref value, .. } => {
-					match value {
-						InvalidCompanionStatusValue::Pending => true,
-						InvalidCompanionStatusValue::Failure => {
-							return Err(err)
-						}
-					}
-				}
-				err => return Err(err),
+	let should_wait_for_companions = match check_merge_is_allowed(
+		state,
+		&companion,
+		requested_by,
+		None,
+		&vec![],
+	)
+	.await
+	{
+		Ok(_) => false,
+		Err(err) => match err {
+			Error::InvalidCompanionStatus { ref value, .. } => match value {
+				InvalidCompanionStatusValue::Pending => true,
+				InvalidCompanionStatusValue::Failure => return Err(err),
 			},
-		};
+			err => return Err(err),
+		},
+	};
 
 	if !should_wait_for_companions
 		&& ready_to_merge(&state.github_bot, &companion).await?
@@ -610,15 +629,15 @@ async fn update_then_merge_companion(
 	} else {
 		log::info!("Companion updated; waiting for checks on {}", html_url);
 
-		let companion_children = match companion.parse_all_mr_base() {
-			Some(companion_children) => companion_children,
-			None => return Ok(()),
-		};
+		let companion_children = companion.parse_all_mr_base(&vec![]);
 
-		let msg = if companion_children.is_empty() {
-			None
-		} else {
+		let msg = if let Some(true) = companion_children
+			.as_ref()
+			.map(|children| !children.is_empty())
+		{
 			Some("Waiting for companions' statuses and this PR's statuses")
+		} else {
+			None
 		};
 
 		wait_to_merge(
@@ -630,7 +649,7 @@ async fn update_then_merge_companion(
 				number: companion.number,
 				html_url: companion.html_url,
 				requested_by: requested_by.to_owned(),
-				companion_children: Some(companion_children),
+				companion_children: companion_children,
 			},
 			msg,
 		)
@@ -649,13 +668,16 @@ pub async fn merge_companions(
 	log::info!("Checking for companions in {}", pr.html_url);
 
 	let companions_groups = {
-		let companions = match pr.parse_all_companions() {
-			Some(companions) => companions,
+		let companions = match pr.parse_all_companions(&vec![]) {
+			Some(companions) => {
+				if companions.is_empty() {
+					return Ok(());
+				} else {
+					companions
+				}
+			}
 			None => return Ok(()),
 		};
-		if companions.is_empty() {
-			return Ok(());
-		}
 
 		let mut companions_groups: HashMap<
 			String,
@@ -842,11 +864,9 @@ mod tests {
 			repo.to_owned(),
 			pr_number,
 		);
-		let does_not_matter = "does not matter";
 		assert_eq!(
 			parse_all_companions(
-				does_not_matter,
-				does_not_matter,
+				&vec![],
 				&format!(
 					"
 					first companion: {}
@@ -871,19 +891,17 @@ mod tests {
 		);
 
 		// If the source is not referenced in the description, something is parsed
-		let does_not_matter = "does not matter";
 		assert_ne!(
-			parse_all_companions(
-				does_not_matter,
-				does_not_matter,
-				&companion_description
-			),
+			parse_all_companions(&vec![], &companion_description),
 			vec![]
 		);
 
 		// If the source is referenced in the description, it is omitted
 		assert_eq!(
-			parse_all_companions(owner, repo, &companion_description),
+			parse_all_companions(
+				&vec![(owner.to_owned(), repo.to_owned())],
+				&companion_description
+			),
 			vec![]
 		);
 	}
