@@ -15,12 +15,6 @@ pub struct CompanionDetailsWithErrorMessage {
 	pub msg: String,
 }
 
-#[derive(Debug, PartialEq)]
-pub enum InvalidCompanionStatusValue {
-	Pending,
-	Failure,
-}
-
 #[derive(Debug, Snafu)]
 #[snafu(visibility = "pub")]
 pub enum Error {
@@ -184,12 +178,6 @@ pub enum Error {
 		msg
 	))]
 	MergeFailureWillBeSolvedLater {
-		msg: String,
-	},
-
-	#[snafu(display("{}", msg))]
-	InvalidCompanionStatus {
-		value: InvalidCompanionStatusValue,
 		msg: String,
 	},
 

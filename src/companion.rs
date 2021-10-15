@@ -13,12 +13,11 @@ use crate::{
 	github::*,
 	github_bot::GithubBot,
 	webhook::{
-		check_merge_is_allowed, cleanup_merged_pr, get_latest_checks_state,
-		get_latest_statuses_state, merge, ready_to_merge, wait_to_merge,
-		AppState, MergeRequest,
+		check_merge_is_allowed, cleanup_merged_pr, merge, ready_to_merge,
+		wait_to_merge, AppState, MergeRequest,
 	},
-	MergeAllowedOutcome, Result, Status, COMPANION_LONG_REGEX,
-	COMPANION_PREFIX_REGEX, COMPANION_SHORT_REGEX, PR_HTML_URL_REGEX,
+	MergeAllowedOutcome, Result, COMPANION_LONG_REGEX, COMPANION_PREFIX_REGEX,
+	COMPANION_SHORT_REGEX, PR_HTML_URL_REGEX,
 };
 
 async fn update_companion_repository(
@@ -475,66 +474,6 @@ pub async fn check_all_companions_are_mergeable(
 			}
 			_ => (),
 		}
-
-		match get_latest_statuses_state(
-			github_bot,
-			&companion.base.repo.owner.login,
-			&companion.base.repo.name,
-			&companion.head.sha,
-			&companion.html_url,
-		)
-		.await?
-		{
-			Status::Success => (),
-			Status::Pending => {
-				return Err(Error::InvalidCompanionStatus {
-					value: InvalidCompanionStatusValue::Pending,
-					msg: format!(
-						"Companion {} has pending statuses",
-						companion.html_url
-					),
-				});
-			}
-			Status::Failure => {
-				return Err(Error::InvalidCompanionStatus {
-					value: InvalidCompanionStatusValue::Failure,
-					msg: format!(
-						"Companion {} has failed statuses",
-						companion.html_url
-					),
-				});
-			}
-		};
-
-		match get_latest_checks_state(
-			github_bot,
-			&companion.base.repo.owner.login,
-			&companion.base.repo.name,
-			&companion.head.sha,
-			&companion.html_url,
-		)
-		.await?
-		{
-			Status::Success => (),
-			Status::Pending => {
-				return Err(Error::InvalidCompanionStatus {
-					value: InvalidCompanionStatusValue::Pending,
-					msg: format!(
-						"Companion {} has pending checks",
-						companion.html_url
-					),
-				});
-			}
-			Status::Failure => {
-				return Err(Error::InvalidCompanionStatus {
-					value: InvalidCompanionStatusValue::Failure,
-					msg: format!(
-						"Companion {} has failed checks",
-						companion.html_url
-					),
-				});
-			}
-		};
 	}
 
 	Ok(())
@@ -557,18 +496,8 @@ async fn update_then_merge_companion(
 		return Ok(());
 	}
 
-	if let Err(err) =
-		check_merge_is_allowed(state, &companion, requested_by, None, &vec![])
-			.await
-	{
-		match err {
-			Error::InvalidCompanionStatus { ref value, .. } => match value {
-				InvalidCompanionStatusValue::Pending => (),
-				InvalidCompanionStatusValue::Failure => return Err(err),
-			},
-			err => return Err(err),
-		};
-	}
+	check_merge_is_allowed(state, &companion, requested_by, None, &vec![])
+		.await?;
 
 	log::info!("Updating companion {}", html_url);
 	let updated_sha = update_companion_repository(
@@ -589,28 +518,10 @@ async fn update_then_merge_companion(
 	// failed already
 	let companion = github_bot.pull_request(&owner, &repo, *number).await?;
 
-	let should_wait_for_companions = match check_merge_is_allowed(
-		state,
-		&companion,
-		requested_by,
-		None,
-		&vec![],
-	)
-	.await
-	{
-		Ok(_) => false,
-		Err(err) => match err {
-			Error::InvalidCompanionStatus { ref value, .. } => match value {
-				InvalidCompanionStatusValue::Pending => true,
-				InvalidCompanionStatusValue::Failure => return Err(err),
-			},
-			err => return Err(err),
-		},
-	};
+	check_merge_is_allowed(state, &companion, requested_by, None, &vec![])
+		.await?;
 
-	if !should_wait_for_companions
-		&& ready_to_merge(&state.github_bot, &companion).await?
-	{
+	if ready_to_merge(&state.github_bot, &companion).await? {
 		if let Err(err) = merge(state, &companion, requested_by, None).await? {
 			return match err {
 				Error::MergeFailureWillBeSolvedLater { .. } => Ok(()),
@@ -631,15 +542,6 @@ async fn update_then_merge_companion(
 
 		let companion_children = companion.parse_all_mr_base(&vec![]);
 
-		let msg = if let Some(true) = companion_children
-			.as_ref()
-			.map(|children| !children.is_empty())
-		{
-			Some("Waiting for companions' statuses and this PR's statuses")
-		} else {
-			None
-		};
-
 		wait_to_merge(
 			state,
 			&updated_sha,
@@ -651,7 +553,7 @@ async fn update_then_merge_companion(
 				requested_by: requested_by.to_owned(),
 				companion_children: companion_children,
 			},
-			msg,
+			None,
 		)
 		.await?;
 	}
