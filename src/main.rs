@@ -110,5 +110,8 @@ fn main() -> anyhow::Result<()> {
 		rt.spawn(init_server(socket, app_state));
 	}
 
+	// Loop in order to prevent the main thread from exiting, since the futures we set up through
+	// rt.spawn are running in tokio's threadpool and thus the main thread will be used to drive the
+	// futures
 	loop {}
 }

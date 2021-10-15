@@ -1,5 +1,6 @@
 use crate::{
-	error::*, utils::parse_bot_comment_from_text,
+	companion::parse_all_companions, error::*,
+	utils::parse_bot_comment_from_text, webhook::MergeRequestBase,
 	PlaceholderDeserializationItem, PR_HTML_URL_REGEX,
 };
 use regex::Regex;
@@ -22,6 +23,33 @@ pub struct PullRequest {
 	pub mergeable: Option<bool>,
 	pub merged: bool,
 	pub maintainer_can_modify: bool,
+}
+
+impl PullRequest {
+	pub fn parse_all_companions(
+		&self,
+	) -> Option<Vec<IssueDetailsWithRepositoryURL>> {
+		self.body.as_ref().map(|body| {
+			parse_all_companions(
+				&self.base.repo.owner.login,
+				&self.base.repo.name,
+				body,
+			)
+		})
+	}
+
+	pub fn parse_all_mr_base(&self) -> Option<Vec<MergeRequestBase>> {
+		self.parse_all_companions().map(|companions| {
+			companions
+				.into_iter()
+				.map(|(_, owner, repo, number)| MergeRequestBase {
+					owner,
+					repo,
+					number,
+				})
+				.collect()
+		})
+	}
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]

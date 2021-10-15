@@ -12,12 +12,11 @@ use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::{sync::Mutex, time::delay_for};
 
 use crate::{
-	companion::parse_all_companions, companion::*, config::MainConfig,
-	constants::*, error::*, github::*, github_bot::GithubBot, process,
-	rebase::*, utils::parse_bot_comment_from_text, vanity_service,
-	CommentCommand, MergeAllowedOutcome, MergeCancelOutcome,
-	MergeCommentCommand, Result, Status, PROCESS_INFO_ERROR_TEMPLATE,
-	WEBHOOK_PARSING_ERROR_TEMPLATE,
+	companion::*, config::MainConfig, constants::*, error::*, github::*,
+	github_bot::GithubBot, process, rebase::*,
+	utils::parse_bot_comment_from_text, vanity_service, CommentCommand,
+	MergeAllowedOutcome, MergeCancelOutcome, MergeCommentCommand, Result,
+	Status, PROCESS_INFO_ERROR_TEMPLATE, WEBHOOK_PARSING_ERROR_TEMPLATE,
 };
 
 /// This data gets passed along with each webhook to the webhook handler.
@@ -551,14 +550,10 @@ async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 			// Check if this PR is indeed still a companion of the parent (the parent's description might
 			// have been edited since this PR was registered as a companion)
 			let is_still_companion = parent_pr
-				.body
-				.as_ref()
-				.map(|body|
-					parse_all_companions(
-						&pr.base.repo.owner.login,
-						&pr.base.repo.name,
-						body
-					).iter().any(|(html_url, _, _, _)| {
+				.parse_all_companions()
+				.map(|companions| companions
+					.iter()
+					.any(|(html_url, _, _, _)| {
 						html_url == &pr.html_url
 					}))
 				.unwrap_or(false);
@@ -814,20 +809,7 @@ async fn handle_command(
 				number: pr.number,
 				html_url: pr.html_url.to_owned(),
 				requested_by: requested_by.to_owned(),
-				companion_children: pr.body.as_ref().map(|body| {
-					parse_all_companions(
-						&pr.base.repo.owner.login,
-						&pr.base.repo.name,
-						body,
-					)
-					.into_iter()
-					.map(|(_, owner, repo, number)| MergeRequestBase {
-						owner,
-						repo,
-						number,
-					})
-					.collect()
-				}),
+				companion_children: pr.parse_all_mr_base(),
 			};
 
 			let should_wait_for_companions =
@@ -1150,14 +1132,13 @@ pub async fn check_merge_is_allowed(
 
 	check_all_companions_are_mergeable(state, &pr, &requested_by).await?;
 
-	// TODO have this be based on the repository's settings from the API
-	// (https://github.com/paritytech/parity-processbot/issues/319)
 	let min_approvals = match min_approvals_required {
 		Some(min_approvals_required) => min_approvals_required,
 		None => match pr.base.repo.name.as_str() {
+			// TODO have this be based on the repository's settings from the API
+			// (https://github.com/paritytech/parity-processbot/issues/319)
 			"substrate" => 2,
-			"polkadot" => 1,
-			_ => return Ok(MergeAllowedOutcome::Allowed),
+			_ => 1,
 		},
 	};
 

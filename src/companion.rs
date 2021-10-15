@@ -15,7 +15,7 @@ use crate::{
 	webhook::{
 		check_merge_is_allowed, cleanup_merged_pr, get_latest_checks_state,
 		get_latest_statuses_state, merge, ready_to_merge, wait_to_merge,
-		AppState, MergeRequest, MergeRequestBase,
+		AppState, MergeRequest,
 	},
 	MergeAllowedOutcome, Result, Status, COMPANION_LONG_REGEX,
 	COMPANION_PREFIX_REGEX, COMPANION_SHORT_REGEX, PR_HTML_URL_REGEX,
@@ -397,16 +397,10 @@ pub async fn check_all_companions_are_mergeable(
 	pr: &PullRequest,
 	requested_by: &str,
 ) -> Result<()> {
-	let body = match pr.body.as_ref() {
-		Some(body) => body,
-		None => return Ok(()),
+	let companions = match pr.parse_all_companions() {
+		Some(companions) => companions,
+		_ => return Ok(()),
 	};
-
-	let companions = parse_all_companions(
-		&pr.base.repo.owner.login,
-		&pr.base.repo.name,
-		body,
-	);
 	if companions.is_empty() {
 		log::info!("Found no companions in the body of {}", pr.html_url);
 		return Ok(());
@@ -616,31 +610,16 @@ async fn update_then_merge_companion(
 	} else {
 		log::info!("Companion updated; waiting for checks on {}", html_url);
 
-		let companion_companions = companion.body.as_ref().map(|body| {
-			parse_all_companions(
-				&companion.base.repo.owner.login,
-				&companion.base.repo.name,
-				body,
-			)
-			.into_iter()
-			.map(|(_, owner, repo, number)| MergeRequestBase {
-				owner,
-				repo,
-				number,
-			})
-			.collect()
-		});
+		let companion_children = match companion.parse_all_mr_base() {
+			Some(companion_children) => companion_children,
+			None => return Ok(()),
+		};
 
-		let msg = companion_companions
-			.as_ref()
-			.map(|children: &Vec<MergeRequestBase>| {
-				if children.is_empty() {
-					None
-				} else {
-					Some("Waiting for companions' statuses and this PR's statuses")
-				}
-			})
-			.flatten();
+		let msg = if companion_children.is_empty() {
+			None
+		} else {
+			Some("Waiting for companions' statuses and this PR's statuses")
+		};
 
 		wait_to_merge(
 			state,
@@ -651,7 +630,7 @@ async fn update_then_merge_companion(
 				number: companion.number,
 				html_url: companion.html_url,
 				requested_by: requested_by.to_owned(),
-				companion_children: companion_companions,
+				companion_children: Some(companion_children),
 			},
 			msg,
 		)
@@ -670,16 +649,10 @@ pub async fn merge_companions(
 	log::info!("Checking for companions in {}", pr.html_url);
 
 	let companions_groups = {
-		let body = match pr.body.as_ref() {
-			Some(body) => body,
+		let companions = match pr.parse_all_companions() {
+			Some(companions) => companions,
 			None => return Ok(()),
 		};
-
-		let companions = parse_all_companions(
-			&pr.base.repo.owner.login,
-			&pr.base.repo.name,
-			body,
-		);
 		if companions.is_empty() {
 			return Ok(());
 		}

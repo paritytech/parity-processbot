@@ -54,7 +54,7 @@ which will allow processbot to detect and disregard them.
 A Pull Request needs either (meaning, only **one of** the following
 requirements needs to be fulfilled)
 
-- [core-dev](#core-devs) member approvals (2 for Substrate, 1 for Polkadot), or
+- [core-dev](#core-devs) member approvals (2 for Substrate, 1 otherwise), or
 - One [substrateteamleads](#substrateteamleads) member approval, or
 - One approval from the project owner **for the PR**. Projects are managed
   [through the Github UI](#github-project) and its [owners](#project-owners)
