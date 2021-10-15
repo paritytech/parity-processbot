@@ -3,7 +3,6 @@ use crate::{github, Result};
 use super::GithubBot;
 
 impl GithubBot {
-	/// Returns a repository with the given name.
 	pub async fn repository<A>(
 		&self,
 		owner: &str,

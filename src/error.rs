@@ -1,17 +1,24 @@
 use snafu::Snafu;
 
-// TODO this really should be struct { repository, owner, number }
+// TODO this really should be struct { owner, repo, number }
 pub type IssueDetails = (String, String, i64);
 
-// TODO this really should be struct { repository_url, repository, owner, number }
+// TODO this really should be struct { repository_url, owner, repo, number }
 pub type IssueDetailsWithRepositoryURL = (String, String, String, i64);
 
+#[derive(Debug)]
 pub struct CompanionDetailsWithErrorMessage {
 	pub owner: String,
 	pub repo: String,
 	pub number: i64,
 	pub html_url: String,
 	pub msg: String,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum InvalidCompanionStatusValue {
+	Pending,
+	Failure,
 }
 
 #[derive(Debug, Snafu)]
@@ -28,17 +35,6 @@ pub enum Error {
 		field: String,
 	},
 
-	#[snafu(display("Error merging: {}", source))]
-	Merge {
-		source: Box<Error>,
-		commit_sha: String,
-		pr_url: String,
-		owner: String,
-		repo_name: String,
-		pr_number: i64,
-		created_approval_id: Option<i64>,
-	},
-
 	#[snafu(display("Checks failed for {}", commit_sha))]
 	ChecksFailed {
 		commit_sha: String,
@@ -48,11 +44,6 @@ pub enum Error {
 	HeadChanged {
 		expected: String,
 		actual: String,
-	},
-
-	#[snafu(display("Error getting process info: {}", source))]
-	ProcessFile {
-		source: Box<Error>,
 	},
 
 	#[snafu(display("Missing process info."))]
@@ -195,6 +186,17 @@ pub enum Error {
 	MergeFailureWillBeSolvedLater {
 		msg: String,
 	},
+
+	#[snafu(display("{}", msg))]
+	InvalidCompanionStatus {
+		value: InvalidCompanionStatusValue,
+		msg: String,
+	},
+
+	#[snafu(display("Failed to merge companions: {:?}", errors))]
+	CompanionsFailedMerge {
+		errors: Vec<CompanionDetailsWithErrorMessage>,
+	},
 }
 
 impl Error {
@@ -205,6 +207,13 @@ impl Error {
 				source: Box::new(self),
 				issue,
 			},
+		}
+	}
+	pub fn stops_merge_attempt(&self) -> bool {
+		match self {
+			Self::WithIssue { source, .. } => source.stops_merge_attempt(),
+			Self::MergeFailureWillBeSolvedLater { .. } => false,
+			_ => true,
 		}
 	}
 }

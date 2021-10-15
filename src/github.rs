@@ -1,9 +1,10 @@
 use crate::{
-	error::*, utils::parse_bot_comment_from_text, Result, PR_HTML_URL_REGEX,
+	companion::parse_all_companions, error::*,
+	utils::parse_bot_comment_from_text, webhook::MergeRequestBase,
+	PlaceholderDeserializationItem, PR_HTML_URL_REGEX,
 };
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use snafu::OptionExt;
 
 pub trait HasIssueDetails {
 	fn get_issue_details(&self) -> Option<IssueDetails>;
@@ -16,53 +17,38 @@ pub struct PullRequest {
 	pub number: i64,
 	pub user: Option<User>,
 	pub body: Option<String>,
-	pub labels: Vec<Label>,
-	pub mergeable: Option<bool>,
-	pub head: Option<Head>,
+	pub head: Head,
 	pub base: Base,
 	pub repository: Option<Repository>,
-}
-
-impl HasIssueDetails for PullRequest {
-	fn get_issue_details(&self) -> Option<IssueDetails> {
-		if let Some(Repository {
-			owner: Some(User { login, .. }),
-			name,
-			..
-		}) = self.repository.as_ref()
-		{
-			Some((login.to_owned(), name.to_owned(), self.number))
-		} else {
-			None
-		}
-		.or_else(|| {
-			if let Some(Repository {
-				full_name: Some(full_name),
-				..
-			}) = self.repository.as_ref()
-			{
-				parse_repository_full_name(&full_name)
-					.map(|(owner, name)| (owner, name, self.number))
-			} else {
-				None
-			}
-		})
-		.or_else(|| parse_issue_details_from_pr_html_url(&self.html_url))
-	}
+	pub mergeable: Option<bool>,
+	pub merged: bool,
+	pub maintainer_can_modify: bool,
 }
 
 impl PullRequest {
-	pub fn head_sha(&self) -> Result<&String> {
-		self.head
-			.as_ref()
-			.context(MissingField {
-				field: "pull_request.head",
-			})?
-			.sha
-			.as_ref()
-			.context(MissingField {
-				field: "pull_request.head.sha",
-			})
+	pub fn parse_all_companions(
+		&self,
+	) -> Option<Vec<IssueDetailsWithRepositoryURL>> {
+		self.body.as_ref().map(|body| {
+			parse_all_companions(
+				&self.base.repo.owner.login,
+				&self.base.repo.name,
+				body,
+			)
+		})
+	}
+
+	pub fn parse_all_mr_base(&self) -> Option<Vec<MergeRequestBase>> {
+		self.parse_all_companions().map(|companions| {
+			companions
+				.into_iter()
+				.map(|(_, owner, repo, number)| MergeRequestBase {
+					owner,
+					repo,
+					number,
+				})
+				.collect()
+		})
 	}
 }
 
@@ -73,46 +59,9 @@ pub struct Issue {
 	// User might be missing when it has been deleted
 	pub user: Option<User>,
 	pub body: Option<String>,
-	pub pull_request: Option<IssuePullRequest>,
+	pub pull_request: Option<PlaceholderDeserializationItem>,
 	pub repository: Option<Repository>,
 	pub repository_url: Option<String>,
-}
-
-impl HasIssueDetails for Issue {
-	fn get_issue_details(&self) -> Option<IssueDetails> {
-		match self {
-			Issue {
-				number,
-				html_url,
-				pull_request: Some(_), // indicates the issue is a pr
-				repository,
-				..
-			} => if let Some(Repository {
-				owner: Some(User { login, .. }),
-				name,
-				..
-			}) = &repository
-			{
-				Some((login.to_owned(), name.to_owned(), *number))
-			} else {
-				None
-			}
-			.or_else(|| {
-				if let Some(Repository {
-					full_name: Some(full_name),
-					..
-				}) = &repository
-				{
-					parse_repository_full_name(full_name)
-						.map(|(owner, name)| (owner, name, *number))
-				} else {
-					None
-				}
-			})
-			.or_else(|| parse_issue_details_from_pr_html_url(&html_url)),
-			_ => None,
-		}
-	}
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -173,25 +122,18 @@ pub struct Team {
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct IssuePullRequest {}
-
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Head {
-	pub label: Option<String>,
+	pub sha: String,
+	pub repo: HeadRepo,
 	#[serde(rename = "ref")]
-	pub ref_field: Option<String>,
-	pub sha: Option<String>,
-	// Repository might be missing when it has been deleted
-	pub repo: Option<HeadRepo>,
+	pub ref_field: String,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Base {
 	#[serde(rename = "ref")]
-	pub ref_field: Option<String>,
-	pub sha: Option<String>,
-	// Repository might be missing when it has been deleted
-	pub repo: Option<HeadRepo>,
+	pub ref_field: String,
+	pub repo: BaseRepo,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -320,8 +262,13 @@ pub struct HeadRepo {
 	pub id: i64,
 	pub url: String,
 	pub name: String,
-	// The owner might be missing when e.g. they have deleted their account
-	pub owner: Option<User>,
+	pub owner: User,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BaseRepo {
+	pub name: String,
+	pub owner: User,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -354,13 +301,25 @@ pub struct WebhookIssueComment {
 	pub number: i64,
 	pub html_url: String,
 	pub repository_url: Option<String>,
-	pub pull_request: Option<IssuePullRequest>,
+	pub pull_request: Option<PlaceholderDeserializationItem>,
 }
 
 impl HasIssueDetails for WebhookIssueComment {
 	fn get_issue_details(&self) -> Option<IssueDetails> {
-		None
+		parse_issue_details_from_pr_html_url(&self.html_url)
 	}
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkflowJobConclusion {
+	#[serde(other)]
+	Unknown,
+}
+#[derive(PartialEq, Deserialize)]
+pub struct WorkflowJob {
+	pub head_sha: String,
+	pub conclusion: Option<WorkflowJobConclusion>,
 }
 
 #[derive(PartialEq, Deserialize)]
@@ -382,6 +341,9 @@ pub enum Payload {
 	},
 	CheckRun {
 		check_run: CheckRun,
+	},
+	WorkflowJob {
+		workflow_job: WorkflowJob,
 	},
 }
 
@@ -487,7 +449,7 @@ pub fn parse_issue_details_from_pr_html_url(
 	pr_html_url: &str,
 ) -> Option<IssueDetails> {
 	let re = Regex::new(PR_HTML_URL_REGEX!()).unwrap();
-	let matches = re.captures(&pr_html_url)?;
+	let matches = re.captures(pr_html_url)?;
 	let owner = matches.name("owner")?.as_str().to_owned();
 	let repo = matches.name("repo")?.as_str().to_owned();
 	let number = matches
@@ -500,7 +462,7 @@ pub fn parse_issue_details_from_pr_html_url(
 }
 
 pub fn parse_repository_full_name(full_name: &str) -> Option<(String, String)> {
-	let parts: Vec<&str> = full_name.split("/").collect();
+	let parts: Vec<&str> = full_name.split('/').collect();
 	parts
 		.get(0)
 		.map(|owner| {

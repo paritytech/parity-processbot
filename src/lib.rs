@@ -1,4 +1,5 @@
-mod auth;
+use serde::{Deserialize, Serialize};
+
 pub mod bamboo;
 pub mod cmd;
 mod macros;
@@ -14,7 +15,6 @@ pub mod gitlab_bot;
 pub mod http;
 pub mod matrix;
 pub mod matrix_bot;
-pub mod performance;
 pub mod process;
 pub mod rebase;
 pub mod server;
@@ -24,6 +24,7 @@ pub mod webhook;
 
 pub type Result<T, E = error::Error> = std::result::Result<T, E>;
 
+#[derive(Debug)]
 pub enum Status {
 	Success,
 	Pending,
@@ -41,4 +42,19 @@ pub enum CommentCommand {
 	CancelMerge,
 	Rebase,
 	CompareReleaseRequest,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PlaceholderDeserializationItem {}
+
+pub enum MergeCancelOutcome {
+	ShaNotFound,
+	WasCancelled,
+	WasNotCancelled,
+}
+
+pub enum MergeAllowedOutcome {
+	Allowed,
+	GrantApprovalForRole(String),
+	Disallowed(String),
 }

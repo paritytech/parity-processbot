@@ -14,6 +14,7 @@ pub struct Client {
 	pub client: reqwest::Client,
 	private_key: Vec<u8>,
 	installation_login: String,
+	github_app_id: usize,
 }
 
 macro_rules! impl_methods_with_body {
@@ -93,10 +94,15 @@ async fn handle_response(response: Response) -> Result<Response> {
 
 /// HTTP util methods.
 impl Client {
-	pub fn new(private_key: Vec<u8>, installation_login: String) -> Self {
+	pub fn new(
+		private_key: Vec<u8>,
+		installation_login: String,
+		github_app_id: usize,
+	) -> Self {
 		Self {
 			private_key: private_key.into(),
 			installation_login,
+			github_app_id,
 			..Self::default()
 		}
 	}
@@ -207,9 +213,6 @@ impl Client {
 	fn create_jwt(&self) -> Result<String> {
 		log::debug!("create_jwt");
 		const TEN_MINS_IN_SECONDS: u64 = 10 * 60;
-		lazy_static::lazy_static! {
-			static ref APP_ID: u64 = dotenv::var("GITHUB_APP_ID").unwrap().parse::<u64>().unwrap();
-		}
 		let iat = SystemTime::now()
 			.duration_since(SystemTime::UNIX_EPOCH)
 			.unwrap()
@@ -218,7 +221,7 @@ impl Client {
 		let body = serde_json::json!({
 			"iat": iat,
 			"exp": iat + TEN_MINS_IN_SECONDS,
-			"iss": *APP_ID,
+			"iss": self.github_app_id,
 		});
 
 		jsonwebtoken::encode(
