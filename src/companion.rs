@@ -372,17 +372,22 @@ pub fn parse_all_companions(
 ) -> Vec<IssueDetailsWithRepositoryURL> {
 	body.lines()
 		.filter_map(|line| {
-			companion_parse(line).map(|comp| {
-				// Break cyclical references between dependency and dependents because we're only
-				// interested in the dependency -> dependent relationship, not the other way around
-				if &comp.1 == source_owner && &comp.2 == source_repo {
-					return None;
-				} else {
-					return Some(comp);
-				}
-			})
+			companion_parse(line)
+				.map(|comp| {
+					// Break cyclical references between dependency and dependents because we're only
+					// interested in the dependency -> dependent relationship, not the other way around.
+					// We're only interested in first-degree relationships because companion merges are resolved
+					// one relationship degree at a time, and so even if a third-degree relationship would appear,
+					// the parents will already be merged by then and therefore be skipped from the future checks
+					// (companion.merged).
+					if &comp.1 == source_owner && &comp.2 == source_repo {
+						return None;
+					} else {
+						return Some(comp);
+					}
+				})
+				.flatten()
 		})
-		.flatten()
 		.collect()
 }
 
