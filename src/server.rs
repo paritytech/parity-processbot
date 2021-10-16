@@ -69,11 +69,8 @@ impl tokio::io::AsyncWrite for TcpStream {
 
 #[derive(Debug)]
 pub enum Error {
-	/// Hyper internal error.
 	Hyper(hyper::Error),
-	/// Http request error.
 	Http(hyper::http::Error),
-	/// i/o error.
 	Io(std::io::Error),
 	PortInUse(SocketAddr),
 }

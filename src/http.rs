@@ -1,13 +1,16 @@
 use std::borrow::Cow;
 use std::time::SystemTime;
 
-use crate::{error, github, Result};
+use crate::{
+	error::{self, Error},
+	github, Result,
+};
 
 use chrono::{DateTime, Duration, Utc};
 use hyperx::header::TypedHeaders;
 use reqwest::{header, IntoUrl, Method, RequestBuilder, Response};
 use serde::Serialize;
-use snafu::{OptionExt, ResultExt};
+use snafu::ResultExt;
 
 #[derive(Default)]
 pub struct Client {
@@ -150,10 +153,19 @@ impl Client {
 			))
 			.await?;
 
-		let installation = installations
+		let installation = if let Some(installation) = installations
 			.iter()
 			.find(|inst| inst.account.login == self.installation_login)
-			.context(error::MissingData)?;
+		{
+			installation
+		} else {
+			return Err(Error::Message {
+				msg: format!(
+					"Installation for login {} could not be found",
+					self.installation_login
+				),
+			});
+		};
 
 		let install_token: github::InstallationToken = self
 			.jwt_post(
