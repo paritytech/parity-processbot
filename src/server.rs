@@ -69,11 +69,8 @@ impl tokio::io::AsyncWrite for TcpStream {
 
 #[derive(Debug)]
 pub enum Error {
-	/// Hyper internal error.
 	Hyper(hyper::Error),
-	/// Http request error.
 	Http(hyper::http::Error),
-	/// i/o error.
 	Io(std::io::Error),
 	PortInUse(SocketAddr),
 }
@@ -95,8 +92,6 @@ impl std::error::Error for Error {
 	}
 }
 
-/// Initializes the metrics context, and starts an HTTP server
-/// to serve metrics.
 pub async fn init_server(
 	addr: SocketAddr,
 	state: Arc<Mutex<AppState>>,
@@ -122,5 +117,5 @@ pub async fn init_server(
 		.serve(service)
 		.boxed()
 		.await
-		.context(format!("Server error"))
+		.context("Server error".to_owned())
 }

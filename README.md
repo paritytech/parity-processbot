@@ -11,8 +11,6 @@ have the command**.
 - `bot merge cancel`: cancel a pending `bot merge`; does not affect anything
   outside of processbot, only stops the bot from following through with the
   merge.
-- `bot compare substrate`: see a diff between current branch's Substrate
-  version and the latest Polkadot release's Substrate version.
 - `bot rebase`: create a merge commit from origin/master into the PR.
 
 Note: The commands will only work if you are a member of the organization where

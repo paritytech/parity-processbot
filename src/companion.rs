@@ -130,7 +130,7 @@ async fn update_companion_repository(
 		"git",
 		&[
 			"checkout",
-			&String::from_utf8(head_sha_output.stdout)
+			String::from_utf8(head_sha_output.stdout)
 				.context(Utf8)?
 				.trim(),
 		],
@@ -168,7 +168,7 @@ async fn update_companion_repository(
 
 	run_cmd(
 		"git",
-		&["fetch", owner_remote, &owner_branch],
+		&["fetch", owner_remote, owner_branch],
 		&repo_dir,
 		CommandMessage::Configured(CommandMessageConfiguration {
 			secrets_to_hide,
@@ -320,7 +320,7 @@ async fn update_companion_repository(
 }
 
 fn companion_parse(body: &str) -> Option<IssueDetailsWithRepositoryURL> {
-	companion_parse_long(body).or(companion_parse_short(body))
+	companion_parse_long(body).or_else(|| companion_parse_short(body))
 }
 
 fn companion_parse_long(body: &str) -> Option<IssueDetailsWithRepositoryURL> {
@@ -328,7 +328,7 @@ fn companion_parse_long(body: &str) -> Option<IssueDetailsWithRepositoryURL> {
 		.case_insensitive(true)
 		.build()
 		.unwrap();
-	let caps = re.captures(&body)?;
+	let caps = re.captures(body)?;
 	let html_url = caps.name("html_url")?.as_str().to_owned();
 	let owner = caps.name("owner")?.as_str().to_owned();
 	let repo = caps.name("repo")?.as_str().to_owned();
@@ -346,7 +346,7 @@ fn companion_parse_short(body: &str) -> Option<IssueDetailsWithRepositoryURL> {
 		.case_insensitive(true)
 		.build()
 		.unwrap();
-	let caps = re.captures(&body)?;
+	let caps = re.captures(body)?;
 	let owner = caps.name("owner")?.as_str().to_owned();
 	let repo = caps.name("repo")?.as_str().to_owned();
 	let number = caps
@@ -365,7 +365,7 @@ fn companion_parse_short(body: &str) -> Option<IssueDetailsWithRepositoryURL> {
 }
 
 pub fn parse_all_companions(
-	companion_reference_trail: &Vec<(String, String)>,
+	companion_reference_trail: &[(String, String)],
 	body: &str,
 ) -> Vec<IssueDetailsWithRepositoryURL> {
 	body.lines()
@@ -391,7 +391,7 @@ pub async fn check_all_companions_are_mergeable(
 	state: &AppState,
 	pr: &PullRequest,
 	requested_by: &str,
-	companion_reference_trail: &Vec<(String, String)>,
+	companion_reference_trail: &[(String, String)],
 ) -> Result<()> {
 	let companions = match pr.parse_all_companions(companion_reference_trail) {
 		Some(companions) => {
@@ -453,26 +453,23 @@ pub async fn check_all_companions_are_mergeable(
 		let next_companion_reference_trail = {
 			let mut next_trail: Vec<(String, String)> =
 				Vec::with_capacity(companion_reference_trail.len() + 1);
-			next_trail.extend_from_slice(&companion_reference_trail[..]);
+			next_trail.extend_from_slice(companion_reference_trail);
 			next_trail.push((
 				pr.base.repo.owner.login.to_owned(),
 				pr.base.repo.name.to_owned(),
 			));
 			next_trail
 		};
-		match check_merge_is_allowed(
+		if let MergeAllowedOutcome::Disallowed(msg) = check_merge_is_allowed(
 			state,
 			&companion,
-			&requested_by,
+			requested_by,
 			None,
 			&next_companion_reference_trail,
 		)
 		.await?
 		{
-			MergeAllowedOutcome::Disallowed(msg) => {
-				return Err(Error::Message { msg })
-			}
-			_ => (),
+			return Err(Error::Message { msg });
 		}
 	}
 
@@ -491,13 +488,12 @@ async fn update_then_merge_companion(
 ) -> Result<()> {
 	let AppState { github_bot, .. } = state;
 
-	let companion = github_bot.pull_request(&owner, &repo, *number).await?;
+	let companion = github_bot.pull_request(owner, repo, *number).await?;
 	if cleanup_merged_pr(state, &companion)? {
 		return Ok(());
 	}
 
-	check_merge_is_allowed(state, &companion, requested_by, None, &vec![])
-		.await?;
+	check_merge_is_allowed(state, &companion, requested_by, None, &[]).await?;
 
 	log::info!("Updating companion {}", html_url);
 	let updated_sha = update_companion_repository(
@@ -516,10 +512,15 @@ async fn update_then_merge_companion(
 
 	// Fetch it again since we've pushed some commits and therefore some status or check might have
 	// failed already
-	let companion = github_bot.pull_request(&owner, &repo, *number).await?;
-
-	check_merge_is_allowed(state, &companion, requested_by, None, &vec![])
+	let companion = github_bot
+		.pull_request(
+			&companion.base.repo.owner.login,
+			&companion.base.repo.name,
+			companion.number,
+		)
 		.await?;
+
+	check_merge_is_allowed(state, &companion, requested_by, None, &[]).await?;
 
 	if ready_to_merge(&state.github_bot, &companion).await? {
 		if let Err(err) = merge(state, &companion, requested_by, None).await? {
@@ -529,7 +530,7 @@ async fn update_then_merge_companion(
 			};
 		}
 		if let Err(err) =
-			merge_companions(state, &companion, &requested_by, None).await
+			merge_companions(state, &companion, requested_by, None).await
 		{
 			log::error!(
 				"Failed to merge companions of {} (a companion) due to {:?}",
@@ -540,7 +541,7 @@ async fn update_then_merge_companion(
 	} else {
 		log::info!("Companion updated; waiting for checks on {}", html_url);
 
-		let companion_children = companion.parse_all_mr_base(&vec![]);
+		let companion_children = companion.parse_all_mr_base(&[]);
 
 		wait_to_merge(
 			state,
@@ -551,7 +552,7 @@ async fn update_then_merge_companion(
 				number: companion.number,
 				html_url: companion.html_url,
 				requested_by: requested_by.to_owned(),
-				companion_children: companion_children,
+				companion_children,
 			},
 			None,
 		)
@@ -570,7 +571,7 @@ pub async fn merge_companions(
 	log::info!("Checking for companions in {}", pr.html_url);
 
 	let companions_groups = {
-		let companions = match pr.parse_all_companions(&vec![]) {
+		let companions = match pr.parse_all_companions(&[]) {
 			Some(companions) => {
 				if companions.is_empty() {
 					return Ok(());

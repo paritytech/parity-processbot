@@ -38,8 +38,10 @@ check:
   stage:                           check
   <<:                              *docker-env
   script:
-    - rustup component add rustfmt
+    # TODO: create processbot CI image which already has rustfmt and clippy
+    - rustup component add rustfmt clippy
     - cargo fmt --all -- --check
+    - cargo clippy -- -Dwarnings
 
 #### stage:                        test
 

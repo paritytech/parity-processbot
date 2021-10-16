@@ -65,7 +65,7 @@ impl ProcessInfo {
 
 	/// Checks if the owner of the project matches the login given.
 	pub fn is_owner_or_delegate(&self, login: &str) -> bool {
-		&self.owner == login
+		self.owner == login
 			|| self
 				.delegated_reviewer
 				.as_ref()
@@ -74,7 +74,7 @@ impl ProcessInfo {
 
 	/// Checks if the owner of the project matches the login given.
 	pub fn is_owner(&self, login: &str) -> bool {
-		&self.owner == login
+		self.owner == login
 	}
 
 	/// Checks if the delegated reviewer matches the login given.

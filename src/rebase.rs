@@ -30,7 +30,7 @@ pub async fn rebase(
 	Command::new("git")
 		.arg("branch")
 		.arg("-D")
-		.arg(format!("{}", branch))
+		.arg(branch)
 		.current_dir(format!("./{}", base_repo))
 		.spawn()
 		.context(Tokio)?
@@ -106,7 +106,7 @@ async fn rebase_inner(
 	let checkout = Command::new("git")
 		.arg("checkout")
 		.arg("-b")
-		.arg(format!("{}", branch))
+		.arg(branch)
 		.arg(format!("temp/{}", branch))
 		.current_dir(format!("./{}", base_repo))
 		.spawn()
@@ -132,7 +132,7 @@ async fn rebase_inner(
 			Command::new("git")
 				.arg("push")
 				.arg("temp")
-				.arg(format!("{}", branch))
+				.arg(branch)
 				.current_dir(format!("./{}", base_repo))
 				.spawn()
 				.context(Tokio)?

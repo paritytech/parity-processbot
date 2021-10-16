@@ -67,7 +67,7 @@ fn main() -> anyhow::Result<()> {
 		config,
 	}));
 
-	let rt = tokio::runtime::Builder::new()
+	let mut rt = tokio::runtime::Builder::new()
 		.threaded_scheduler()
 		.enable_all()
 		.build()?;
@@ -76,7 +76,6 @@ fn main() -> anyhow::Result<()> {
 		use eventsource::reqwest::Client;
 		use reqwest::Url;
 
-		let webhook_proxy_url = webhook_proxy_url.to_string();
 		let client = Client::new(Url::parse(&webhook_proxy_url).unwrap());
 
 		#[derive(serde::Deserialize)]
@@ -85,7 +84,7 @@ fn main() -> anyhow::Result<()> {
 		}
 		for event in client {
 			let state = app_state.clone();
-			rt.spawn(async move {
+			rt.block_on(async move {
 				let event = event.unwrap();
 
 				if let Ok(payload) =
@@ -93,12 +92,12 @@ fn main() -> anyhow::Result<()> {
 				{
 					let state = &*state.lock().await;
 					let (merge_cancel_outcome, result) =
-						handle_payload(payload.body, &state).await;
+						handle_payload(payload.body, state).await;
 					if let Err(err) = result {
-						handle_error(merge_cancel_outcome, err, &state).await;
+						handle_error(merge_cancel_outcome, err, state).await;
 					}
 				} else {
-					match event.event_type.as_ref().map(|t| t.as_str()) {
+					match event.event_type.as_deref() {
 						Some("ping") => (),
 						Some("ready") => log::info!("Webhook proxy is ready!"),
 						_ => log::info!("Not parsed {:?}", event),
@@ -107,11 +106,8 @@ fn main() -> anyhow::Result<()> {
 			});
 		}
 	} else {
-		rt.spawn(init_server(socket, app_state));
+		rt.block_on(init_server(socket, app_state))?;
 	}
 
-	// Loop in order to prevent the main thread from exiting, since the futures we set up through
-	// rt.spawn are running in tokio's threadpool and thus the main thread will be used to drive the
-	// futures
-	loop {}
+	Ok(())
 }

@@ -1,6 +1,8 @@
+#![forbid(unsafe_code)]
+#![allow(clippy::blocks_in_if_conditions)]
+
 use serde::{Deserialize, Serialize};
 
-pub mod bamboo;
 pub mod cmd;
 mod macros;
 #[macro_use]
@@ -11,10 +13,7 @@ pub mod error;
 #[macro_use]
 pub mod github;
 pub mod github_bot;
-pub mod gitlab_bot;
 pub mod http;
-pub mod matrix;
-pub mod matrix_bot;
 pub mod process;
 pub mod rebase;
 pub mod server;
@@ -41,7 +40,6 @@ pub enum CommentCommand {
 	Merge(MergeCommentCommand),
 	CancelMerge,
 	Rebase,
-	CompareReleaseRequest,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

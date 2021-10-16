@@ -19,7 +19,6 @@ use crate::{
 	Status, PROCESS_INFO_ERROR_TEMPLATE, WEBHOOK_PARSING_ERROR_TEMPLATE,
 };
 
-/// This data gets passed along with each webhook to the webhook handler.
 pub struct AppState {
 	pub db: DB,
 	pub github_bot: GithubBot,
@@ -45,7 +44,6 @@ pub struct MergeRequest {
 	pub companion_children: Option<Vec<MergeRequestBase>>,
 }
 
-/// Check the SHA1 signature on a webhook payload.
 fn verify(
 	secret: &[u8],
 	msg: &[u8],
@@ -68,12 +66,12 @@ pub async fn webhook(
 			.headers()
 			.get("x-hub-signature")
 			.context(Message {
-				msg: format!("Missing x-hub-signature"),
+				msg: "Missing x-hub-signature".to_owned(),
 			})?
 			.to_str()
 			.ok()
 			.context(Message {
-				msg: format!("Error parsing x-hub-signature"),
+				msg: "Error parsing x-hub-signature".to_owned(),
 			})?
 			.to_string();
 
@@ -95,7 +93,7 @@ pub async fn webhook(
 			.body(Body::from(""))
 			.ok()
 			.context(Message {
-				msg: format!("Error building response"),
+				msg: "Error building response".to_owned(),
 			})
 	} else {
 		Response::builder()
@@ -103,12 +101,11 @@ pub async fn webhook(
 			.body(Body::from("Not found."))
 			.ok()
 			.context(Message {
-				msg: format!("Error building response"),
+				msg: "Error building response".to_owned(),
 			})
 	}
 }
 
-/// Parse webhook body and verify.
 pub async fn webhook_inner(
 	mut req: Request<Body>,
 	state: &AppState,
@@ -116,7 +113,7 @@ pub async fn webhook_inner(
 	let mut msg_bytes = vec![];
 	while let Some(item) = req.body_mut().next().await {
 		msg_bytes.extend_from_slice(&item.ok().context(Message {
-			msg: format!("Error getting bytes from request body"),
+			msg: "Error getting bytes from request body".to_owned(),
 		})?);
 	}
 
@@ -124,16 +121,16 @@ pub async fn webhook_inner(
 		.headers()
 		.get("x-hub-signature")
 		.context(Message {
-			msg: format!("Missing x-hub-signature"),
+			msg: "Missing x-hub-signature".to_string(),
 		})?
 		.to_str()
 		.ok()
 		.context(Message {
-			msg: format!("Error parsing x-hub-signature"),
+			msg: "Error parsing x-hub-signature".to_owned(),
 		})?
 		.replace("sha1=", "");
 	let sig_bytes = base16::decode(sig.as_bytes()).ok().context(Message {
-		msg: format!("Error decoding x-hub-signature"),
+		msg: "Error decoding x-hub-signature".to_owned(),
 	})?;
 
 	let AppState { config, .. } = state;
@@ -145,7 +142,7 @@ pub async fn webhook_inner(
 	)
 	.ok()
 	.context(Message {
-		msg: format!("Validation signature does not match"),
+		msg: "Validation signature does not match".to_owned(),
 	})?;
 
 	log::info!("Parsing payload {}", String::from_utf8_lossy(&msg_bytes));
@@ -394,7 +391,7 @@ pub async fn get_latest_statuses_state(
 
 		if latest_statuses
 			.get(&s.context)
-			.map(|(prev_id, _)| prev_id < &(&s).id)
+			.map(|(prev_id, _)| prev_id < &s.id)
 			.unwrap_or(true)
 		{
 			latest_statuses.insert(s.context, (s.id, s.state));
@@ -429,9 +426,7 @@ pub async fn get_latest_checks_state(
 	commit_sha: &str,
 	html_url: &str,
 ) -> Result<Status> {
-	let checks = github_bot
-		.check_runs(&owner, &repo_name, commit_sha)
-		.await?;
+	let checks = github_bot.check_runs(owner, repo_name, commit_sha).await?;
 	log::info!("{} checks: {:?}", html_url, checks);
 
 	// Since Github only considers the latest instance of each check, we should abide by the same
@@ -443,7 +438,7 @@ pub async fn get_latest_checks_state(
 	for c in checks.check_runs {
 		if latest_checks
 			.get(&c.name)
-			.map(|(prev_id, _, _)| prev_id < &(&c).id)
+			.map(|(prev_id, _, _)| prev_id < &c.id)
 			.unwrap_or(true)
 		{
 			latest_checks.insert(c.name, (c.id, c.status, c.conclusion));
@@ -470,8 +465,7 @@ pub async fn get_latest_checks_state(
 	)
 }
 
-/// Check that no commit has been pushed since the merge request was received.  Query checks and
-/// statuses and if they are green, attempt merge.
+/// Act on a status' outcome to decide on whether a PR relating to this SHA is ready to be merged
 async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 	let AppState { db, github_bot, .. } = state;
 
@@ -547,7 +541,7 @@ async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 			return Ok(());
 		}
 
-		check_merge_is_allowed(state, &pr, &requested_by, None, &vec![]).await?;
+		check_merge_is_allowed(state, &pr, &requested_by, None, &[]).await?;
 
 		if let Some((parent_sha, parent)) = parent.as_ref() {
 			let parent_pr = github_bot
@@ -557,7 +551,7 @@ async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 			// Check if this PR is indeed still a companion of the parent (the parent's description might
 			// have been edited since this PR was registered as a companion)
 			let is_still_companion = parent_pr
-				.parse_all_companions(&vec![])
+				.parse_all_companions(&[])
 				.map(|companions| companions
 					.iter()
 					.any(|(html_url, _, _, _)| {
@@ -572,7 +566,7 @@ async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 						&parent_pr,
 						&requested_by,
 						None,
-						&vec![]
+						&[]
 					)
 					.await?;
 
@@ -616,7 +610,7 @@ async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 
 						if let Err(cleanup_err) = cleanup_pr(
 							state,
-							&parent_sha,
+							parent_sha,
 							&parent_pr.base.repo.owner.login,
 							&parent_pr.base.repo.name,
 							parent_pr.number,
@@ -716,7 +710,7 @@ async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 			}
 		}
 
-		check_merge_is_allowed(state, &pr, &requested_by, None, &vec![]).await?;
+		check_merge_is_allowed(state, &pr, &requested_by, None, &[]).await?;
 
 		if let Err(err) = merge(state, &pr, &requested_by, None).await? {
 			return match err {
@@ -789,15 +783,14 @@ async fn handle_command(
 				number: pr.number,
 				html_url: pr.html_url.to_owned(),
 				requested_by: requested_by.to_owned(),
-				companion_children: pr.parse_all_mr_base(&vec![]),
+				companion_children: pr.parse_all_mr_base(&[]),
 			};
 
-			check_merge_is_allowed(state, &pr, requested_by, None, &vec![])
-				.await?;
+			check_merge_is_allowed(state, pr, requested_by, None, &[]).await?;
 
 			match cmd {
 				MergeCommentCommand::Normal => {
-					if ready_to_merge(github_bot, &pr).await? {
+					if ready_to_merge(github_bot, pr).await? {
 						match merge(state, pr, requested_by, None).await? {
 							// If the merge failure will be solved later, then register the PR in the database so that
 							// it'll eventually resume processing when later statuses arrive
@@ -911,60 +904,6 @@ async fn handle_command(
 			)
 			.await
 		}
-		CommentCommand::CompareReleaseRequest => {
-			match pr.base.repo.name.as_str() {
-				"polkadot" => {
-					let rel = github_bot
-						.latest_release(
-							&pr.base.repo.owner.login,
-							&pr.base.repo.name,
-						)
-						.await?;
-					let release_tag = github_bot
-						.tag(
-							&pr.base.repo.owner.login,
-							&pr.base.repo.name,
-							&rel.tag_name,
-						)
-						.await?;
-					let release_substrate_commit = github_bot
-						.substrate_commit_from_polkadot_commit(
-							&release_tag.object.sha,
-						)
-						.await?;
-					let branch_substrate_commit = github_bot
-						.substrate_commit_from_polkadot_commit(&pr.head.sha)
-						.await?;
-					let link = github_bot.diff_url(
-						&pr.base.repo.owner.login,
-						"substrate",
-						&release_substrate_commit,
-						&branch_substrate_commit,
-					);
-					log::info!("Posting link to substrate diff: {}", &link);
-					if let Err(err) = github_bot
-						.create_issue_comment(
-							&pr.base.repo.owner.login,
-							&pr.base.repo.name,
-							pr.number,
-							&link,
-						)
-						.await
-					{
-						log::error!(
-							"Failed to post comment on {} due to {}",
-							pr.html_url,
-							err
-						);
-					}
-					Ok(())
-				}
-				_ => Err(Error::Message {
-					msg: "This command can't be requested from this repository"
-						.to_string(),
-				}),
-			}
-		}
 	}
 }
 
@@ -991,10 +930,9 @@ async fn handle_comment(
 	} = state;
 
 	let (owner, repo, pr) = match async {
-		let owner =
-			GithubBot::owner_from_html_url(html_url).context(Message {
-				msg: format!("Failed parsing owner in url: {}", html_url),
-			})?;
+		let owner = owner_from_html_url(html_url).context(Message {
+			msg: format!("Failed parsing owner in url: {}", html_url),
+		})?;
 
 		let repo = repo_url.rsplit('/').next().context(Message {
 			msg: format!("Failed parsing repo name in url: {}", repo_url),
@@ -1018,7 +956,7 @@ async fn handle_comment(
 			delay_for(Duration::from_millis(4096)).await;
 		};
 
-		let pr = github_bot.pull_request(owner, &repo, number).await?;
+		let pr = github_bot.pull_request(owner, repo, number).await?;
 
 		Ok((owner, repo, pr))
 	}
@@ -1042,16 +980,16 @@ async fn handle_comment(
 	(sha, result)
 }
 
-/// Check if the pull request is mergeable and approved.
-/// Errors related to core-devs and substrateteamleads API requests are ignored
-/// because the merge might succeed regardless of them, thus it does not make
-/// sense to fail this scenario completely if the request fails for some reason.
+/// Check if the pull request is mergeable and is able to meet the approval criteria.
+/// Errors related to core-devs and substrateteamleads API requests are not propagated as actual
+/// errors because the merge might succeed regardless of them, thus it does not make sense to fail
+/// this scenario completely if those request fail for some reason.
 pub async fn check_merge_is_allowed(
 	state: &AppState,
 	pr: &PullRequest,
 	requested_by: &str,
 	min_approvals_required: Option<usize>,
-	companion_reference_trail: &Vec<(String, String)>,
+	companion_reference_trail: &[(String, String)],
 ) -> Result<MergeAllowedOutcome> {
 	let AppState {
 		github_bot, config, ..
@@ -1076,8 +1014,8 @@ pub async fn check_merge_is_allowed(
 
 	check_all_companions_are_mergeable(
 		state,
-		&pr,
-		&requested_by,
+		pr,
+		requested_by,
 		companion_reference_trail,
 	)
 	.await?;
@@ -1301,10 +1239,6 @@ pub async fn check_merge_is_allowed(
 	Ok(MergeAllowedOutcome::GrantApprovalForRole(role))
 }
 
-/// Query checks and statuses.
-///
-/// This function is used when a merge request is first received, to decide whether to store the
-/// request and wait for checks -- if so they will later be handled by `checks_and_status`.
 pub async fn ready_to_merge(
 	github_bot: &GithubBot,
 	pr: &PullRequest,
@@ -1342,7 +1276,6 @@ pub async fn ready_to_merge(
 	}
 }
 
-/// Create a merge request object.
 async fn register_merge_request(
 	state: &AppState,
 	sha: &str,
@@ -1454,7 +1387,7 @@ pub fn cleanup_pr(
 	}
 
 	// Sanity-check: the key should have actually been deleted
-	if let Some(_) = db.get(key_to_guarantee_deleted).context(Db)? {
+	if db.get(key_to_guarantee_deleted).context(Db)?.is_some() {
 		return Err(Error::Message {
 			msg: format!(
 				"Key {} was not deleted from the database",
@@ -1466,9 +1399,7 @@ pub fn cleanup_pr(
 	Ok(())
 }
 
-/// Send a merge request.
-/// It might recursively call itself when attempting to solve a merge error after something
-/// meaningful happens.
+/// This function might recursively call itself when attempting to solve a recoverable merge error.
 #[async_recursion]
 pub async fn merge(
 	state: &AppState,
@@ -1587,7 +1518,7 @@ pub async fn merge(
 			pr,
 			requested_by,
 			Some(min_approvals_required),
-			&vec![]
+			&[]
 		)
 		.await {
 			Ok(MergeAllowedOutcome::Allowed) => None,
@@ -1725,37 +1656,39 @@ pub async fn handle_error(
 	log::info!("handle_error: {}", err);
 	match err {
 		Error::MergeFailureWillBeSolvedLater { .. } => (),
-		err => match err {
-			Error::WithIssue {
+		err => {
+			if let Error::WithIssue {
 				source,
 				issue: (owner, repo, number),
 				..
-			} => match *source {
-				Error::MergeFailureWillBeSolvedLater { .. } => (),
-				err => {
-					let msg = {
-						let description = format_error(err);
-						let caption = match merge_cancel_outcome {
-							MergeCancelOutcome::ShaNotFound  => "",
-							MergeCancelOutcome::WasCancelled => "Merge cancelled due to error.",
-							MergeCancelOutcome::WasNotCancelled => "Some error happened, but the merge was not cancelled (likely due to a bug).",
+			} = err
+			{
+				match *source {
+					Error::MergeFailureWillBeSolvedLater { .. } => (),
+					err => {
+						let msg = {
+							let description = format_error(err);
+							let caption = match merge_cancel_outcome {
+								MergeCancelOutcome::ShaNotFound  => "",
+								MergeCancelOutcome::WasCancelled => "Merge cancelled due to error.",
+								MergeCancelOutcome::WasNotCancelled => "Some error happened, but the merge was not cancelled (likely due to a bug).",
+							};
+							format!("{} Error: {}", caption, description)
 						};
-						format!("{} Error: {}", caption, description)
-					};
-					if let Err(comment_post_err) = state
-						.github_bot
-						.create_issue_comment(&owner, &repo, number, &msg)
-						.await
-					{
-						log::error!(
-							"Error posting comment: {}",
-							comment_post_err
-						);
+						if let Err(comment_post_err) = state
+							.github_bot
+							.create_issue_comment(&owner, &repo, number, &msg)
+							.await
+						{
+							log::error!(
+								"Error posting comment: {}",
+								comment_post_err
+							);
+						}
 					}
 				}
-			},
-			_ => (),
-		},
+			}
+		}
 	}
 }
 
@@ -1780,7 +1713,7 @@ async fn get_match_from_registered_companions(
 				.pull_request(&child.owner, &child.repo, child.number)
 				.await?;
 			// TODO: consider that a PR could be a companion of multiple parents
-			if &pr.head.sha == sha {
+			if pr.head.sha == sha {
 				log::info!(
 					"Matched pull request {} for sha {} with parent {:?}",
 					pr.html_url,

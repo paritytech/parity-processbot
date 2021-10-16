@@ -1,13 +1,16 @@
 use std::borrow::Cow;
 use std::time::SystemTime;
 
-use crate::{error, github, Result};
+use crate::{
+	error::{self, Error},
+	github, Result,
+};
 
 use chrono::{DateTime, Duration, Utc};
 use hyperx::header::TypedHeaders;
 use reqwest::{header, IntoUrl, Method, RequestBuilder, Response};
 use serde::Serialize;
-use snafu::{OptionExt, ResultExt};
+use snafu::ResultExt;
 
 #[derive(Default)]
 pub struct Client {
@@ -67,8 +70,6 @@ macro_rules! impl_methods_with_body {
 	}
 }
 
-/// Checks the response's status and maps into an `Err` branch if
-/// not successful.
 async fn handle_response(response: Response) -> Result<Response> {
 	log::debug!("response: {:?}", &response);
 
@@ -92,7 +93,6 @@ async fn handle_response(response: Response) -> Result<Response> {
 	}
 }
 
-/// HTTP util methods.
 impl Client {
 	pub fn new(
 		private_key: Vec<u8>,
@@ -100,7 +100,7 @@ impl Client {
 		github_app_id: usize,
 	) -> Self {
 		Self {
-			private_key: private_key.into(),
+			private_key,
 			installation_login,
 			github_app_id,
 			..Self::default()
@@ -150,10 +150,19 @@ impl Client {
 			))
 			.await?;
 
-		let installation = installations
+		let installation = if let Some(installation) = installations
 			.iter()
 			.find(|inst| inst.account.login == self.installation_login)
-			.context(error::MissingData)?;
+		{
+			installation
+		} else {
+			return Err(Error::Message {
+				msg: format!(
+					"Installation for login {} could not be found",
+					self.installation_login
+				),
+			});
+		};
 
 		let install_token: github::InstallationToken = self
 			.jwt_post(
@@ -172,9 +181,7 @@ impl Client {
 			.map_or(default_exp, |t| t.parse().unwrap_or(default_exp));
 		let token = install_token.token;
 
-		{
-			*TOKEN_CACHE.lock() = Some((expiry.clone(), token.clone()))
-		};
+		*TOKEN_CACHE.lock() = Some((expiry, token.clone()));
 
 		Ok(token)
 	}
@@ -309,28 +316,6 @@ impl Client {
 		Ok(res)
 	}
 
-	/// Get a single entry from a resource in GitHub. TODO fix
-	/*
-	pub async fn get_with_params<'b, I, T, P>(
-		&self,
-		url: I,
-		params: P,
-	) -> Result<T>
-	where
-		I: Into<Cow<'b, str>> + Clone,
-		T: serde::de::DeserializeOwned,
-		P: Serialize + Clone,
-	{
-		self.get_response(url, params)
-			.await?
-			.json::<T>()
-			.await
-			.context(error::Http)
-	}
-	*/
-
-	//	/// Sends a `GET` request to `url`, supplying the relevant headers for
-	//	/// authenication and feature detection.
 	pub async fn get_response<'b, I, P>(
 		&self,
 		url: I,
