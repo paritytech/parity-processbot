@@ -141,7 +141,8 @@ Events:
 
 The bot requires some environment variables listed in
 [config.rs](./src/config.rs). They can, optionally, be set through an `.env`
-file which should be placed at the root of this repository.
+file which should be placed at the root of this repository. We provide an
+[example .env file](./.env.example) which can be used as a starting point.
 
 During **development**, it's handy to use a [smee.io](https://smee.io/) proxy,
 through the `WEBHOOK_PROXY_URL` environment variable, for receiving Github
