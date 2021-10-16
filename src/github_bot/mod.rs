@@ -4,10 +4,7 @@ use futures_util::TryFutureExt;
 pub mod issue;
 pub mod project;
 pub mod pull_request;
-pub mod release;
-pub mod repository;
 pub mod review;
-pub mod tag;
 pub mod team;
 
 pub struct GithubBot {
@@ -16,13 +13,7 @@ pub struct GithubBot {
 
 impl GithubBot {
 	pub(crate) const BASE_URL: &'static str = "https://api.github.com";
-	pub(crate) const BASE_HTML_URL: &'static str = "https://github.com";
 
-	/// Creates a new instance of `GithubBot` from a GitHub organization defined
-	/// by `org`, and a GitHub authenication key defined by `auth_key`.
-	/// # Errors
-	/// If the organization does not exist or `auth_key` does not have sufficent
-	/// permissions.
 	pub fn new(
 		private_key: impl Into<Vec<u8>>,
 		installation_login: &str,
@@ -37,10 +28,6 @@ impl GithubBot {
 		Ok(Self { client })
 	}
 
-	pub fn owner_from_html_url(url: &str) -> Option<&str> {
-		url.split("/").skip(3).next()
-	}
-
 	pub async fn installation_repositories(
 		&self,
 	) -> Result<InstallationRepositories> {
@@ -49,7 +36,6 @@ impl GithubBot {
 			.await
 	}
 
-	/// Returns statuses for a reference.
 	pub async fn status(
 		&self,
 		owner: &str,
@@ -66,7 +52,6 @@ impl GithubBot {
 		self.client.get(url).await
 	}
 
-	/// Returns check runs associated for a reference.
 	pub async fn check_runs(
 		&self,
 		owner: &str,
@@ -83,7 +68,6 @@ impl GithubBot {
 		self.client.get(url).await
 	}
 
-	/// Returns the contents of a file in a repository.
 	pub async fn contents(
 		&self,
 		owner: &str,
@@ -102,25 +86,6 @@ impl GithubBot {
 		self.client.get(url).await
 	}
 
-	/// Returns a link to a diff.
-	pub fn diff_url(
-		&self,
-		owner: &str,
-		repo_name: &str,
-		base: &str,
-		head: &str,
-	) -> String {
-		format!(
-			"{base_url}/{owner}/{repo}/compare/{base}...{head}",
-			base_url = Self::BASE_HTML_URL,
-			owner = owner,
-			repo = repo_name,
-			base = base,
-			head = head,
-		)
-	}
-
-	/// Returns true if the user is a member of the org.
 	pub async fn org_member(&self, org: &str, username: &str) -> Result<bool> {
 		let url = &format!(
 			"{base_url}/orgs/{org}/members/{username}",

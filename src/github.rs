@@ -481,3 +481,7 @@ pub fn parse_repository_full_name(full_name: &str) -> Option<(String, String)> {
 		.flatten()
 		.flatten()
 }
+
+pub fn owner_from_html_url(url: &str) -> Option<&str> {
+	url.split("/").skip(3).next()
+}

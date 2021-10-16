@@ -911,60 +911,6 @@ async fn handle_command(
 			)
 			.await
 		}
-		CommentCommand::CompareReleaseRequest => {
-			match pr.base.repo.name.as_str() {
-				"polkadot" => {
-					let rel = github_bot
-						.latest_release(
-							&pr.base.repo.owner.login,
-							&pr.base.repo.name,
-						)
-						.await?;
-					let release_tag = github_bot
-						.tag(
-							&pr.base.repo.owner.login,
-							&pr.base.repo.name,
-							&rel.tag_name,
-						)
-						.await?;
-					let release_substrate_commit = github_bot
-						.substrate_commit_from_polkadot_commit(
-							&release_tag.object.sha,
-						)
-						.await?;
-					let branch_substrate_commit = github_bot
-						.substrate_commit_from_polkadot_commit(&pr.head.sha)
-						.await?;
-					let link = github_bot.diff_url(
-						&pr.base.repo.owner.login,
-						"substrate",
-						&release_substrate_commit,
-						&branch_substrate_commit,
-					);
-					log::info!("Posting link to substrate diff: {}", &link);
-					if let Err(err) = github_bot
-						.create_issue_comment(
-							&pr.base.repo.owner.login,
-							&pr.base.repo.name,
-							pr.number,
-							&link,
-						)
-						.await
-					{
-						log::error!(
-							"Failed to post comment on {} due to {}",
-							pr.html_url,
-							err
-						);
-					}
-					Ok(())
-				}
-				_ => Err(Error::Message {
-					msg: "This command can't be requested from this repository"
-						.to_string(),
-				}),
-			}
-		}
 	}
 }
 
@@ -991,10 +937,9 @@ async fn handle_comment(
 	} = state;
 
 	let (owner, repo, pr) = match async {
-		let owner =
-			GithubBot::owner_from_html_url(html_url).context(Message {
-				msg: format!("Failed parsing owner in url: {}", html_url),
-			})?;
+		let owner = owner_from_html_url(html_url).context(Message {
+			msg: format!("Failed parsing owner in url: {}", html_url),
+		})?;
 
 		let repo = repo_url.rsplit('/').next().context(Message {
 			msg: format!("Failed parsing repo name in url: {}", repo_url),

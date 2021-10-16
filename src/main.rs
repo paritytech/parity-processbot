@@ -67,7 +67,7 @@ fn main() -> anyhow::Result<()> {
 		config,
 	}));
 
-	let rt = tokio::runtime::Builder::new()
+	let mut rt = tokio::runtime::Builder::new()
 		.threaded_scheduler()
 		.enable_all()
 		.build()?;
@@ -85,7 +85,7 @@ fn main() -> anyhow::Result<()> {
 		}
 		for event in client {
 			let state = app_state.clone();
-			rt.spawn(async move {
+			rt.block_on(async move {
 				let event = event.unwrap();
 
 				if let Ok(payload) =
@@ -107,11 +107,8 @@ fn main() -> anyhow::Result<()> {
 			});
 		}
 	} else {
-		rt.spawn(init_server(socket, app_state));
+		rt.block_on(init_server(socket, app_state))?;
 	}
 
-	// Loop in order to prevent the main thread from exiting, since the futures we set up through
-	// rt.spawn are running in tokio's threadpool and thus the main thread will be used to drive the
-	// futures
-	loop {}
+	Ok(())
 }

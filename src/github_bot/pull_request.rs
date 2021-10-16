@@ -1,20 +1,8 @@
-use crate::{error, github, Result};
-
-use snafu::{OptionExt, ResultExt};
+use crate::{github, Result};
 
 use super::GithubBot;
 
 impl GithubBot {
-	/// Returns all of the pull requests in a single repository.
-	pub async fn pull_requests(
-		&self,
-		repo: &github::Repository,
-	) -> Result<Vec<github::PullRequest>> {
-		let url = repo.pulls_url.as_ref().context(error::MissingData)?;
-		self.client.get_all(url.replace("{/number}", "")).await
-	}
-
-	/// Returns a single pull request.
 	pub async fn pull_request(
 		&self,
 		owner: &str,
@@ -50,40 +38,6 @@ impl GithubBot {
 			.map(|v| v.first().cloned())
 	}
 
-	/// Creates a new pull request to merge `head` into `base`.
-	pub async fn create_pull_request<A>(
-		&self,
-		owner: &str,
-		repo_name: A,
-		title: A,
-		body: A,
-		head: A,
-		base: A,
-	) -> Result<github::PullRequest>
-	where
-		A: AsRef<str>,
-	{
-		let url = format!(
-			"{base_url}/repos/{owner}/{repo}/pulls",
-			base_url = Self::BASE_URL,
-			owner = owner,
-			repo = repo_name.as_ref(),
-		);
-		let params = serde_json::json!({
-			"title": title.as_ref(),
-			"body": body.as_ref(),
-			"head": head.as_ref(),
-			"base": base.as_ref(),
-		});
-		self.client
-			.post_response(&url, &params)
-			.await?
-			.json()
-			.await
-			.context(error::Http)
-	}
-
-	/// Merges a pull request.
 	pub async fn merge_pull_request(
 		&self,
 		owner: &str,
@@ -103,28 +57,5 @@ impl GithubBot {
 			"merge_method": "squash"
 		});
 		self.client.put_response(&url, &params).await.map(|_| ())
-	}
-
-	/// Closes a pull request.
-	pub async fn close_pull_request<A>(
-		&self,
-		owner: &str,
-		repo_name: A,
-		pull_number: i64,
-	) -> Result<()>
-	where
-		A: AsRef<str>,
-	{
-		let url = format!(
-			"{base_url}/repos/{owner}/{repo}/pulls/{pull_number}",
-			base_url = Self::BASE_URL,
-			owner = owner,
-			repo = repo_name.as_ref(),
-			pull_number = pull_number
-		);
-		self.client
-			.patch_response(&url, &serde_json::json!({ "state": "closed" }))
-			.await
-			.map(|_| ())
 	}
 }
