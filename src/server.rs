@@ -92,8 +92,6 @@ impl std::error::Error for Error {
 	}
 }
 
-/// Initializes the metrics context, and starts an HTTP server
-/// to serve metrics.
 pub async fn init_server(
 	addr: SocketAddr,
 	state: Arc<Mutex<AppState>>,

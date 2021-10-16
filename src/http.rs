@@ -70,8 +70,6 @@ macro_rules! impl_methods_with_body {
 	}
 }
 
-/// Checks the response's status and maps into an `Err` branch if
-/// not successful.
 async fn handle_response(response: Response) -> Result<Response> {
 	log::debug!("response: {:?}", &response);
 
@@ -95,7 +93,6 @@ async fn handle_response(response: Response) -> Result<Response> {
 	}
 }
 
-/// HTTP util methods.
 impl Client {
 	pub fn new(
 		private_key: Vec<u8>,
@@ -319,28 +316,6 @@ impl Client {
 		Ok(res)
 	}
 
-	/// Get a single entry from a resource in GitHub. TODO fix
-	/*
-	pub async fn get_with_params<'b, I, T, P>(
-		&self,
-		url: I,
-		params: P,
-	) -> Result<T>
-	where
-		I: Into<Cow<'b, str>> + Clone,
-		T: serde::de::DeserializeOwned,
-		P: Serialize + Clone,
-	{
-		self.get_response(url, params)
-			.await?
-			.json::<T>()
-			.await
-			.context(error::Http)
-	}
-	*/
-
-	//	/// Sends a `GET` request to `url`, supplying the relevant headers for
-	//	/// authenication and feature detection.
 	pub async fn get_response<'b, I, P>(
 		&self,
 		url: I,

@@ -50,45 +50,37 @@ pub enum Error {
 		msg: String,
 	},
 
-	/// An error occurred with an integration service (e.g. GitHub).
 	#[snafu(display("Status code: {}\nBody:\n{:#?}", status, body,))]
 	Response {
 		status: reqwest::StatusCode,
 		body: serde_json::Value,
 	},
 
-	/// An error occurred while sending or receiving a HTTP request or response
-	/// respectively.
 	#[snafu(display("Http: {}", source))]
 	Http {
 		source: reqwest::Error,
 	},
 
-	/// An error occurred in a Tokio call.
 	#[snafu(display("Tokio: {}", source))]
 	Tokio {
 		source: tokio::io::Error,
 	},
 
-	/// An error occurred while retrieving or setting values in Rocks DB.
 	#[snafu(display("Db: {}", source))]
 	Db {
 		source: rocksdb::Error,
 	},
 
-	/// An error occurred while parsing or serializing JSON.
 	#[snafu(display("Utf8: {}", source))]
 	Utf8 {
 		source: std::string::FromUtf8Error,
 	},
 
-	/// An error occurred while parsing or serializing JSON.
 	#[snafu(display("Json: {}", source))]
 	Json {
 		source: serde_json::Error,
 	},
 
-	/// An error occurred while parsing TOML.
 	#[snafu(display("Base64: {}", source))]
 	Base64 {
 		source: base64::DecodeError,

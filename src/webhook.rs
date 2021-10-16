@@ -19,7 +19,6 @@ use crate::{
 	Status, PROCESS_INFO_ERROR_TEMPLATE, WEBHOOK_PARSING_ERROR_TEMPLATE,
 };
 
-/// This data gets passed along with each webhook to the webhook handler.
 pub struct AppState {
 	pub db: DB,
 	pub github_bot: GithubBot,
@@ -45,7 +44,6 @@ pub struct MergeRequest {
 	pub companion_children: Option<Vec<MergeRequestBase>>,
 }
 
-/// Check the SHA1 signature on a webhook payload.
 fn verify(
 	secret: &[u8],
 	msg: &[u8],
@@ -108,7 +106,6 @@ pub async fn webhook(
 	}
 }
 
-/// Parse webhook body and verify.
 pub async fn webhook_inner(
 	mut req: Request<Body>,
 	state: &AppState,
@@ -468,8 +465,7 @@ pub async fn get_latest_checks_state(
 	)
 }
 
-/// Check that no commit has been pushed since the merge request was received.  Query checks and
-/// statuses and if they are green, attempt merge.
+/// Act on a status' outcome to decide on whether a PR relating to this SHA is ready to be merged
 async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 	let AppState { db, github_bot, .. } = state;
 
@@ -984,10 +980,10 @@ async fn handle_comment(
 	(sha, result)
 }
 
-/// Check if the pull request is mergeable and approved.
-/// Errors related to core-devs and substrateteamleads API requests are ignored
-/// because the merge might succeed regardless of them, thus it does not make
-/// sense to fail this scenario completely if the request fails for some reason.
+/// Check if the pull request is mergeable and is able to meet the approval criteria.
+/// Errors related to core-devs and substrateteamleads API requests are not propagated as actual
+/// errors because the merge might succeed regardless of them, thus it does not make sense to fail
+/// this scenario completely if those request fail for some reason.
 pub async fn check_merge_is_allowed(
 	state: &AppState,
 	pr: &PullRequest,
@@ -1243,10 +1239,6 @@ pub async fn check_merge_is_allowed(
 	Ok(MergeAllowedOutcome::GrantApprovalForRole(role))
 }
 
-/// Query checks and statuses.
-///
-/// This function is used when a merge request is first received, to decide whether to store the
-/// request and wait for checks -- if so they will later be handled by `checks_and_status`.
 pub async fn ready_to_merge(
 	github_bot: &GithubBot,
 	pr: &PullRequest,
@@ -1284,7 +1276,6 @@ pub async fn ready_to_merge(
 	}
 }
 
-/// Create a merge request object.
 async fn register_merge_request(
 	state: &AppState,
 	sha: &str,
@@ -1408,9 +1399,7 @@ pub fn cleanup_pr(
 	Ok(())
 }
 
-/// Send a merge request.
-/// It might recursively call itself when attempting to solve a merge error after something
-/// meaningful happens.
+/// This function might recursively call itself when attempting to solve a recoverable merge error.
 #[async_recursion]
 pub async fn merge(
 	state: &AppState,
