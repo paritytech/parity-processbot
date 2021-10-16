@@ -100,7 +100,7 @@ impl Client {
 		github_app_id: usize,
 	) -> Self {
 		Self {
-			private_key: private_key.into(),
+			private_key,
 			installation_login,
 			github_app_id,
 			..Self::default()
@@ -172,9 +172,7 @@ impl Client {
 			.map_or(default_exp, |t| t.parse().unwrap_or(default_exp));
 		let token = install_token.token;
 
-		{
-			*TOKEN_CACHE.lock() = Some((expiry.clone(), token.clone()))
-		};
+		*TOKEN_CACHE.lock() = Some((expiry, token.clone()));
 
 		Ok(token)
 	}

@@ -122,5 +122,5 @@ pub async fn init_server(
 		.serve(service)
 		.boxed()
 		.await
-		.context(format!("Server error"))
+		.context("Server error".to_owned())
 }

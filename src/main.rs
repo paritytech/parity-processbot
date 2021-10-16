@@ -76,7 +76,6 @@ fn main() -> anyhow::Result<()> {
 		use eventsource::reqwest::Client;
 		use reqwest::Url;
 
-		let webhook_proxy_url = webhook_proxy_url.to_string();
 		let client = Client::new(Url::parse(&webhook_proxy_url).unwrap());
 
 		#[derive(serde::Deserialize)]
@@ -93,12 +92,12 @@ fn main() -> anyhow::Result<()> {
 				{
 					let state = &*state.lock().await;
 					let (merge_cancel_outcome, result) =
-						handle_payload(payload.body, &state).await;
+						handle_payload(payload.body, state).await;
 					if let Err(err) = result {
-						handle_error(merge_cancel_outcome, err, &state).await;
+						handle_error(merge_cancel_outcome, err, state).await;
 					}
 				} else {
-					match event.event_type.as_ref().map(|t| t.as_str()) {
+					match event.event_type.as_deref() {
 						Some("ping") => (),
 						Some("ready") => log::info!("Webhook proxy is ready!"),
 						_ => log::info!("Not parsed {:?}", event),

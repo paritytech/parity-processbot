@@ -17,11 +17,11 @@ pub enum CommandMessage<'a> {
 	Configured(CommandMessageConfiguration<'a>),
 }
 
-pub async fn run_cmd<'a, Cmd, Dir>(
+pub async fn run_cmd<Cmd, Dir>(
 	cmd: Cmd,
 	args: &[&str],
 	dir: Dir,
-	logging: CommandMessage<'a>,
+	logging: CommandMessage<'_>,
 ) -> Result<Output>
 where
 	Cmd: AsRef<OsStr> + Display,
@@ -37,10 +37,10 @@ where
 	handle_cmd_result(cmd, result, &logging)
 }
 
-pub async fn run_cmd_in_cwd<'a, Cmd>(
+pub async fn run_cmd_in_cwd<Cmd>(
 	cmd: Cmd,
 	args: &[&str],
-	logging: CommandMessage<'a>,
+	logging: CommandMessage<'_>,
 ) -> Result<Output>
 where
 	Cmd: AsRef<OsStr> + Display,
@@ -55,11 +55,11 @@ where
 	handle_cmd_result(cmd, result, &logging)
 }
 
-pub async fn run_cmd_with_output<'a, Cmd, Dir>(
+pub async fn run_cmd_with_output<Cmd, Dir>(
 	cmd: Cmd,
 	args: &[&str],
 	dir: Dir,
-	logging: CommandMessage<'a>,
+	logging: CommandMessage<'_>,
 ) -> Result<Output>
 where
 	Cmd: AsRef<OsStr> + Display,

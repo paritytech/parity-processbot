@@ -1,3 +1,6 @@
+#![forbid(unsafe_code)]
+#![allow(clippy::blocks_in_if_conditions)]
+
 use serde::{Deserialize, Serialize};
 
 pub mod cmd;

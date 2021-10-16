@@ -28,11 +28,11 @@ pub struct PullRequest {
 impl PullRequest {
 	pub fn parse_all_companions(
 		&self,
-		companion_reference_trail: &Vec<(String, String)>,
+		companion_reference_trail: &[(String, String)],
 	) -> Option<Vec<IssueDetailsWithRepositoryURL>> {
 		let mut next_trail: Vec<(String, String)> =
 			Vec::with_capacity(companion_reference_trail.len() + 1);
-		next_trail.extend_from_slice(&companion_reference_trail[..]);
+		next_trail.extend_from_slice(companion_reference_trail);
 		next_trail.push((
 			self.base.repo.owner.login.to_owned(),
 			self.base.repo.name.to_owned(),
@@ -44,7 +44,7 @@ impl PullRequest {
 
 	pub fn parse_all_mr_base(
 		&self,
-		companion_reference_trail: &Vec<(String, String)>,
+		companion_reference_trail: &[(String, String)],
 	) -> Option<Vec<MergeRequestBase>> {
 		self.parse_all_companions(companion_reference_trail)
 			.map(|companions| {
@@ -408,9 +408,7 @@ impl HasIssueDetails for DetectUserCommentPullRequest {
 					..
 				}) => None,
 				_ => {
-					if parse_bot_comment_from_text(body).is_none() {
-						return None;
-					}
+					parse_bot_comment_from_text(body)?;
 
 					if let Some(DetectUserCommentPullRequestRepository {
 						name: Some(name),
@@ -483,5 +481,5 @@ pub fn parse_repository_full_name(full_name: &str) -> Option<(String, String)> {
 }
 
 pub fn owner_from_html_url(url: &str) -> Option<&str> {
-	url.split("/").skip(3).next()
+	url.split('/').nth(3)
 }
