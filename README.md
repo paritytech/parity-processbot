@@ -137,18 +137,48 @@ Events:
 - Status
 - Workflow job
 
-# Development
+# Local development
 
-The bot requires some environment variables listed in
-[config.rs](./src/config.rs). They can, optionally, be set through an `.env`
-file which should be placed at the root of this repository. We provide an
-[example .env file](./.env.example) which can be used as a starting point.
+This project is a standard Rust project with some notable requirements.
+
+## Requiremnets
+
+Before you can generate a debug or release binary, we have some library
+requirements to install.
+
+```sh
+$ sudo apt install \
+    libssl-dev \
+    libclang-dev
+```
+
+## Environment variables
+
+This bot relies on the crate `dotenv`, which requires a `.env` file to
+exist in the root of the project that the binary runs in. These environment
+variables are listed in [config.rs](./src/config.rs).
+
+Copy over the example environment file to suite your needs like so
+
+```
+$ cp .env.example .env
+```
 
 During **development**, it's handy to use a [smee.io](https://smee.io/) proxy,
 through the `WEBHOOK_PROXY_URL` environment variable, for receiving Github
 Webhook Events in your local instance of processbot.
 
-After setting up the environment, run: `cargo run`
+Then, like any typical Rust project, we can generate our binary via Cargo.
+
+```sh
+$ cargo build
+```
+
+followed by
+
+```sh
+$ cargo run
+```
 
 # Deployment
 
