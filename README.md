@@ -169,13 +169,9 @@ The deployment's status can be followed through
 [Gitlab Pipelines on the parity-processbot mirror](https://gitlab.parity.io/parity/parity-processbot/-/pipelines)
 ([example](https://gitlab.parity.io/parity/parity-processbot/-/jobs/867102)).
 
-## Notes
-
-- All of the relevant configuration for deployment lives in the
-  [./kubernetes/processbot](./kubernetes/processbot) folder. The environment
-  variables for both staging and production are in `values*.yml`; if you add
-  one, it also needs to be added to `templates/processbot.yaml`.
- - Secrets are managed through Gitlab.
+All of the relevant configuration for deployment lives in the [./helm](./helm)
+folder. The values for each specific environment are in `values-*.yml`. If you
+add a value, it needs to be used in `templates/processbot.yaml`.
 
 # FAQ
 

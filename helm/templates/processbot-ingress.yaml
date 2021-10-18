@@ -4,7 +4,7 @@ apiVersion: extensions/v1beta1
 kind: Ingress
 metadata:
   name: processbot-ingress
-  namespace: {{ .Values.processbot.config.KUBE_NAMESPACE }}
+  namespace: {{ .Values.app.KUBE_NAMESPACE }}
   labels:
     app: parity-processbot
   annotations:
@@ -17,7 +17,7 @@ spec:
       - path: /
         backend:
           serviceName: parity-processbot
-          servicePort: {{ .Values.processbot.config.WEBHOOK_PORT }}
+          servicePort: {{ .Values.app.WEBHOOK_PORT }}
   tls:
   - hosts:
     - {{ .Values.ingress.domain }}
