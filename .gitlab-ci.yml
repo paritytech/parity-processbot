@@ -104,15 +104,6 @@ dockerize-processbot:
   image:                           paritytech/kubetools:3.5.3
   interruptible:                   true
   secrets:
-    BAMBOO_TOKEN:
-      vault:                       cicd/gitlab/$CI_PROJECT_PATH/BAMBOO_TOKEN@kv
-      file:                        false
-    GITLAB_PRIVATE_TOKEN:
-      vault:                       cicd/gitlab/$CI_PROJECT_PATH/GITLAB_PRIVATE_TOKEN@kv
-      file:                        false
-    MATRIX_ACCESS_TOKEN:
-      vault:                       cicd/gitlab/$CI_PROJECT_PATH/MATRIX_ACCESS_TOKEN@kv
-      file:                        false
     PROCESSBOT_KEY:
       vault:                       cicd/gitlab/$CI_PROJECT_PATH/$CI_ENVIRONMENT_NAME/PROCESSBOT_KEY@kv
       file:                        false
@@ -133,6 +124,7 @@ dockerize-processbot:
       --set "app.DOCKER_TAG=${CI_COMMIT_REF_NAME}"
       --set "app.PROCESSBOT_KEY=${PROCESSBOT_KEY}"
       --set "app.GITHUB_APP_ID=${GITHUB_APP_ID}"
+      --set "app.WEBHOOK_SECRET=${WEBHOOK_SECRET}"
 
 deploy-staging:
   stage:                           deploy-staging
