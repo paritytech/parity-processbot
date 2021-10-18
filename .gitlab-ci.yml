@@ -124,7 +124,7 @@ dockerize-processbot:
       file:                        false
   # PROCESSBOT_KEY should be base64 encoded
   script:
-    - helm upgrade processbot kubernetes/processbot
+    - helm upgrade processbot ./helm
       --install
       --namespace "${KUBE_NAMESPACE}"
       --values "helm/values-${CI_ENVIRONMENT_NAME}.yaml"
