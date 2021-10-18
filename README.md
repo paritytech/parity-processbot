@@ -190,8 +190,8 @@ The deployment's status can be followed through
 	  [Project Owner](#project-owners).
 	- A pull request can be attached to a project column using the Github UI:
 		- Having no project, it *will not be recognized*
-		![](https://github.com/paritytech/parity-processbot/blob/master/no-project.png)
+		![](https://github.com/paritytech/parity-processbot/blob/master/doc/no-project.png)
 		- Having a project, but no column, it *will not be recognized*
-		![](https://github.com/paritytech/parity-processbot/blob/master/no-column.png)
+		![](https://github.com/paritytech/parity-processbot/blob/master/doc/no-column.png)
 		- Having both project a column, it *will be recognized*
-		![](https://github.com/paritytech/parity-processbot/blob/master/proj-column.png)
+		![](https://github.com/paritytech/parity-processbot/blob/master/doc/proj-column.png)
