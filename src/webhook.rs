@@ -95,6 +95,14 @@ pub async fn webhook(
 			.context(Message {
 				msg: "Error building response".to_owned(),
 			})
+	} else if req.uri().path() == "/health" {
+		Response::builder()
+			.status(StatusCode::OK)
+			.body(Body::from("OK"))
+			.ok()
+			.context(Message {
+				msg: "Healthcheck".to_owned(),
+			})
 	} else {
 		Response::builder()
 			.status(StatusCode::NOT_FOUND)
