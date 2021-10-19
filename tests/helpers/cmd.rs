@@ -1,4 +1,5 @@
 use std::ffi::OsStr;
+use std::fmt::Debug;
 use std::fmt::Display;
 use std::path::Path;
 use std::process::Command;
@@ -15,19 +16,19 @@ pub fn exec<Cmd, Dir>(
 	conf: Option<CmdConfiguration<'_>>,
 ) where
 	Cmd: AsRef<OsStr> + Display,
-	Dir: AsRef<Path>,
+	Dir: AsRef<Path> + Debug,
 {
 	let mut cmd = Command::new(cmd);
 	let cmd = {
 		let cmd = cmd.args(args).stdout(Stdio::null());
 		if let Some(dir) = dir {
+			println!("Executing {:?} on {:?}", cmd, dir);
 			cmd.current_dir(dir)
 		} else {
+			println!("Executing {:?}", cmd);
 			cmd
 		}
 	};
-
-	println!("Executing {:?}", cmd);
 
 	let was_success = match conf {
 		Some(CmdConfiguration::SilentStderrStartingWith(
