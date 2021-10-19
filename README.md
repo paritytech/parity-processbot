@@ -137,18 +137,44 @@ Events:
 - Status
 - Workflow job
 
-# Development
+# Local development
+
+This project is a standard Rust project with some notable requirements.
+
+## Requirements
+
+Before you can generate a debug or release binary, we have some library
+requirements to install.
+
+```sh
+$ sudo apt install \
+    libssl-dev \
+    libclang-dev
+```
+
+## Environment variables
 
 The bot requires some environment variables listed in
-[config.rs](./src/config.rs). They can, optionally, be set through an `.env`
+[config.rs](./src/config.rs). 
+
+They can, optionally, be set through an `.env`
 file which should be placed at the root of this repository. We provide an
 [example .env file](./.env.example) which can be used as a starting point.
+
+```
+$ cp .env.example .env
+```
 
 During **development**, it's handy to use a [smee.io](https://smee.io/) proxy,
 through the `WEBHOOK_PROXY_URL` environment variable, for receiving Github
 Webhook Events in your local instance of processbot.
 
-After setting up the environment, run: `cargo run`
+Then, like any typical Rust project, we can generate our binary and
+run the app.
+
+```sh
+$ cargo run
+```
 
 # Deployment
 
@@ -190,8 +216,8 @@ The deployment's status can be followed through
 	  [Project Owner](#project-owners).
 	- A pull request can be attached to a project column using the Github UI:
 		- Having no project, it *will not be recognized*
-		![](https://github.com/paritytech/parity-processbot/blob/master/no-project.png)
+		![](https://github.com/paritytech/parity-processbot/blob/master/doc/no-project.png)
 		- Having a project, but no column, it *will not be recognized*
-		![](https://github.com/paritytech/parity-processbot/blob/master/no-column.png)
+		![](https://github.com/paritytech/parity-processbot/blob/master/doc/no-column.png)
 		- Having both project a column, it *will be recognized*
-		![](https://github.com/paritytech/parity-processbot/blob/master/proj-column.png)
+		![](https://github.com/paritytech/parity-processbot/blob/master/doc/proj-column.png)
