@@ -40,7 +40,7 @@ pub fn exec<Cmd, Dir>(
 				.wait_with_output()
 				.unwrap();
 
-			let err = String::from_utf8_lossy(&out.stdout);
+			let err = String::from_utf8_lossy(&out.stderr);
 			let err = err.trim();
 			if err.is_empty() {
 				return;
