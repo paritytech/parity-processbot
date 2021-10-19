@@ -18,4 +18,5 @@ trap on_exit EXIT
 
 # --test '*' means only run the integration tests
 # https://github.com/rust-lang/cargo/issues/8396#issuecomment-713126649
-GIT_DAEMON_BASE_PATH_TRACKER="$git_daemon_base_path_tracker" cargo test --test '*'
+# --nocapture is used so that we see the commands being executed interleaved within the logged info
+GIT_DAEMON_BASE_PATH_TRACKER="$git_daemon_base_path_tracker" cargo test --test '*' -- --nocapture
