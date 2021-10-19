@@ -51,7 +51,7 @@ pub fn initialize_repository(repo_dir: &Path, initial_branch: &str) {
 	// --initial-branch from Git init can't be used because the Git on CI is too old
 	exec(
 		"git",
-		&["branch", "-m", initial_branch],
+		&["checkout", "-b", initial_branch],
 		Some(repo_dir),
 		None,
 	);
