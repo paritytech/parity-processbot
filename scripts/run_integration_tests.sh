@@ -1,4 +1,4 @@
-#!/bin/env sh
+#!/usr/bin/env sh
 
 git_daemon_base_path_file="$(mktemp)"
 
