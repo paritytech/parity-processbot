@@ -150,6 +150,8 @@ Webhook Events in your local instance of processbot.
 
 After setting up the environment, run: `cargo run`
 
+For executing the integration tests, run: `./scripts/run_integration_tests.sh`
+
 # Deployment
 
 The bot is automatically deployed by pushing a tag with one of the following formats
