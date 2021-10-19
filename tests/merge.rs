@@ -35,7 +35,7 @@ async fn simple_merge_succeeds() {
 		"git",
 		&["checkout", "-b", pr_branch],
 		Some(repo_dir),
-		Some(CmdConfiguration::SilentStderrStartingWith(&[
+		Some(CmdConfiguration::IgnoreStderrStartingWith(&[
 			"Switched to a new branch",
 		])),
 	);
@@ -77,8 +77,8 @@ async fn simple_merge_succeeds() {
 
 	let config = MainConfig {
 		installation_login: owner.login.clone(),
-		webhook_secret: "".to_owned(),
-		webhook_port: "".to_string(),
+		webhook_secret: "does not matter".to_owned(),
+		webhook_port: "does not matter".to_string(),
 		db_path: db_dir.path().display().to_string(),
 		private_key: private_key.clone(),
 		webhook_proxy_url: None,

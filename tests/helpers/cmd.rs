@@ -6,7 +6,7 @@ use std::process::Command;
 use std::process::Stdio;
 
 pub enum CmdConfiguration<'a> {
-	SilentStderrStartingWith(&'a [&'a str]),
+	IgnoreStderrStartingWith(&'a [&'a str]),
 }
 
 pub fn exec<Cmd, Dir>(
@@ -31,7 +31,7 @@ pub fn exec<Cmd, Dir>(
 	};
 
 	let was_success = match conf {
-		Some(CmdConfiguration::SilentStderrStartingWith(
+		Some(CmdConfiguration::IgnoreStderrStartingWith(
 			prefixes_to_ignore,
 		)) => {
 			let out = cmd

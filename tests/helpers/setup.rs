@@ -38,8 +38,7 @@ pub fn common_setup() -> CommonSetupOutput {
 		.start()
 		.unwrap();
 
-	let db_dir = tempfile::tempdir().unwrap();
-
+	// The git daemon will be used for fetching and pushing branches during tests
 	let git_daemon_dir = tempfile::tempdir().unwrap();
 	let git_daemon_dir_path_str = git_daemon_dir.path().display().to_string();
 	{
@@ -51,7 +50,19 @@ pub fn common_setup() -> CommonSetupOutput {
 		writeln!(file, "{}", &git_daemon_dir_path_str).unwrap();
 	}
 	clean_directory(git_daemon_dir.path().to_path_buf());
+	let git_daemon_port = get_available_port().unwrap();
+	let git_daemon_handle = Command::new("git")
+		.arg("daemon")
+		.arg(format!("--port={}", git_daemon_port))
+		.arg(format!("--base-path={}", git_daemon_dir_path_str))
+		.arg("--export-all")
+		.arg("--enable=receive-pack")
+		.stdout(Stdio::null())
+		.current_dir((&git_daemon_dir).path())
+		.spawn()
+		.unwrap();
 
+	// "owner" is the placeholder user which will act as the requester for the bot's commands
 	let owner = github::User {
 		login: "owner".to_string(),
 		type_field: Some(github::UserType::User),
@@ -97,12 +108,16 @@ GcZ0izY/30012ajdHY+/QK5lsMoxTnn0skdS+spLxaS5ZEO4qvPVb8RAoCkWMMal
 	fs::create_dir_all(&repo_dir).unwrap();
 	initialize_repository(&repo_dir, initial_branch);
 
+	// Use a mock HTTP server as the Github API
 	let github_api = Server::run();
 	let github_api_url = {
 		let url = github_api.url("").to_string();
 		url[0..url.len() - 1].to_string()
 	};
 
+	// The bot requires an installation access token according for the Github API's requests
+	// The token's value does not matter as we'll not be validating it on the mock HTTP server
+	// anyways
 	github_api.expect(
 		Expectation::matching(request::method_path(
 			"GET",
@@ -132,6 +147,8 @@ GcZ0izY/30012ajdHY+/QK5lsMoxTnn0skdS+spLxaS5ZEO4qvPVb8RAoCkWMMal
 		})),
 	);
 
+	// An empty Process.json file is served because we are not interested in testing that feature
+	// https://github.com/paritytech/parity-processbot/issues/333
 	github_api.expect(
 		Expectation::matching(request::method_path(
 			"GET",
@@ -146,6 +163,7 @@ GcZ0izY/30012ajdHY+/QK5lsMoxTnn0skdS+spLxaS5ZEO4qvPVb8RAoCkWMMal
 		.respond_with(|| status_code(200).body(base64::encode("[]"))),
 	);
 
+	// Set up the membership for the initial user so that the organization checks will pass
 	github_api.expect(
 		Expectation::matching(request::method_path(
 			"GET",
@@ -158,7 +176,6 @@ GcZ0izY/30012ajdHY+/QK5lsMoxTnn0skdS+spLxaS5ZEO4qvPVb8RAoCkWMMal
 				.body(serde_json::to_string(&json!({})).unwrap()),
 		),
 	);
-
 	let mut next_team_id = 0;
 	for team in &[
 		parity_processbot::constants::CORE_DEVS_GROUP,
@@ -174,17 +191,7 @@ GcZ0izY/30012ajdHY+/QK5lsMoxTnn0skdS+spLxaS5ZEO4qvPVb8RAoCkWMMal
 		);
 	}
 
-	let git_daemon_port = get_available_port().unwrap();
-	let git_daemon_handle = Command::new("git")
-		.arg("daemon")
-		.arg(format!("--port={}", git_daemon_port))
-		.arg(format!("--base-path={}", git_daemon_dir_path_str))
-		.arg("--export-all")
-		.arg("--enable=receive-pack")
-		.stdout(Stdio::null())
-		.current_dir((&git_daemon_dir).path())
-		.spawn()
-		.unwrap();
+	let db_dir = tempfile::tempdir().unwrap();
 
 	CommonSetupOutput {
 		log_dir,
@@ -323,7 +330,7 @@ pub fn setup_pull_request(
 					"git",
 					&["checkout", branch],
 					Some(repo_dir),
-					Some(CmdConfiguration::SilentStderrStartingWith(&[
+					Some(CmdConfiguration::IgnoreStderrStartingWith(&[
 						"Switched to branch",
 					])),
 				);
@@ -332,7 +339,7 @@ pub fn setup_pull_request(
 					"git",
 					&["checkout", "-b", tmp_branch_name],
 					Some(repo_dir),
-					Some(CmdConfiguration::SilentStderrStartingWith(&[
+					Some(CmdConfiguration::IgnoreStderrStartingWith(&[
 						"Switched to a new branch",
 					])),
 				);
@@ -362,7 +369,7 @@ pub fn setup_pull_request(
 					"git",
 					&["merge", "--abort"],
 					Some(repo_dir),
-					Some(CmdConfiguration::SilentStderrStartingWith(&[
+					Some(CmdConfiguration::IgnoreStderrStartingWith(&[
 						"fatal: There is no merge to abort",
 					])),
 				);
@@ -370,7 +377,7 @@ pub fn setup_pull_request(
 					"git",
 					&["checkout", owner_branch],
 					Some(repo_dir),
-					Some(CmdConfiguration::SilentStderrStartingWith(&[
+					Some(CmdConfiguration::IgnoreStderrStartingWith(&[
 						"Switched to branch",
 					])),
 				);
