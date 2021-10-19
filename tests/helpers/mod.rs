@@ -44,13 +44,15 @@ pub fn clean_directory(dir: PathBuf) {
 pub fn initialize_repository(repo_dir: &Path, initial_branch: &str) {
 	exec::<&str, PathBuf>(
 		"git",
-		&[
-			"init",
-			"--initial-branch",
-			initial_branch,
-			&repo_dir.display().to_string(),
-		],
+		&["init", &repo_dir.display().to_string()],
 		None,
+		None,
+	);
+	// --initial-branch from Git init can't be used because the Git on CI is too old
+	exec(
+		"git",
+		&["branch", "-m", initial_branch],
+		Some(repo_dir),
 		None,
 	);
 	exec(
