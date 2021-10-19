@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use std::time::SystemTime;
 
 use crate::{
+	config::MainConfig,
 	error::{self, Error},
 	github, Result,
 };
@@ -12,12 +13,12 @@ use reqwest::{header, IntoUrl, Method, RequestBuilder, Response};
 use serde::Serialize;
 use snafu::ResultExt;
 
-#[derive(Default)]
 pub struct Client {
 	pub client: reqwest::Client,
 	private_key: Vec<u8>,
 	installation_login: String,
 	github_app_id: usize,
+	github_api_url: String,
 }
 
 macro_rules! impl_methods_with_body {
@@ -94,16 +95,13 @@ async fn handle_response(response: Response) -> Result<Response> {
 }
 
 impl Client {
-	pub fn new(
-		private_key: Vec<u8>,
-		installation_login: String,
-		github_app_id: usize,
-	) -> Self {
+	pub fn new(config: &MainConfig) -> Self {
 		Self {
-			private_key,
-			installation_login,
-			github_app_id,
-			..Self::default()
+			private_key: config.private_key.clone(),
+			installation_login: config.installation_login.clone(),
+			github_app_id: config.github_app_id,
+			github_api_url: config.github_api_url.clone(),
+			client: reqwest::Client::default(),
 		}
 	}
 
@@ -144,10 +142,7 @@ impl Client {
 		}
 
 		let installations: Vec<github::Installation> = self
-			.jwt_get(&format!(
-				"{}/app/installations",
-				crate::github_bot::GithubBot::BASE_URL
-			))
+			.jwt_get(&format!("{}/app/installations", self.github_api_url,))
 			.await?;
 
 		let installation = if let Some(installation) = installations
@@ -168,8 +163,7 @@ impl Client {
 			.jwt_post(
 				&format!(
 					"{}/app/installations/{}/access_tokens",
-					crate::github_bot::GithubBot::BASE_URL,
-					installation.id
+					self.github_api_url, installation.id
 				),
 				&serde_json::json!({}),
 			)

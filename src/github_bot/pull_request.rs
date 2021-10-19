@@ -6,16 +6,13 @@ impl GithubBot {
 	pub async fn pull_request(
 		&self,
 		owner: &str,
-		repo_name: &str,
-		pull_number: i64,
+		repo: &str,
+		number: i64,
 	) -> Result<github::PullRequest> {
 		self.client
 			.get(format!(
-				"{base_url}/repos/{owner}/{repo}/pulls/{pull_number}",
-				base_url = Self::BASE_URL,
-				owner = owner,
-				repo = repo_name,
-				pull_number = pull_number
+				"{}/repos/{}/{}/pulls/{}",
+				self.github_api_url, owner, repo, number
 			))
 			.await
 	}
@@ -23,16 +20,13 @@ impl GithubBot {
 	pub async fn pull_request_with_head(
 		&self,
 		owner: &str,
-		repo_name: &str,
+		repo: &str,
 		head: &str,
 	) -> Result<Option<github::PullRequest>> {
 		self.client
 			.get_all(format!(
-				"{base_url}/repos/{owner}/{repo}/pulls?head={head}",
-				base_url = Self::BASE_URL,
-				owner = owner,
-				repo = repo_name,
-				head = head,
+				"{}/repos/{}/{}/pulls?head={}",
+				self.github_api_url, owner, repo, head
 			))
 			.await
 			.map(|v| v.first().cloned())
@@ -41,16 +35,13 @@ impl GithubBot {
 	pub async fn merge_pull_request(
 		&self,
 		owner: &str,
-		repo_name: &str,
+		repo: &str,
 		number: i64,
 		head_sha: &str,
 	) -> Result<()> {
 		let url = format!(
-			"{base_url}/repos/{owner}/{repo}/pulls/{number}/merge",
-			base_url = Self::BASE_URL,
-			owner = owner,
-			repo = repo_name,
-			number = number,
+			"{}/repos/{}/{}/pulls/{}/merge",
+			self.github_api_url, owner, repo, number
 		);
 		let params = serde_json::json!({
 			"sha": head_sha,
