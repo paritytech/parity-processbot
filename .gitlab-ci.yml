@@ -22,6 +22,7 @@ default:
 stages:
   - check
   - test
+  - build
   - dockerize
   - deploy
 
@@ -43,10 +44,16 @@ integration-tests:
   script:
     - ./scripts/run_integration_tests.sh
 
-build:
+tests:
   stage:                           test
   script:
-    - cargo test --release --all
+    - cargo test --lib
+
+#### stage:                        build
+
+build:
+  stage:                           build
+  script:
     - cargo build --release
     - mkdir -p ./artifacts/
     - cp ${CARGO_TARGET_DIR}/release/parity-processbot ./artifacts/
