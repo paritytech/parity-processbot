@@ -65,12 +65,15 @@ spec:
               value: "/etc/processbot-key/PROCESSBOT_KEY"
             - name: WEBHOOK_PORT
               value: {{ quote .Values.app.WEBHOOK_PORT }}
-            - name: WEBHOOK_SECRET
-              value: {{ .Values.app.WEBHOOK_SECRET }}
             - name: GITHUB_APP_ID
               value: {{ quote .Values.app.GITHUB_APP_ID }}
             - name: DB_PATH
               value: /usr/local/share/db
+            - name: WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: env-secrets
+                  key: WEBHOOK_SECRET
 
 ---
 apiVersion: v1
