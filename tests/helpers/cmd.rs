@@ -29,7 +29,7 @@ pub fn exec<Cmd, Dir>(
 
 	println!("Executing {:?}", cmd);
 
-	match conf {
+	let was_success = match conf {
 		Some(CmdConfiguration::SilentStderrStartingWith(
 			prefixes_to_ignore,
 		)) => {
@@ -52,11 +52,15 @@ pub fn exec<Cmd, Dir>(
 				}
 			};
 
-			panic!("Processs {:?} failed with STDERR {}", cmd, err);
+			eprintln!("{}", err);
+
+			out.status.success()
 		}
-		_ => {
-			cmd.spawn().unwrap().wait().unwrap();
-		}
+		_ => cmd.spawn().unwrap().wait().unwrap().success(),
+	};
+
+	if !was_success {
+		panic!("Command {:?} failed", cmd);
 	}
 }
 
