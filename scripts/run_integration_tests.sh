@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 
-# GIT_DAEMON_BASE_PATH_TRACKER gets all the --base-path used for the Git daemon
-# on tests and cleans them up when the tests end
+# GIT_DAEMON_BASE_PATH_TRACKER collects all the --base-path used for the Git
+# daemon instances on tests and cleans them up when the tests end
 git_daemon_base_path_tracker="$(mktemp)"
 
 on_exit() {
