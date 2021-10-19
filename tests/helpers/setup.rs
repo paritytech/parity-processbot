@@ -27,8 +27,8 @@ pub struct CommonSetupOutput {
 	pub next_team_id: i64,
 }
 pub fn common_setup() -> CommonSetupOutput {
-	let git_daemon_base_path_file =
-		env::var("GIT_DAEMON_BASE_PATH_FILE").unwrap();
+	let git_daemon_base_path_tracker =
+		env::var("GIT_DAEMON_BASE_PATH_TRACKER").unwrap();
 
 	let log_dir = tempfile::tempdir().unwrap();
 	flexi_logger::Logger::with_env_or_str("info")
@@ -46,7 +46,7 @@ pub fn common_setup() -> CommonSetupOutput {
 		let mut file = std::fs::OpenOptions::new()
 			.write(true)
 			.append(true)
-			.open(git_daemon_base_path_file)
+			.open(git_daemon_base_path_tracker)
 			.unwrap();
 		writeln!(file, "{}", &git_daemon_dir_path_str).unwrap();
 	}
