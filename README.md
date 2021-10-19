@@ -141,7 +141,7 @@ Events:
 
 This project is a standard Rust project with some notable requirements.
 
-## Requiremnets
+## Requirements
 
 Before you can generate a debug or release binary, we have some library
 requirements to install.
@@ -154,12 +154,12 @@ $ sudo apt install \
 
 ## Environment variables
 
-This bot relies on the crate `dotenv`, which requires a `.env` file to
-exist in the root of the project that the binary runs in. These environment
-variables are listed in [config.rs](./src/config.rs).
+The bot requires some environment variables listed in
+[config.rs](./src/config.rs). 
 
-Copy over the [example environment file](./.env.example) to suite your 
-needs like so
+They can, optionally, be set through an `.env`
+file which should be placed at the root of this repository. We provide an
+[example .env file](./.env.example) which can be used as a starting point.
 
 ```
 $ cp .env.example .env
