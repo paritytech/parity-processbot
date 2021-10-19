@@ -51,7 +51,8 @@ pub fn exec<Cmd, Dir>(
 					}
 				}
 			};
-			println!("STDERR: {}", err);
+
+			panic!("Processs {:?} failed with STDERR {}", cmd, err);
 		}
 		_ => {
 			cmd.spawn().unwrap().wait().unwrap();
