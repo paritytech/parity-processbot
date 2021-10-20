@@ -307,10 +307,7 @@ pub fn setup_pull_request(
 	let pr_api_path = &format!("/repos/{}/pulls/{}", &repo.full_name, number);
 	let issue_api_path =
 		&format!("/repos/{}/issues/{}", &repo.full_name, number);
-	let url = format!(
-		"{}/repos/{}/pulls/{}",
-		github_api_url, &repo.full_name, number
-	);
+	let url = format!("{}{}", github_api_url, pr_api_path);
 	let html_url = format!("{}/pull/{}", &repo.html_url, number);
 
 	{
