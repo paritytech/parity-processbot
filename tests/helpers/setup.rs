@@ -25,6 +25,7 @@ pub struct CommonSetupOutput {
 	pub repo_full_name: String,
 	pub github_app_id: usize,
 	pub next_team_id: i64,
+	pub initial_branch: String,
 }
 pub fn common_setup() -> CommonSetupOutput {
 	let git_daemon_base_path_tracker =
@@ -207,6 +208,7 @@ GcZ0izY/30012ajdHY+/QK5lsMoxTnn0skdS+spLxaS5ZEO4qvPVb8RAoCkWMMal
 		repo_full_name,
 		private_key,
 		next_team_id,
+		initial_branch: initial_branch.to_string(),
 	}
 }
 
@@ -293,7 +295,7 @@ pub fn setup_pull_request(
 	setup: &CommonSetupOutput,
 	repo: &github::Repository,
 	head_sha: &str,
-	branch: &str,
+	pr_branch: &str,
 	number: i64,
 ) -> SetupPullRequestOutput {
 	let CommonSetupOutput {
@@ -301,6 +303,7 @@ pub fn setup_pull_request(
 		github_api_url,
 		owner,
 		repo_dir,
+		initial_branch: base_branch,
 		..
 	} = setup;
 
@@ -313,9 +316,10 @@ pub fn setup_pull_request(
 	{
 		let repo_dir: &'static PathBuf =
 			&*Box::leak(Box::new(repo_dir.clone()));
-		let branch: &'static String = &*Box::leak(Box::new(branch.to_string()));
-		let owner_branch: &'static String =
-			&*Box::leak(Box::new(branch.to_string()));
+		let pr_branch: &'static String =
+			&*Box::leak(Box::new(pr_branch.to_string()));
+		let base_branch: &'static String =
+			&*Box::leak(Box::new(base_branch.to_string()));
 		github_api.expect(
 			Expectation::matching(request::method_path(
 				"PUT",
@@ -325,7 +329,7 @@ pub fn setup_pull_request(
 			.respond_with(move || {
 				exec(
 					"git",
-					&["checkout", branch],
+					&["checkout", pr_branch],
 					Some(repo_dir),
 					Some(CmdConfiguration::IgnoreStderrStartingWith(&[
 						"Switched to branch",
@@ -342,11 +346,11 @@ pub fn setup_pull_request(
 				);
 				let was_merge_success = get_cmd_success(
 					"git",
-					&["merge", owner_branch],
+					&["merge", "--no-ff", "--no-edit", base_branch],
 					Some(repo_dir),
 				);
-				// Merge is only successful if contributor branch is up-to-date with master; otherwise,
-				// simulates the "Pull Request is not mergeable" response (code 405).
+				// Merge is only successful if the PR branch has no conflict with the base branch; otherwise,
+				// this code simulates the "Pull Request is not mergeable" response (code 405).
 				// https://docs.github.com/en/rest/reference/pulls#merge-a-pull-request
 				let result = if was_merge_success {
 					status_code(200)
@@ -372,7 +376,7 @@ pub fn setup_pull_request(
 				);
 				exec(
 					"git",
-					&["checkout", owner_branch],
+					&["checkout", base_branch],
 					Some(repo_dir),
 					Some(CmdConfiguration::IgnoreStderrStartingWith(&[
 						"Switched to branch",
@@ -403,14 +407,14 @@ pub fn setup_pull_request(
 			url: url.clone(),
 			user: Some(owner.clone()),
 			base: github::Base {
-				ref_field: branch.to_string(),
+				ref_field: base_branch.to_string(),
 				repo: github::BaseRepo {
 					name: repo.name.clone(),
 					owner: owner.clone(),
 				},
 			},
 			head: github::Head {
-				ref_field: branch.to_string(),
+				ref_field: pr_branch.to_string(),
 				sha: head_sha.to_string(),
 				repo: github::HeadRepo {
 					name: repo.name.clone(),
