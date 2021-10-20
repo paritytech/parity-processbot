@@ -7,7 +7,6 @@ use crate::{
 };
 
 use chrono::{DateTime, Duration, Utc};
-use hyperx::header::TypedHeaders;
 use reqwest::{header, IntoUrl, Method, RequestBuilder, Response};
 use serde::Serialize;
 use snafu::ResultExt;

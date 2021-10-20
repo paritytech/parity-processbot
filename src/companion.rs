@@ -5,7 +5,7 @@ use std::{
 	collections::HashMap, collections::HashSet, iter::FromIterator, path::Path,
 	time::Duration,
 };
-use tokio::time::delay_for;
+use tokio::time::sleep;
 
 use crate::{
 	cmd::*,
@@ -508,7 +508,7 @@ async fn update_then_merge_companion(
 	.await?;
 
 	// Wait a bit for the statuses to settle after we've updated the companion
-	delay_for(Duration::from_millis(4096)).await;
+	sleep(Duration::from_millis(4096)).await;
 
 	// Fetch it again since we've pushed some commits and therefore some status or check might have
 	// failed already

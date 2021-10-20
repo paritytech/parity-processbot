@@ -1,5 +1,4 @@
 use async_recursion::async_recursion;
-use futures::StreamExt;
 use html_escape;
 use hyper::{Body, Request, Response, StatusCode};
 use itertools::Itertools;
@@ -9,7 +8,7 @@ use rocksdb::DB;
 use serde::{Deserialize, Serialize};
 use snafu::{OptionExt, ResultExt};
 use std::{collections::HashMap, sync::Arc, time::Duration};
-use tokio::{sync::Mutex, time::delay_for};
+use tokio::{sync::Mutex, time::sleep};
 
 use crate::{
 	companion::*, config::MainConfig, constants::*, error::*, github::*,
@@ -953,7 +952,7 @@ async fn handle_comment(
 			// As a workaround we'll wait for long enough so that Github hopefully has time to update the
 			// API and make our merges succeed. A proper workaround would also entail retrying every X
 			// seconds for recoverable errors such as "required statuses are missing or pending".
-			delay_for(Duration::from_millis(4096)).await;
+			sleep(Duration::from_millis(4096)).await;
 		};
 
 		let pr = github_bot.pull_request(owner, repo, number).await?;

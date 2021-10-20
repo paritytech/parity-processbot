@@ -23,6 +23,7 @@ pub async fn rebase(
 		.current_dir(format!("./{}", base_repo))
 		.spawn()
 		.context(Tokio)?
+		.wait()
 		.await
 		.context(Tokio)?;
 	// delete temp branch
@@ -34,6 +35,7 @@ pub async fn rebase(
 		.current_dir(format!("./{}", base_repo))
 		.spawn()
 		.context(Tokio)?
+		.wait()
 		.await
 		.context(Tokio)?;
 	// remove temp remote
@@ -45,6 +47,7 @@ pub async fn rebase(
 		.current_dir(format!("./{}", base_repo))
 		.spawn()
 		.context(Tokio)?
+		.wait()
 		.await
 		.context(Tokio)?;
 	res
@@ -72,6 +75,7 @@ async fn rebase_inner(
 		))
 		.spawn()
 		.context(Tokio)?
+		.wait()
 		.await
 		.context(Tokio)?;
 	// add temp remote
@@ -89,6 +93,7 @@ async fn rebase_inner(
 		.current_dir(format!("./{}", base_repo))
 		.spawn()
 		.context(Tokio)?
+		.wait()
 		.await
 		.context(Tokio)?;
 	// fetch temp
@@ -99,6 +104,7 @@ async fn rebase_inner(
 		.current_dir(format!("./{}", base_repo))
 		.spawn()
 		.context(Tokio)?
+		.wait()
 		.await
 		.context(Tokio)?;
 	// checkout temp branch
@@ -111,6 +117,7 @@ async fn rebase_inner(
 		.current_dir(format!("./{}", base_repo))
 		.spawn()
 		.context(Tokio)?
+		.wait()
 		.await
 		.context(Tokio)?;
 	if checkout.success() {
@@ -124,6 +131,7 @@ async fn rebase_inner(
 			.current_dir(format!("./{}", base_repo))
 			.spawn()
 			.context(Tokio)?
+			.wait()
 			.await
 			.context(Tokio)?;
 		if merge_master.success() {
@@ -136,6 +144,7 @@ async fn rebase_inner(
 				.current_dir(format!("./{}", base_repo))
 				.spawn()
 				.context(Tokio)?
+				.wait()
 				.await
 				.context(Tokio)?;
 		} else {
@@ -147,6 +156,7 @@ async fn rebase_inner(
 				.current_dir(format!("./{}", base_repo))
 				.spawn()
 				.context(Tokio)?
+				.wait()
 				.await
 				.context(Tokio)?;
 		}
