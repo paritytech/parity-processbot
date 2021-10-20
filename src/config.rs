@@ -8,6 +8,9 @@ pub struct MainConfig {
 	pub webhook_proxy_url: Option<String>,
 	pub github_app_id: usize,
 	pub disable_org_check: bool,
+	pub github_api_url: String,
+	pub companion_status_settle_delay: u64,
+	pub merge_command_delay: u64,
 }
 
 impl MainConfig {
@@ -43,6 +46,12 @@ impl MainConfig {
 			})
 			.unwrap_or(false);
 
+		let github_api_url = "https://api.github.com".to_owned();
+
+		let merge_command_delay = 4096;
+
+		let companion_status_settle_delay = 4096;
+
 		Self {
 			installation_login,
 			webhook_secret,
@@ -52,6 +61,9 @@ impl MainConfig {
 			webhook_proxy_url,
 			github_app_id,
 			disable_org_check,
+			github_api_url,
+			merge_command_delay,
+			companion_status_settle_delay,
 		}
 	}
 }

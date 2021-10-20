@@ -155,7 +155,7 @@ $ sudo apt install \
 ## Environment variables
 
 The bot requires some environment variables listed in
-[config.rs](./src/config.rs). 
+[config.rs](./src/config.rs).
 
 They can, optionally, be set through an `.env`
 file which should be placed at the root of this repository. We provide an
@@ -169,12 +169,23 @@ During **development**, it's handy to use a [smee.io](https://smee.io/) proxy,
 through the `WEBHOOK_PROXY_URL` environment variable, for receiving Github
 Webhook Events in your local instance of processbot.
 
-Then, like any typical Rust project, we can generate our binary and
-run the app.
+## Running the bot
 
 ```sh
 $ cargo run
 ```
+
+## Integration tests
+
+The integration tests are executed as follows:
+
+```sh
+./scripts/run_integration_tests.sh
+```
+
+We use [insta](https://github.com/mitsuhiko/insta#introduction) for integration
+tests' snapshots. After creating or modifying a snapshot, use `cargo insta
+review` to manage the results.
 
 # Deployment
 

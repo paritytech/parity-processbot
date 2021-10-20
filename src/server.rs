@@ -15,7 +15,7 @@ use std::sync::Arc;
 use std::task::Poll;
 use tokio::sync::Mutex;
 
-pub struct Incoming<'a>(pub async_std::net::Incoming<'a>);
+struct Incoming<'a>(pub async_std::net::Incoming<'a>);
 
 impl hyper::server::accept::Accept for Incoming<'_> {
 	type Conn = TcpStream;
@@ -31,7 +31,7 @@ impl hyper::server::accept::Accept for Incoming<'_> {
 	}
 }
 
-pub struct TcpStream(pub async_std::net::TcpStream);
+struct TcpStream(pub async_std::net::TcpStream);
 
 impl tokio::io::AsyncRead for TcpStream {
 	fn poll_read(
@@ -67,38 +67,11 @@ impl tokio::io::AsyncWrite for TcpStream {
 	}
 }
 
-#[derive(Debug)]
-pub enum Error {
-	Hyper(hyper::Error),
-	Http(hyper::http::Error),
-	Io(std::io::Error),
-	PortInUse(SocketAddr),
-}
-
-impl std::fmt::Display for Error {
-	fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
-		write!(fmt, "{:?}", self)
-	}
-}
-
-impl std::error::Error for Error {
-	fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-		match self {
-			Error::Hyper(error) => Some(error),
-			Error::Http(error) => Some(error),
-			Error::Io(error) => Some(error),
-			Error::PortInUse(_) => None,
-		}
-	}
-}
-
-pub async fn init_server(
+pub async fn init(
 	addr: SocketAddr,
 	state: Arc<Mutex<AppState>>,
 ) -> anyhow::Result<()> {
-	let listener = async_std::net::TcpListener::bind(&addr)
-		.await
-		.map_err(|_| Error::PortInUse(addr))?;
+	let listener = async_std::net::TcpListener::bind(&addr).await.unwrap();
 
 	log::info!("Listening on {}", addr);
 

@@ -7,7 +7,7 @@ use tokio::sync::Mutex;
 mod logging;
 
 use parity_processbot::{
-	config::MainConfig, constants::*, github::Payload, github_bot, server::*,
+	config::MainConfig, constants::*, github::Payload, github_bot, server,
 	webhook::*,
 };
 
@@ -53,11 +53,7 @@ fn main() -> anyhow::Result<()> {
 
 	let db = DB::open_default(&config.db_path)?;
 
-	let github_bot = github_bot::GithubBot::new(
-		config.private_key.clone(),
-		&config.installation_login,
-		config.github_app_id,
-	)?;
+	let github_bot = github_bot::GithubBot::new(&config);
 
 	let webhook_proxy_url = config.webhook_proxy_url.clone();
 
@@ -106,7 +102,7 @@ fn main() -> anyhow::Result<()> {
 			});
 		}
 	} else {
-		rt.block_on(init_server(socket, app_state))?;
+		rt.block_on(server::init(socket, app_state))?;
 	}
 
 	Ok(())
