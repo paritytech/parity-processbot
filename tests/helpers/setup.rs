@@ -340,7 +340,7 @@ pub fn setup_pull_request(
 						"Switched to a new branch",
 					])),
 				);
-				let merge_output = get_cmd_output(
+				let was_merge_success = get_cmd_success(
 					"git",
 					&["merge", owner_branch],
 					Some(repo_dir),
@@ -348,7 +348,7 @@ pub fn setup_pull_request(
 				// Merge is only successful if contributor branch is up-to-date with master; otherwise,
 				// simulates the "Pull Request is not mergeable" response (code 405).
 				// https://docs.github.com/en/rest/reference/pulls#merge-a-pull-request
-				let result = if merge_output == "Already up to date." {
+				let result = if was_merge_success {
 					status_code(200)
 						.append_header("Content-Type", "application/json")
 						.body(serde_json::to_string(&json!({})).unwrap())
