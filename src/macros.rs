@@ -1,7 +1,7 @@
 #[macro_export]
 macro_rules! PR_HTML_URL_REGEX {
     () => {
-        r"(?P<html_url>https://[^/]+/(?P<owner>[^/\n]+)/(?P<repo>[^/\n]+)/pull/(?P<number>[[:digit:]]+))"
+        r"(?P<html_url>https://[^/\n]+/(?P<owner>[^/\n]+)/(?P<repo>[^/\n]+)/pull/(?P<number>[[:digit:]]+))"
     };
 }
 
