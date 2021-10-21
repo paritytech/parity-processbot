@@ -57,13 +57,13 @@ spec:
           readinessProbe:
             httpGet:
               path: /health
-              port: {{ .Values.processbot.config.WEBHOOK_PORT }}
+              port: {{ .Values.app.WEBHOOK_PORT }}
             initialDelaySeconds: 15
             periodSeconds: 5
           livenessProbe:
             httpGet:
               path: /health
-              port: {{ .Values.processbot.config.WEBHOOK_PORT }}
+              port: {{ .Values.app.WEBHOOK_PORT }}
             initialDelaySeconds: 15
             periodSeconds: 5
         env:
