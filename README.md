@@ -137,6 +137,18 @@ Events:
 - Status
 - Workflow job
 
+---
+
+If processbot has to merge PRs into protected branches which have the
+"Restrict who can push to matching branches" rule enabled, it should
+be added to the allowlist for that rule, otherwise merging will not work
+(example: https://github.com/paritytech/polkadot/pull/4122#issuecomment-948680155).
+
+In such cases it's necessary to add the app to the allowlist, as
+demonstrated below:
+
+![image](https://user-images.githubusercontent.com/77391175/138313741-b33b86a5-ee58-4031-a7da-12703ea9958e.png)
+
 # Local development
 
 This project is a standard Rust project with some notable requirements.
