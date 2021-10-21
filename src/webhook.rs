@@ -212,11 +212,16 @@ pub async fn handle_payload(
 					WebhookIssueComment {
 						number,
 						html_url,
-						repository_url: Some(repo_url),
+						repository_url,
 						pull_request: Some(_),
 					} => {
 						let (sha, result) = handle_comment(
-							body, login, *number, html_url, repo_url, state,
+							body,
+							login,
+							*number,
+							html_url,
+							repository_url,
+							state,
 						)
 						.await;
 						(
@@ -961,7 +966,7 @@ async fn handle_comment(
 			// As a workaround we'll wait for long enough so that Github hopefully has time to update the
 			// API and make our merges succeed. A proper workaround would also entail retrying every X
 			// seconds for recoverable errors such as "required statuses are missing or pending".
-			delay_for(Duration::from_millis(4096)).await;
+			delay_for(Duration::from_millis(config.merge_command_delay)).await;
 		};
 
 		let pr = github_bot.pull_request(owner, repo, number).await?;

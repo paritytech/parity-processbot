@@ -1,0 +1,18 @@
+---
+source: tests/merge.rs
+expression: "read_snapshot(log_dir.path().to_path_buf(), &[&pr_head_sha])"
+
+---
+INFO [parity_processbot::webhook] Merge(Normal) requested by owner in https://localhost/owner/repo/pull/1
+INFO [parity_processbot::webhook] https://localhost/owner/repo/pull/1 is mergeable
+INFO [parity_processbot::webhook] https://localhost/owner/repo/pull/1 merge requested by a team lead.
+INFO [parity_processbot::webhook] https://localhost/owner/repo/pull/1 statuses: CombinedStatus { statuses: [Status { id: 1, context: "does not matter", state: Success, description: Some("does not matter") }] }
+INFO [parity_processbot::webhook] https://localhost/owner/repo/pull/1 latest_statuses: {"does not matter": (1, Success)}
+INFO [parity_processbot::webhook] https://localhost/owner/repo/pull/1 has success status
+INFO [parity_processbot::webhook] https://localhost/owner/repo/pull/1 checks: CheckRuns { check_runs: [CheckRun { id: 1, name: "does not matter", status: Completed, conclusion: Some(Success), head_sha: "{REDACTED}" }] }
+INFO [parity_processbot::webhook] https://localhost/owner/repo/pull/1 latest_checks,: {"does not matter": (1, Completed, Some(Success))}
+INFO [parity_processbot::webhook] https://localhost/owner/repo/pull/1 has successful checks
+INFO [parity_processbot::webhook] https://localhost/owner/repo/pull/1 merged successfully.
+INFO [parity_processbot::webhook] Merging companions of https://localhost/owner/repo/pull/1
+INFO [parity_processbot::companion] Checking for companions in https://localhost/owner/repo/pull/1
+

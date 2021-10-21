@@ -486,7 +486,9 @@ async fn update_then_merge_companion(
 	merge_done_in: &str,
 	requested_by: &str,
 ) -> Result<()> {
-	let AppState { github_bot, .. } = state;
+	let AppState {
+		github_bot, config, ..
+	} = state;
 
 	let companion = github_bot.pull_request(owner, repo, *number).await?;
 	if cleanup_merged_pr(state, &companion)? {
@@ -508,7 +510,8 @@ async fn update_then_merge_companion(
 	.await?;
 
 	// Wait a bit for the statuses to settle after we've updated the companion
-	delay_for(Duration::from_millis(4096)).await;
+	delay_for(Duration::from_millis(config.companion_status_settle_delay))
+		.await;
 
 	// Fetch it again since we've pushed some commits and therefore some status or check might have
 	// failed already
@@ -769,7 +772,7 @@ mod tests {
 		);
 		assert_eq!(
 			parse_all_companions(
-				&vec![],
+				&[],
 				&format!(
 					"
 					first companion: {}
@@ -778,7 +781,7 @@ mod tests {
 					&companion_url, &companion_url
 				)
 			),
-			vec![expected_companion.clone(), expected_companion.clone()]
+			vec![expected_companion.clone(), expected_companion]
 		);
 	}
 
@@ -794,15 +797,12 @@ mod tests {
 		);
 
 		// If the source is not referenced in the description, something is parsed
-		assert_ne!(
-			parse_all_companions(&vec![], &companion_description),
-			vec![]
-		);
+		assert_ne!(parse_all_companions(&[], &companion_description), vec![]);
 
 		// If the source is referenced in the description, it is omitted
 		assert_eq!(
 			parse_all_companions(
-				&vec![(owner.to_owned(), repo.to_owned())],
+				&[(owner.to_owned(), repo.to_owned())],
 				&companion_description
 			),
 			vec![]
