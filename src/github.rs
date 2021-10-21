@@ -19,7 +19,6 @@ pub struct PullRequest {
 	pub body: Option<String>,
 	pub head: Head,
 	pub base: Base,
-	pub repository: Option<Repository>,
 	pub mergeable: Option<bool>,
 	pub merged: bool,
 	pub maintainer_can_modify: bool,
@@ -181,11 +180,9 @@ pub struct Label {
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Repository {
 	pub name: String,
-	pub full_name: Option<String>,
-	pub owner: Option<User>,
+	pub full_name: String,
+	pub owner: User,
 	pub html_url: String,
-	pub issues_url: Option<String>,
-	pub pulls_url: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -261,14 +258,11 @@ pub enum IssueCommentAction {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CheckRuns {
-	pub total_count: i64,
 	pub check_runs: Vec<CheckRun>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HeadRepo {
-	pub id: i64,
-	pub url: String,
 	pub name: String,
 	pub owner: User,
 }
@@ -308,7 +302,7 @@ pub struct CheckRun {
 pub struct WebhookIssueComment {
 	pub number: i64,
 	pub html_url: String,
-	pub repository_url: Option<String>,
+	pub repository_url: String,
 	pub pull_request: Option<PlaceholderDeserializationItem>,
 }
 

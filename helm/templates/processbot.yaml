@@ -54,6 +54,18 @@ spec:
         ports:
         - name: backend
           containerPort: {{ .Values.app.WEBHOOK_PORT }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.processbot.config.WEBHOOK_PORT }}
+            initialDelaySeconds: 15
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.processbot.config.WEBHOOK_PORT }}
+            initialDelaySeconds: 15
+            periodSeconds: 5
         env:
             - name: RUST_BACKTRACE
               value: full

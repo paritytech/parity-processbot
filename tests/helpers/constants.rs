@@ -1,0 +1,3 @@
+pub const I64_PLACEHOLDER_WHICH_DOES_NOT_MATTER: i64 = 0;
+pub const USIZE_PLACEHOLDER_WHICH_DOES_NOT_MATTER: usize = 0;
+pub const URL_PLACEHOLDER_WHICH_DOES_NOT_MATTER: &str = "https://localhost";
