@@ -54,6 +54,18 @@ spec:
         ports:
         - name: backend
           containerPort: {{ .Values.processbot.config.WEBHOOK_PORT }}
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: {{ .Values.processbot.config.WEBHOOK_PORT }}
+          initialDelaySeconds: 15
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: {{ .Values.processbot.config.WEBHOOK_PORT }}
+          initialDelaySeconds: 15
+          periodSeconds: 5
         env:
             - name: MATRIX_ACCESS_TOKEN
               valueFrom:
