@@ -7,6 +7,7 @@ variables:
   VAULT_SERVER_URL:                "https://vault.parity-mgmt-vault.parity.io"
   VAULT_AUTH_PATH:                 "gitlab-parity-io-jwt"
   VAULT_AUTH_ROLE:                 "cicd_gitlab_parity_${CI_PROJECT_NAME}"
+  GITHUB_ORGANIZATION:             "paritytech"
 
 default:
   image: paritytech/ci-linux:production
@@ -106,15 +107,6 @@ dockerize-processbot:
   image:                           paritytech/kubetools:3.5.3
   interruptible:                   true
   secrets:
-    BAMBOO_TOKEN:
-      vault:                       cicd/gitlab/$CI_PROJECT_PATH/BAMBOO_TOKEN@kv
-      file:                        false
-    GITLAB_PRIVATE_TOKEN:
-      vault:                       cicd/gitlab/$CI_PROJECT_PATH/GITLAB_PRIVATE_TOKEN@kv
-      file:                        false
-    MATRIX_ACCESS_TOKEN:
-      vault:                       cicd/gitlab/$CI_PROJECT_PATH/MATRIX_ACCESS_TOKEN@kv
-      file:                        false
     PROCESSBOT_KEY:
       vault:                       cicd/gitlab/$CI_PROJECT_PATH/$CI_ENVIRONMENT_NAME/PROCESSBOT_KEY@kv
       file:                        false
@@ -126,17 +118,16 @@ dockerize-processbot:
       file:                        false
   # PROCESSBOT_KEY should be base64 encoded
   script:
-    - helm upgrade processbot kubernetes/processbot
+    - helm upgrade processbot ./helm
       --install
       --namespace "${KUBE_NAMESPACE}"
-      --values "kubernetes/processbot/values-${CI_ENVIRONMENT_NAME}.yaml"
-      --set "dockerTag=${CI_COMMIT_REF_NAME}"
-      --set "processbot.secret.PROCESSBOT_KEY=${PROCESSBOT_KEY}"
-      --set "processbot.secret.BAMBOO_TOKEN=${BAMBOO_TOKEN}"
-      --set "processbot.secret.MATRIX_ACCESS_TOKEN=${MATRIX_ACCESS_TOKEN}"
-      --set "processbot.secret.WEBHOOK_SECRET=${WEBHOOK_SECRET}"
-      --set "processbot.secret.GITLAB_PRIVATE_TOKEN=${GITLAB_PRIVATE_TOKEN}"
-      --set "processbot.secret.GITHUB_APP_ID=${GITHUB_APP_ID}"
+      --values "helm/values-${CI_ENVIRONMENT_NAME}.yaml"
+      --set "app.INSTALLATION_LOGIN=${GITHUB_ORGANIZATION}"
+      --set "app.KUBE_NAMESPACE=${KUBE_NAMESPACE}"
+      --set "app.DOCKER_TAG=${CI_COMMIT_REF_NAME}"
+      --set "app.PROCESSBOT_KEY=${PROCESSBOT_KEY}"
+      --set "app.GITHUB_APP_ID=${GITHUB_APP_ID}"
+      --set "app.WEBHOOK_SECRET=${WEBHOOK_SECRET}"
 
 deploy-staging:
   stage:                           deploy
