@@ -221,11 +221,11 @@ async fn update_companion_repository(
 				),
 			}
 		})?;
-	let pkgs_in_companion: HashSet<&str> = {
+	let pkgs_in_companion: HashSet<String> = {
 		HashSet::from_iter(lockfile.packages.iter().filter_map(|pkg| {
 			if let Some(src) = pkg.source.as_ref() {
 				if src.url().as_str() == url_merge_was_done_in {
-					Some(pkg.name.as_str())
+					Some(format!("{}:{}", pkg.name.as_str(), pkg.version))
 				} else {
 					None
 				}
