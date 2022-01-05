@@ -1,7 +1,7 @@
 use crate::{
 	companion::parse_all_companions, error::*,
 	utils::parse_bot_comment_from_text, webhook::MergeRequestBase,
-	PlaceholderDeserializationItem, PR_HTML_URL_REGEX,
+	PlaceholderDeserializationItem, OWNER_AND_REPO_SEQUENCE, PR_HTML_URL_REGEX,
 };
 use regex::Regex;
 use serde::{Deserialize, Serialize};

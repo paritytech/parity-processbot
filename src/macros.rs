@@ -1,8 +1,19 @@
 #[macro_export]
+macro_rules! OWNER_AND_REPO_SEQUENCE {
+	() => {
+		r"(?P<owner>[^ \t\n]+)/(?P<repo>[^ \t\n]+)"
+	};
+}
+
+#[macro_export]
 macro_rules! PR_HTML_URL_REGEX {
-    () => {
-        r"(?P<html_url>https://[^/\n]+/(?P<owner>[^/\n]+)/(?P<repo>[^/\n]+)/pull/(?P<number>[[:digit:]]+))"
-    };
+	() => {
+		concat!(
+			r"(?P<html_url>https://[^ \t\n]+/",
+			OWNER_AND_REPO_SEQUENCE!(),
+			r"/pull/(?P<number>[[:digit:]]+))"
+		)
+	};
 }
 
 #[macro_export]
@@ -24,7 +35,8 @@ macro_rules! COMPANION_SHORT_REGEX {
 	() => {
 		concat!(
 			COMPANION_PREFIX_REGEX!(),
-			r"(?P<owner>[^/\n]+)/(?P<repo>[^/\n]+)#(?P<number>[[:digit:]]+)"
+			OWNER_AND_REPO_SEQUENCE!(),
+			r"#(?P<number>[[:digit:]]+)"
 		)
 	};
 }
