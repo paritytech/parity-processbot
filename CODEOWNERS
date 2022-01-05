@@ -20,3 +20,6 @@
 /.github/ @paritytech/ci
 /scripts/ @paritytech/ci @joao-paulo-parity
 /.gitlab-ci.yml @paritytech/ci @joao-paulo-parity
+
+# DevOps
+/helm/
