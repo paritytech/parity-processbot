@@ -17,7 +17,7 @@ use crate::{
 		wait_to_merge, AppState, MergeRequest,
 	},
 	MergeAllowedOutcome, Result, COMPANION_LONG_REGEX, COMPANION_PREFIX_REGEX,
-	COMPANION_SHORT_REGEX, PR_HTML_URL_REGEX,
+	COMPANION_SHORT_REGEX, OWNER_AND_REPO_SEQUENCE, PR_HTML_URL_REGEX,
 };
 
 async fn update_companion_repository(
@@ -804,6 +804,22 @@ mod tests {
 			parse_all_companions(
 				&[(owner.to_owned(), repo.to_owned())],
 				&companion_description
+			),
+			vec![]
+		);
+	}
+
+	#[test]
+	fn test_restricted_regex() {
+		let owner = "paritytech";
+		let repo = "polkadot";
+		let pr_number = 1234;
+		let companion_url = format!("{}/{}#{}", owner, repo, pr_number);
+		assert_eq!(
+			parse_all_companions(
+				&[],
+				// the companion expression should not be matched because of the " for" part
+				&format!("companion for {}", &companion_url)
 			),
 			vec![]
 		);
