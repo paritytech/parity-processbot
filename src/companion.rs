@@ -2,7 +2,7 @@ use async_recursion::async_recursion;
 use regex::RegexBuilder;
 use snafu::ResultExt;
 use std::{
-	collections::HashMap, collections::HashSet, iter::FromIterator, path::Path,
+	collections::HashSet, iter::FromIterator, iter::Iterator, path::Path,
 	time::Duration,
 };
 use tokio::time::delay_for;
@@ -11,42 +11,68 @@ use crate::{
 	cmd::*,
 	error::*,
 	github::*,
-	github_bot::GithubBot,
 	webhook::{
-		check_merge_is_allowed, cleanup_merged_pr, merge, ready_to_merge,
-		wait_to_merge, AppState, MergeRequest,
+		check_merge_is_allowed, cleanup_merged_pr, cleanup_pr,
+		handle_dependents_after_merge, merge, ready_to_merge, wait_to_merge,
+		AppState, MergeRequest, PullRequestCleanupReason, WaitToMergeMessage,
 	},
 	MergeAllowedOutcome, Result, COMPANION_LONG_REGEX, COMPANION_PREFIX_REGEX,
 	COMPANION_SHORT_REGEX, OWNER_AND_REPO_SEQUENCE, PR_HTML_URL_REGEX,
 };
 
-async fn update_companion_repository(
-	github_bot: &GithubBot,
+#[derive(Clone)]
+pub struct CompanionReferenceTrailItem {
+	pub owner: String,
+	pub repo: String,
+}
+
+async fn update_pr_branch(
+	state: &AppState,
 	owner: &str,
 	owner_repo: &str,
 	contributor: &str,
 	contributor_repo: &str,
 	contributor_branch: &str,
-	merge_done_in: &str,
+	dependencies_to_update: &HashSet<&String>,
+	number: i64,
 ) -> Result<String> {
-	let token = github_bot.client.auth_key().await?;
-	let secrets_to_hide = [token.as_str()];
-	let secrets_to_hide = Some(&secrets_to_hide[..]);
+	let AppState {
+		github_bot, config, ..
+	} = state;
+	// Constantly refresh the token in-between operations, preferably right before
+	// using it, for avoiding expiration issues. Some operations such as cloning
+	// repositories might take a long time, thus causing the token to be
+	// invalidated after it finishes. In any case, the token generation API should
+	// backed by a cache, thus there's no problem with spamming the refresh calls.
 
-	let owner_repository_domain =
-		format!("github.com/{}/{}.git", owner, owner_repo);
-	let owner_remote_address = format!(
-		"https://x-access-token:{}@{}",
-		token, owner_repository_domain
-	);
-	let repo_dir = format!("./{}", owner_repo);
-
-	if Path::new(&repo_dir).exists() {
-		log::info!("{} is already cloned; skipping", owner_repository_domain);
+	let repo_dir = config.repos_path.join(owner_repo);
+	let repo_dir_str = if let Some(repo_dir_str) = repo_dir.as_os_str().to_str()
+	{
+		repo_dir_str
 	} else {
+		return Err(Error::Message {
+			msg: format!(
+				"Path {:?} could not be converted to string",
+				repo_dir
+			),
+		});
+	};
+
+	if repo_dir.exists() {
+		log::info!("{} is already cloned; skipping", owner_repo);
+	} else {
+		let token = github_bot.client.auth_key().await?;
+		let secrets_to_hide = [token.as_str()];
+		let secrets_to_hide = Some(&secrets_to_hide[..]);
+		let owner_repository_domain =
+			format!("github.com/{}/{}.git", owner, owner_repo);
+		let owner_remote_address = format!(
+			"https://x-access-token:{}@{}",
+			token, owner_repository_domain
+		);
 		run_cmd_in_cwd(
 			"git",
-			&["clone", "-v", &owner_remote_address],
+			&["clone", "-v", &owner_remote_address, repo_dir_str],
 			CommandMessage::Configured(CommandMessageConfiguration {
 				secrets_to_hide,
 				are_errors_silenced: false,
@@ -55,23 +81,14 @@ async fn update_companion_repository(
 		.await?;
 	}
 
-	let contributor_repository_domain =
-		format!("github.com/{}/{}.git", contributor, contributor_repo);
-	let contributor_remote_branch =
-		format!("{}/{}", contributor, contributor_branch);
-	let contributor_remote_address = format!(
-		"https://x-access-token:{}@{}",
-		token, contributor_repository_domain
-	);
-
 	// The contributor's remote entry might exist from a previous run (not expected for a fresh
-	// clone). If so, delete it so that it can be recreated.
+	// clone). If that is the case, delete it so that it can be recreated.
 	if run_cmd(
 		"git",
 		&["remote", "get-url", contributor],
 		&repo_dir,
 		CommandMessage::Configured(CommandMessageConfiguration {
-			secrets_to_hide,
+			secrets_to_hide: None,
 			are_errors_silenced: true,
 		}),
 	)
@@ -83,12 +100,25 @@ async fn update_companion_repository(
 			&["remote", "remove", contributor],
 			&repo_dir,
 			CommandMessage::Configured(CommandMessageConfiguration {
-				secrets_to_hide,
+				secrets_to_hide: None,
 				are_errors_silenced: false,
 			}),
 		)
 		.await?;
 	}
+
+	let contributor_remote_branch =
+		format!("{}/{}", contributor, contributor_branch);
+	let token = github_bot.client.auth_key().await?;
+	let secrets_to_hide = [token.as_str()];
+	let secrets_to_hide = Some(&secrets_to_hide[..]);
+	let contributor_repository_domain =
+		format!("github.com/{}/{}.git", contributor, contributor_repo);
+	let contributor_remote_address = format!(
+		"https://x-access-token:{}@{}",
+		token, contributor_repository_domain
+	);
+
 	run_cmd(
 		"git",
 		&["remote", "add", contributor, &contributor_remote_address],
@@ -99,7 +129,6 @@ async fn update_companion_repository(
 		}),
 	)
 	.await?;
-
 	run_cmd(
 		"git",
 		&["fetch", contributor, contributor_branch],
@@ -166,6 +195,25 @@ async fn update_companion_repository(
 	let owner_branch = "master";
 	let owner_remote_branch = format!("{}/{}", owner_remote, owner_branch);
 
+	let token = github_bot.client.auth_key().await?;
+	let secrets_to_hide = [token.as_str()];
+	let secrets_to_hide = Some(&secrets_to_hide[..]);
+	let owner_repository_domain =
+		format!("github.com/{}/{}.git", owner, owner_repo);
+	let owner_remote_address = format!(
+		"https://x-access-token:{}@{}",
+		token, owner_repository_domain
+	);
+	run_cmd(
+		"git",
+		&["remote", "set-url", owner_remote, &owner_remote_address],
+		&repo_dir,
+		CommandMessage::Configured(CommandMessageConfiguration {
+			secrets_to_hide,
+			are_errors_silenced: false,
+		}),
+	)
+	.await?;
 	run_cmd(
 		"git",
 		&["fetch", owner_remote, owner_branch],
@@ -203,55 +251,68 @@ async fn update_companion_repository(
 		return Err(e);
 	}
 
-	// Update the packages from 'merge_done_in' in the companion
-	let url_merge_was_done_in =
-		format!("https://github.com/{}/{}", owner, merge_done_in);
 	log::info!(
-		"Updating references of {} in the Cargo.lock of {}",
-		url_merge_was_done_in,
-		repo_dir
+		"Dependencies to update for {}/{}/pull/{}: {:?}",
+		owner,
+		owner_repo,
+		number,
+		dependencies_to_update
 	);
-	let cargo_lock_path = Path::new(&repo_dir).join("Cargo.lock");
-	let lockfile =
-		cargo_lock::Lockfile::load(cargo_lock_path).map_err(|err| {
-			Error::Message {
-				msg: format!(
-					"Failed to parse lockfile of {}: {:?}",
-					contributor_repo, err
-				),
-			}
-		})?;
-	let pkgs_in_companion: HashSet<String> = {
-		HashSet::from_iter(lockfile.packages.iter().filter_map(|pkg| {
-			if let Some(src) = pkg.source.as_ref() {
-				if src.url().as_str() == url_merge_was_done_in {
-					Some(format!("{}:{}", pkg.name.as_str(), pkg.version))
+	for dependency_to_update in dependencies_to_update {
+		let source_to_update = format!(
+			"{}/{}/{}{}",
+			config.github_source_prefix,
+			owner,
+			dependency_to_update,
+			config.github_source_suffix
+		);
+		log::info!(
+			"Updating references of {} in the Cargo.lock of {:?}",
+			source_to_update,
+			repo_dir
+		);
+		let cargo_lock_path = Path::new(&repo_dir).join("Cargo.lock");
+		let lockfile =
+			cargo_lock::Lockfile::load(cargo_lock_path).map_err(|err| {
+				Error::Message {
+					msg: format!(
+						"Failed to parse lockfile of {}: {:?}",
+						contributor_repo, err
+					),
+				}
+			})?;
+		let pkgs_in_companion: HashSet<String> = {
+			HashSet::from_iter(lockfile.packages.iter().filter_map(|pkg| {
+				if let Some(src) = pkg.source.as_ref() {
+					if src.url().as_str() == source_to_update {
+						Some(format!("{}:{}", pkg.name.as_str(), pkg.version))
+					} else {
+						None
+					}
 				} else {
 					None
 				}
-			} else {
-				None
-			}
-		}))
-	};
-	if !pkgs_in_companion.is_empty() {
-		let args = {
-			let mut args = vec!["update", "-v"];
-			args.extend(
-				pkgs_in_companion.iter().map(|pkg| ["-p", pkg]).flatten(),
-			);
-			args
+			}))
 		};
-		run_cmd(
-			"cargo",
-			&args,
-			&repo_dir,
-			CommandMessage::Configured(CommandMessageConfiguration {
-				secrets_to_hide,
-				are_errors_silenced: false,
-			}),
-		)
-		.await?;
+		if !pkgs_in_companion.is_empty() {
+			let args = {
+				let mut args = vec!["update", "-v"];
+				args.extend(
+					pkgs_in_companion.iter().map(|pkg| ["-p", pkg]).flatten(),
+				);
+				args
+			};
+			run_cmd(
+				"cargo",
+				&args,
+				&repo_dir,
+				CommandMessage::Configured(CommandMessageConfiguration {
+					secrets_to_hide,
+					are_errors_silenced: false,
+				}),
+			)
+			.await?;
+		}
 	}
 
 	// Check if `cargo update` resulted in any changes. If the master merge commit already had an
@@ -275,7 +336,7 @@ async fn update_companion_repository(
 			&[
 				"commit",
 				"-am",
-				&format!("update lockfile for {}", merge_done_in),
+				&format!("update lockfile for {:?}", dependencies_to_update),
 			],
 			&repo_dir,
 			CommandMessage::Configured(CommandMessageConfiguration {
@@ -298,7 +359,7 @@ async fn update_companion_repository(
 	.await?;
 
 	log::info!(
-		"Getting the head SHA after a companion update in {}",
+		"Getting the head SHA after a PR branch update in {}",
 		&contributor_remote_branch
 	);
 	let updated_sha_output = run_cmd_with_output(
@@ -365,7 +426,7 @@ fn companion_parse_short(body: &str) -> Option<IssueDetailsWithRepositoryURL> {
 }
 
 pub fn parse_all_companions(
-	companion_reference_trail: &[(String, String)],
+	companion_reference_trail: &[CompanionReferenceTrailItem],
 	body: &str,
 ) -> Vec<IssueDetailsWithRepositoryURL> {
 	body.lines()
@@ -374,8 +435,8 @@ pub fn parse_all_companions(
 				.map(|comp| {
 					// Break cyclical references between dependency and dependents because we're only
 					// interested in the dependency -> dependent relationship, not the other way around.
-					for (owner, repo) in companion_reference_trail {
-						if &comp.1 == owner && &comp.2 == repo {
+					for item in companion_reference_trail {
+						if comp.1 == item.owner && comp.2 == item.repo {
 							return None;
 						}
 					}
@@ -391,7 +452,7 @@ pub async fn check_all_companions_are_mergeable(
 	state: &AppState,
 	pr: &PullRequest,
 	requested_by: &str,
-	companion_reference_trail: &[(String, String)],
+	companion_reference_trail: &[CompanionReferenceTrailItem],
 ) -> Result<()> {
 	let companions = match pr.parse_all_companions(companion_reference_trail) {
 		Some(companions) => {
@@ -451,13 +512,13 @@ pub async fn check_all_companions_are_mergeable(
 		// Keeping track of the trail of references is necessary to break chains like A -> B -> C -> A
 		// TODO: of course this should be tested
 		let next_companion_reference_trail = {
-			let mut next_trail: Vec<(String, String)> =
+			let mut next_trail =
 				Vec::with_capacity(companion_reference_trail.len() + 1);
 			next_trail.extend_from_slice(companion_reference_trail);
-			next_trail.push((
-				pr.base.repo.owner.login.to_owned(),
-				pr.base.repo.name.to_owned(),
-			));
+			next_trail.push(CompanionReferenceTrailItem {
+				owner: (&pr.base.repo.owner.login).into(),
+				repo: (&pr.base.repo.name).into(),
+			});
 			next_trail
 		};
 		if let MergeAllowedOutcome::Disallowed(msg) = check_merge_is_allowed(
@@ -477,196 +538,181 @@ pub async fn check_all_companions_are_mergeable(
 }
 
 #[async_recursion]
-async fn update_then_merge_companion(
+pub async fn update_then_merge(
 	state: &AppState,
-	owner: &str,
-	repo: &str,
-	number: &i64,
-	html_url: &str,
-	merge_done_in: &str,
-	requested_by: &str,
-) -> Result<()> {
+	comp: &MergeRequest,
+	msg: &WaitToMergeMessage,
+	should_register_comp: bool,
+	all_dependencies_are_ready: bool,
+) -> Result<Option<String>> {
 	let AppState {
 		github_bot, config, ..
 	} = state;
 
-	let companion = github_bot.pull_request(owner, repo, *number).await?;
-	if cleanup_merged_pr(state, &companion)? {
-		return Ok(());
-	}
-
-	check_merge_is_allowed(state, &companion, requested_by, None, &[]).await?;
-
-	log::info!("Updating companion {}", html_url);
-	let updated_sha = update_companion_repository(
-		github_bot,
-		owner,
-		repo,
-		&companion.head.repo.owner.login,
-		&companion.head.repo.name,
-		&companion.head.ref_field,
-		merge_done_in,
-	)
-	.await?;
-
-	// Wait a bit for the statuses to settle after we've updated the companion
-	delay_for(Duration::from_millis(config.companion_status_settle_delay))
-		.await;
-
-	// Fetch it again since we've pushed some commits and therefore some status or check might have
-	// failed already
-	let companion = github_bot
-		.pull_request(
-			&companion.base.repo.owner.login,
-			&companion.base.repo.name,
-			companion.number,
-		)
-		.await?;
-
-	check_merge_is_allowed(state, &companion, requested_by, None, &[]).await?;
-
-	if ready_to_merge(&state.github_bot, &companion).await? {
-		if let Err(err) = merge(state, &companion, requested_by, None).await? {
-			return match err {
-				Error::MergeFailureWillBeSolvedLater { .. } => Ok(()),
-				err => Err(err),
-			};
+	match async {
+		let comp_pr = github_bot
+			.pull_request(&comp.owner, &comp.repo, comp.number)
+			.await?;
+		if cleanup_merged_pr(state, &comp_pr).await? {
+			return Ok(None);
 		}
-		if let Err(err) =
-			merge_companions(state, &companion, requested_by, None).await
-		{
-			log::error!(
-				"Failed to merge companions of {} (a companion) due to {:?}",
-				companion.html_url,
-				err
-			);
-		}
-	} else {
-		log::info!("Companion updated; waiting for checks on {}", html_url);
 
-		let companion_children = companion.parse_all_mr_base(&[]);
-
-		wait_to_merge(
-			state,
-			&updated_sha,
-			&MergeRequest {
-				owner: companion.base.repo.owner.login,
-				repo: companion.base.repo.name,
-				number: companion.number,
-				html_url: companion.html_url,
-				requested_by: requested_by.to_owned(),
-				companion_children,
-			},
-			None,
-		)
-		.await?;
-	}
-
-	Ok(())
-}
-
-pub async fn merge_companions(
-	state: &AppState,
-	pr: &PullRequest,
-	requested_by: &str,
-	prevent_error_post_of: Option<&str>,
-) -> Result<()> {
-	log::info!("Checking for companions in {}", pr.html_url);
-
-	let companions_groups = {
-		let companions = match pr.parse_all_companions(&[]) {
-			Some(companions) => {
-				if companions.is_empty() {
-					return Ok(());
-				} else {
-					companions
-				}
+		let (updated_sha, comp_pr) = if comp.was_updated {
+			if comp_pr.head.sha != comp.sha {
+				return Err(Error::HeadChanged {
+					expected: comp.sha.to_string(),
+					actual: comp_pr.head.sha.to_string(),
+				});
 			}
-			None => return Ok(()),
+			(None, comp_pr)
+		} else {
+			check_merge_is_allowed(
+				state,
+				&comp_pr,
+				&comp.requested_by,
+				None,
+				&[],
+			)
+			.await?;
+
+			let dependencies_to_update =
+				if let Some(ref dependencies) = comp.dependencies {
+					HashSet::from_iter(
+						dependencies.iter().map(|dependency| &dependency.repo),
+					)
+				} else {
+					HashSet::new()
+				};
+
+			if !all_dependencies_are_ready && !dependencies_to_update.is_empty()
+			{
+				if should_register_comp {
+					wait_to_merge(state, comp, &WaitToMergeMessage::None)
+						.await?;
+				}
+				return Ok(None);
+			}
+
+			log::info!(
+				"Updating {} including the following dependencies: {:?}",
+				comp_pr.html_url,
+				dependencies_to_update
+			);
+
+			let updated_sha = update_pr_branch(
+				state,
+				&comp_pr.base.repo.owner.login,
+				&comp_pr.base.repo.name,
+				&comp_pr.head.repo.owner.login,
+				&comp_pr.head.repo.name,
+				&comp_pr.head.ref_field,
+				&dependencies_to_update,
+				comp_pr.number,
+			)
+			.await?;
+
+			// Wait a bit for the statuses to settle after we've updated the companion
+			delay_for(Duration::from_millis(
+				config.companion_status_settle_delay,
+			))
+			.await;
+
+			// Fetch it again since we've pushed some commits and therefore some status or check might have
+			// failed already
+			let comp_pr = github_bot
+				.pull_request(
+					&comp_pr.base.repo.owner.login,
+					&comp_pr.base.repo.name,
+					comp_pr.number,
+				)
+				.await?;
+
+			// Sanity-check: the PR's new HEAD sha should be the updated SHA we just
+			// pushed
+			if comp_pr.head.sha != updated_sha {
+				return Err(Error::HeadChanged {
+					expected: updated_sha.to_string(),
+					actual: comp_pr.head.sha.to_string(),
+				});
+			}
+
+			// Cleanup the pre-update SHA in order to prevent late status deliveries from
+			// removing the updated SHA from the database
+			cleanup_pr(
+				state,
+				&comp.sha,
+				&comp.owner,
+				&comp.repo,
+				comp.number,
+				&PullRequestCleanupReason::AfterSHAUpdate(&updated_sha),
+			)
+			.await?;
+
+			(Some(updated_sha), comp_pr)
 		};
 
-		let mut companions_groups: HashMap<
-			String,
-			Vec<IssueDetailsWithRepositoryURL>,
-		> = HashMap::new();
-		for comp in companions {
-			let (_, ref owner, ref repo, _) = comp;
-			let key = format!("{}/{}", owner, repo);
-			if let Some(group) = companions_groups.get_mut(&key) {
-				group.push(comp);
+		if ready_to_merge(&state.github_bot, &comp_pr).await? {
+			log::info!(
+				"Attempting to merge {} after companion update",
+				comp_pr.html_url
+			);
+			if let Err(err) =
+				merge(state, &comp_pr, &comp.requested_by, None).await?
+			{
+				match err {
+					Error::MergeFailureWillBeSolvedLater { .. } => {}
+					err => return Err(err),
+				};
 			} else {
-				companions_groups.insert(key, vec![comp]);
+				handle_dependents_after_merge(
+					state,
+					&comp_pr,
+					&comp.requested_by,
+				)
+				.await?;
+				return Ok(updated_sha);
 			}
 		}
 
-		companions_groups
-	};
+		log::info!(
+			"Companion updated; waiting for checks on {}",
+			comp_pr.html_url
+		);
+		wait_to_merge(
+			state,
+			&MergeRequest {
+				sha: comp_pr.head.sha,
+				owner: comp_pr.base.repo.owner.login,
+				repo: comp_pr.base.repo.name,
+				number: comp_pr.number,
+				html_url: comp_pr.html_url,
+				requested_by: (&comp.requested_by).into(),
+				// Set "was_updated: true" to avoid updating a branch more than once
+				was_updated: true,
+				// All dependencies should have been updated above, we won't update them
+				// again
+				dependencies: None,
+			},
+			msg,
+		)
+		.await?;
 
-	let AppState { github_bot, .. } = state;
-
-	let mut remaining_futures = companions_groups
-		.into_values()
-		.map(|group| {
-			Box::pin(async move {
-				let mut errors: Vec<CompanionDetailsWithErrorMessage> = vec![];
-
-				for (html_url, owner, repo, ref number) in group {
-					if let Err(err) = update_then_merge_companion(
-						state,
-						&owner,
-						&repo,
-						number,
-						&html_url,
-						&pr.base.repo.name,
-						requested_by,
-					)
-					.await
-					{
-						errors.push(CompanionDetailsWithErrorMessage {
-							owner: owner.to_owned(),
-							repo: repo.to_owned(),
-							number: *number,
-							html_url: html_url.to_owned(),
-							msg: format!("Companion update failed: {:?}", err),
-						});
-					}
-				}
-
-				errors
-			})
-		})
-		.collect::<Vec<_>>();
-
-	let mut errors: Vec<CompanionDetailsWithErrorMessage> = vec![];
-	while !remaining_futures.is_empty() {
-		let (result, _, next_remaining_futures) =
-			futures::future::select_all(remaining_futures).await;
-		remaining_futures = next_remaining_futures;
-
-		for error in result {
-			let CompanionDetailsWithErrorMessage {
-				ref owner,
-				ref repo,
-				ref number,
-				ref html_url,
-				ref msg,
-			} = error;
-			if prevent_error_post_of != Some(html_url) {
-				let _ = github_bot
-					.create_issue_comment(owner, repo, *number, msg)
-					.await
-					.map_err(|e| {
-						log::error!("Error posting comment: {}", e);
-					});
-			}
-			errors.push(error);
-		}
+		Ok(updated_sha)
 	}
-
-	if errors.is_empty() {
-		Ok(())
-	} else {
-		Err(Error::CompanionsFailedMerge { errors })
+	.await
+	{
+		Err(err) => {
+			let err = match err {
+				Error::WithIssue { .. } => err,
+				err => err.map_issue((
+					comp.owner.to_owned(),
+					comp.repo.to_owned(),
+					comp.number,
+				)),
+			};
+			Err(err)
+		}
+		other => other,
 	}
 }
 
@@ -674,25 +720,33 @@ pub async fn merge_companions(
 mod tests {
 	use super::*;
 
-	#[test]
-	fn test_companion_parse() {
-		// Extra params should not be included in the parsed URL
-		assert_eq!(
-			companion_parse(
-				"companion: https://github.com/paritytech/polkadot/pull/1234?extra_params=true"
-			),
-			Some((
-				"https://github.com/paritytech/polkadot/pull/1234".to_owned(),
-				"paritytech".to_owned(),
-				"polkadot".to_owned(),
-				1234
-			))
-		);
+	const COMPANION_MARKERS: &[&str; 2] = &["Companion", "companion"];
 
-		// Should be case-insensitive on the "companion" marker
-		for companion_marker in &["Companion", "companion"] {
-			// Long version should work even if the body has some other content around the
-			// companion text
+	#[test]
+	fn test_companion_parsing_url_params() {
+		for companion_marker in COMPANION_MARKERS {
+			// Extra params should not be included in the parsed URL
+			assert_eq!(
+				companion_parse(&format!(
+					"{}: https://github.com/paritytech/polkadot/pull/1234?extra_params=true",
+					companion_marker
+				)),
+				Some((
+					"https://github.com/paritytech/polkadot/pull/1234"
+						.to_owned(),
+					"paritytech".to_owned(),
+					"polkadot".to_owned(),
+					1234
+				))
+			);
+		}
+	}
+
+	#[test]
+	fn test_companion_parsing_all_markers() {
+		for companion_marker in COMPANION_MARKERS {
+			// Long version should work even if the body has some other content around
+			// the companion text
 			assert_eq!(
 				companion_parse(&format!(
 					"
@@ -710,15 +764,20 @@ mod tests {
 					1234
 				))
 			);
+		}
+	}
 
-			// Short version should work even if the body has some other content around the
-			// companion text
+	#[test]
+	fn test_companion_parsing_short_version_wrap() {
+		for companion_marker in COMPANION_MARKERS {
+			// Short version should work even if the body has some other content around
+			// the companion text
 			assert_eq!(
 				companion_parse(&format!(
 					"
 					Companion line is in the middle
 					{}: paritytech/polkadot#1234
-			        Final line
+					Final line
 					",
 					companion_marker
 				)),
@@ -731,82 +790,108 @@ mod tests {
 				))
 			);
 		}
-
-		// Long version should not be detected if "companion: " and the expression are not both in
-		// the same line
-		assert_eq!(
-			companion_parse(
-				"
-				I want to talk about companion: but NOT reference it
-				I submitted it in https://github.com/paritytech/polkadot/pull/1234
-				"
-			),
-			None
-		);
-
-		// Short version should not be detected if "companion: " and the expression are not both in
-		// the same line
-		assert_eq!(
-			companion_parse(
-				"
-				I want to talk about companion: but NOT reference it
-				I submitted it in paritytech/polkadot#1234
-				"
-			),
-			None
-		);
 	}
 
 	#[test]
-	fn test_parse_all_companions() {
+	fn test_companion_parsing_long_version_same_line() {
+		for companion_marker in COMPANION_MARKERS {
+			// Long version should not be detected if "companion: " and the expression
+			// are not both in the same line
+			assert_eq!(
+				companion_parse(&format!(
+					"
+					I want to talk about {}: but NOT reference it
+					I submitted it in https://github.com/paritytech/polkadot/pull/1234
+					",
+					companion_marker
+				)),
+				None
+			);
+		}
+	}
+
+	#[test]
+	fn test_companion_parsing_short_version_same_line() {
+		for companion_marker in COMPANION_MARKERS {
+			// Short version should not be detected if "companion: " and the expression are not both in
+			// the same line
+			assert_eq!(
+				companion_parse(&format!(
+					"
+					I want to talk about {}: but NOT reference it
+					I submitted it in paritytech/polkadot#1234
+					",
+					companion_marker
+				)),
+				None
+			);
+		}
+	}
+
+	#[test]
+	fn test_companion_parsing_multiple_companions() {
 		let owner = "paritytech";
 		let repo = "polkadot";
 		let pr_number = 1234;
 		let companion_url =
 			format!("https://github.com/{}/{}/pull/{}", owner, repo, pr_number);
-		let expected_companion = (
+		let expected_companion = &(
 			companion_url.to_owned(),
 			owner.to_owned(),
 			repo.to_owned(),
 			pr_number,
 		);
-		assert_eq!(
-			parse_all_companions(
-				&[],
-				&format!(
-					"
-					first companion: {}
-					second companion: {}
-				",
-					&companion_url, &companion_url
-				)
-			),
-			vec![expected_companion.clone(), expected_companion]
-		);
+		for companion_marker in COMPANION_MARKERS {
+			assert_eq!(
+				parse_all_companions(
+					&[],
+					&format!(
+						"
+						first {}: {}
+						second {}: {}
+					",
+						companion_marker,
+						&companion_url,
+						companion_marker,
+						&companion_url
+					)
+				),
+				vec![expected_companion.clone(), expected_companion.clone()]
+			);
+		}
 	}
 
 	#[test]
 	fn test_cyclical_references() {
 		let owner = "paritytech";
 		let repo = "polkadot";
-		let companion_description = format!(
-			"
-				{} companion: https://github.com/{}/{}/pull/123
+
+		for companion_marker in COMPANION_MARKERS {
+			let companion_description = format!(
+				"
+				{}: https://github.com/{}/{}/pull/123
 				",
-			owner, owner, repo,
-		);
+				companion_marker, owner, repo,
+			);
 
-		// If the source is not referenced in the description, something is parsed
-		assert_ne!(parse_all_companions(&[], &companion_description), vec![]);
+			// If the source is not referenced in the description, something is parsed
+			assert_ne!(
+				parse_all_companions(&[], &companion_description),
+				vec![]
+			);
 
-		// If the source is referenced in the description, it is omitted
-		assert_eq!(
-			parse_all_companions(
-				&[(owner.to_owned(), repo.to_owned())],
-				&companion_description
-			),
-			vec![]
-		);
+			// If the source is referenced in the description, it is omitted
+			assert_eq!(
+				parse_all_companions(
+					&[CompanionReferenceTrailItem {
+						owner: owner.into(),
+						repo: repo.into()
+					}],
+					&companion_description
+				),
+				vec![]
+			);
+		}
 	}
 
 	#[test]
@@ -815,13 +900,15 @@ mod tests {
 		let repo = "polkadot";
 		let pr_number = 1234;
 		let companion_url = format!("{}/{}#{}", owner, repo, pr_number);
-		assert_eq!(
-			parse_all_companions(
-				&[],
-				// the companion expression should not be matched because of the " for" part
-				&format!("companion for {}", &companion_url)
-			),
-			vec![]
-		);
+		for companion_marker in COMPANION_MARKERS {
+			assert_eq!(
+				parse_all_companions(
+					&[],
+					// the companion expression should not be matched because of the " for" part
+					&format!("{} for {}", companion_marker, &companion_url)
+				),
+				vec![]
+			);
+		}
 	}
 }

@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 #![allow(clippy::blocks_in_if_conditions)]
+#![allow(clippy::too_many_arguments)]
 
 use serde::{Deserialize, Serialize};
 

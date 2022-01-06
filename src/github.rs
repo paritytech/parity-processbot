@@ -1,6 +1,7 @@
 use crate::{
-	companion::parse_all_companions, error::*,
-	utils::parse_bot_comment_from_text, webhook::MergeRequestBase,
+	companion::{parse_all_companions, CompanionReferenceTrailItem},
+	error::*,
+	utils::parse_bot_comment_from_text,
 	PlaceholderDeserializationItem, OWNER_AND_REPO_SEQUENCE, PR_HTML_URL_REGEX,
 };
 use regex::Regex;
@@ -27,35 +28,18 @@ pub struct PullRequest {
 impl PullRequest {
 	pub fn parse_all_companions(
 		&self,
-		companion_reference_trail: &[(String, String)],
+		companion_reference_trail: &[CompanionReferenceTrailItem],
 	) -> Option<Vec<IssueDetailsWithRepositoryURL>> {
-		let mut next_trail: Vec<(String, String)> =
+		let mut next_trail =
 			Vec::with_capacity(companion_reference_trail.len() + 1);
 		next_trail.extend_from_slice(companion_reference_trail);
-		next_trail.push((
-			self.base.repo.owner.login.to_owned(),
-			self.base.repo.name.to_owned(),
-		));
+		next_trail.push(CompanionReferenceTrailItem {
+			owner: (&self.base.repo.owner.login).into(),
+			repo: (&self.base.repo.name).into(),
+		});
 		self.body
 			.as_ref()
 			.map(|body| parse_all_companions(&next_trail, body))
-	}
-
-	pub fn parse_all_mr_base(
-		&self,
-		companion_reference_trail: &[(String, String)],
-	) -> Option<Vec<MergeRequestBase>> {
-		self.parse_all_companions(companion_reference_trail)
-			.map(|companions| {
-				companions
-					.into_iter()
-					.map(|(_, owner, repo, number)| MergeRequestBase {
-						owner,
-						repo,
-						number,
-					})
-					.collect()
-			})
 	}
 }
 

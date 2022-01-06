@@ -38,6 +38,7 @@ pub enum Error {
 	#[snafu(display("Missing approval."))]
 	Approval {
 		errors: Vec<String>,
+		html_url: String,
 	},
 
 	#[snafu(display("{}", msg))]

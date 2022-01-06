@@ -86,12 +86,14 @@ fn main() -> anyhow::Result<()> {
 				if let Ok(payload) =
 					serde_json::from_str::<SmeePayload>(event.data.as_str())
 				{
+					log::info!("Acquiring lock");
 					let state = &*state.lock().await;
 					let (merge_cancel_outcome, result) =
 						handle_payload(payload.body, state).await;
 					if let Err(err) = result {
 						handle_error(merge_cancel_outcome, err, state).await;
 					}
+					log::info!("Releasing lock");
 				} else {
 					match event.event_type.as_deref() {
 						Some("ping") => (),

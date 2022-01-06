@@ -24,23 +24,26 @@ pub struct AppState {
 	pub config: MainConfig,
 }
 
-/// This stores information about a pull request while we wait for checks to complete.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[repr(C)]
-pub struct MergeRequestBase {
+pub struct Dependency {
+	pub sha: String,
 	pub owner: String,
 	pub repo: String,
 	pub number: i64,
+	pub html_url: String,
 }
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[repr(C)]
 pub struct MergeRequest {
+	pub sha: String,
+	pub was_updated: bool,
 	pub owner: String,
 	pub repo: String,
 	pub number: i64,
 	pub html_url: String,
 	pub requested_by: String,
-	pub companion_children: Option<Vec<MergeRequestBase>>,
+	pub dependencies: Option<Vec<Dependency>>,
 }
 
 fn verify(
@@ -320,8 +323,15 @@ pub async fn handle_payload(
 			{
 				Ok(mr) => {
 					let merge_cancel_outcome = match cleanup_pr(
-						state, &sha, &mr.owner, &mr.repo, mr.number,
-					) {
+						state,
+						&sha,
+						&mr.owner,
+						&mr.repo,
+						mr.number,
+						&PullRequestCleanupReason::Cancelled,
+					)
+					.await
+					{
 						Ok(_) => {
 							log::info!(
 								"Merge of {} (sha {}) was cancelled due to {:?}",
@@ -478,70 +488,32 @@ pub async fn get_latest_checks_state(
 }
 
 /// Act on a status' outcome to decide on whether a PR relating to this SHA is ready to be merged
+#[async_recursion]
 async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 	let AppState { db, github_bot, .. } = state;
 
 	log::info!("Checking for statuses of {}", sha);
 
-	// If a SHA is in the database, it means `bot merge` has been triggered for it specifically, not
-	// indirectly through a companion, and so we do not need to dig into it's parental relationship
-	// because they are supposed to be processed as an independent unit of work for the merge
-	// process.
-	let (was_sha_in_db, requested_by, parent, pr) = match db
-		.get(sha.as_bytes())
-		.context(Db)?
-	{
-		Some(bytes) => {
-			let mr: MergeRequest =
-				bincode::deserialize(&bytes).context(Bincode)?;
-			let MergeRequest {
-				owner,
-				repo,
-				number,
-				..
-			} = &mr;
-			let pr = github_bot.pull_request(owner, repo, *number).await?;
-			log::info!(
-				"Deserialized merge request for {} (sha {}): {:?}",
-				pr.html_url,
-				sha,
-				mr
-			);
-			(true, mr.requested_by, None, pr)
-		}
-		None => match get_match_from_registered_companions(state, sha).await? {
-			Some(((sha, parent), pr)) => {
-				log::info!(
-					"Found parent for {} (sha {}): {:?}",
-					pr.html_url,
-					sha,
-					parent
-				);
-				(
-					false,
-					parent.requested_by.to_owned(),
-					Some((sha, parent)),
-					pr,
-				)
-			}
-			None => return Ok(()),
-		},
+	let mr: MergeRequest = match db.get(sha.as_bytes()).context(Db)? {
+		Some(bytes) => bincode::deserialize(&bytes).context(Bincode)?,
+		None => return Ok(()),
 	};
-
-	let mut parent_pr_was_merged = false;
-
+	let pr = github_bot
+		.pull_request(&mr.owner, &mr.repo, mr.number)
+		.await?;
 	log::info!(
-		"SHA {} got mapped to PR {} in checks_and_status",
-		sha,
+		"Deserialized merge request for {} (sha {}): {:?}",
 		pr.html_url,
+		sha,
+		mr
 	);
 
 	match async {
-		if cleanup_merged_pr(state, &pr)? {
+		if cleanup_merged_pr(state, &pr).await? {
 			return Ok(());
 		}
 
-		if was_sha_in_db && sha != pr.head.sha {
+		if mr.sha != pr.head.sha {
 			return Err(Error::HeadChanged {
 				expected: sha.to_string(),
 				actual: pr.head.sha.to_owned(),
@@ -553,230 +525,228 @@ async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 			return Ok(());
 		}
 
-		check_merge_is_allowed(state, &pr, &requested_by, None, &[]).await?;
+		check_merge_is_allowed(state, &pr, &mr.requested_by, None, &[]).await?;
 
-		if let Some((parent_sha, parent)) = parent.as_ref() {
-			let parent_pr = github_bot
-				.pull_request(&parent.owner, &parent.repo, parent.number)
-				.await?;
-
-			// Check if this PR is indeed still a companion of the parent (the parent's description might
-			// have been edited since this PR was registered as a companion)
-			let is_still_companion = parent_pr
-				.parse_all_companions(&[])
-				.map(|companions| companions
-					.iter()
-					.any(|(html_url, _, _, _)| {
-						html_url == &pr.html_url
-					}))
-				.unwrap_or(false);
-
-			if is_still_companion && !parent_pr.merged {
-				let was_parent_merged = async {
-					check_merge_is_allowed(
-						state,
-						&parent_pr,
-						&requested_by,
-						None,
-						&[]
+		if let Some(dependencies) = &mr.dependencies {
+			let mut shas_to_exclude = Vec::with_capacity(dependencies.len());
+			shas_to_exclude.push(sha.to_owned());
+			for dependency in dependencies {
+				let dependency_pr = github_bot
+					.pull_request(
+						&dependency.owner,
+						&dependency.repo,
+						dependency.number,
 					)
 					.await?;
+				if dependency_pr.head.sha != dependency.sha {
+					return Err(Error::Message {
+						msg: format!(
+							"Dependency {} 's HEAD SHA changed from {} to {}. Aborting.",
+							dependency.html_url,
+							dependency.sha,
+							dependency_pr.head.sha
+						),
+					});
+				}
 
-					if !ready_to_merge(github_bot, &parent_pr).await? {
-						log::info!(
-							"Skipped merging {} because parent {} was not ready to merge",
-							pr.html_url,
-							parent_pr.html_url
-						);
-						return Ok(false);
-					}
-
-					// Merge the parent (which should also merge this one, since it is a companion)
+				if dependency_pr.merged {
 					log::info!(
-						"Merging {} (parent of {}, which will be merged later as a companion)",
-						parent_pr.html_url,
+						"Dependency {} of PR {} was merged, cleaning it",
+						dependency_pr.html_url,
 						pr.html_url
 					);
-					if let Err(err) =
-						merge(state, &parent_pr, &requested_by, None).await?
-					{
-						return match err {
-							Error::MergeFailureWillBeSolvedLater { .. } => Ok(false),
-							err => Err(err),
-						};
-					};
-
-					Ok(true)
-				}.await;
-
-				match was_parent_merged {
-					Ok(true) => parent_pr_was_merged = true,
-					Ok(false) => return Ok(()),
-					Err(err) => {
-						log::info!(
-							"Will not attempt to merge {} because the parent PR {} failed to be merged due to {:?}",
-							pr.html_url,
-							parent_pr.html_url,
-							err
-						);
-
-						if let Err(cleanup_err) = cleanup_pr(
-							state,
-							parent_sha,
-							&parent_pr.base.repo.owner.login,
-							&parent_pr.base.repo.name,
-							parent_pr.number,
-						) {
-							log::error!(
-								"Failed to cleanup {} (parent of {}) due to {:?}",
-								parent_pr.html_url,
-								pr.html_url,
-								cleanup_err
-							);
-						}
-
-						return Ok(());
-					},
+					cleanup_pr(
+						state,
+						&dependency_pr.head.sha,
+						&dependency.owner,
+						&dependency.repo,
+						dependency.number,
+						&PullRequestCleanupReason::AfterMerge,
+					)
+					.await?;
+					shas_to_exclude.push((&dependency_pr.head.sha).to_owned());
+				} else {
+					log::info!(
+						"Giving up on merging {} because its dependency {} has not been merged yet",
+						pr.html_url,
+						dependency.html_url
+					);
+					return Ok(());
 				};
-
-				// Merge the parent (which should also merge this one, since it is a companion)
-				log::info!(
-					"Merging companions of {} (parent of {}, from where this scenario was triggered)",
-					parent_pr.html_url,
-					pr.html_url
-				);
-				let expect_pr_was_merged_as_companion = match merge_companions(
-					state,
-					&parent_pr,
-					&requested_by,
-					Some(&pr.html_url)
-				).await {
-					// Since the parent's companions have been merged, and this PR is a companion, it should have
-					// been merged as well.
-					Ok(_) => true,
-					Err(err) => match err {
-						Error::CompanionsFailedMerge { errors } => {
-							let this_pr_error = errors.into_iter().find(|CompanionDetailsWithErrorMessage {
-								html_url,
-								..
-							}| {
-								html_url == &pr.html_url
-							});
-							if let Some(this_pr_error) = this_pr_error {
-								return Err(Error::Message {
-									msg: format!(
-										"Failed to merge {} as a companion of {} due to {}",
-										pr.html_url,
-										parent_pr.html_url,
-										this_pr_error.msg
-									)
-								});
-							} else {
-								true
-							}
-						},
-						_ => {
-							log::error!(
-								"Failed to merge companions of {} due to {:?}",
-								parent_pr.html_url,
-								err
-							);
-							false
-						}
-					}
-				};
-
-				// From the parent's companion merges being finished above, at this point this pull request
-				// will either be merged later or it has already been merged. For sanity's sake we'll confirm
-				// those assumptions here.
-				if expect_pr_was_merged_as_companion {
-					if db.get(&pr.head.sha.as_bytes()).context(Db)?.is_some() {
-						log::info!("Companion {} was queued after merging {}", pr.html_url, parent_pr.html_url);
-						return Ok(());
-					} else {
-						let pr = github_bot.pull_request(&pr.base.repo.owner.login, &pr.base.repo.name, pr.number).await?;
-						if pr.merged {
-							if let Err(err) = cleanup_pr(
-								state,
-								&pr.head.sha,
-								&pr.base.repo.owner.login,
-								&pr.base.repo.name,
-								pr.number
-							) {
-								log::error!(
-									"Failed to cleanup PR {} after it has been merged in merge_companions of checks_and_status due to {}",
-									pr.html_url,
-									err
-								);
-							};
-							return Ok(());
-						} else {
-							log::error!(
-								"Expected to have been merged {} as a companion in merge_companions of {}, but it did not happen. This could be a bug.",
-								pr.html_url,
-								parent_pr.html_url
-							);
-						}
-					}
-				}
 			}
 		}
 
-		check_merge_is_allowed(state, &pr, &requested_by, None, &[]).await?;
-
-		if let Err(err) = merge(state, &pr, &requested_by, None).await? {
-			return match err {
-				Error::MergeFailureWillBeSolvedLater { .. } => Ok(()),
-				err => Err(err),
-			};
-		}
-
-		if let Err(err) = merge_companions(state, &pr, &requested_by, None).await {
-			log::error!(
-				"Failed to merge companions of {} due to {}",
-				pr.html_url,
-				err
-			);
-		}
+		log::info!("Updating companion {} before merge", pr.html_url);
+		update_then_merge(
+			state,
+			&mr,
+			&WaitToMergeMessage::None,
+			// No need to register the MR again: we already know it is registered because
+			// it was fetched from the database at the start
+			false,
+			// We have checked that all dependencies are ready by this point
+			true,
+		)
+		.await?;
 
 		Ok(())
 	}
 	.await
 	{
 		Ok(_) | Err(Error::MergeFailureWillBeSolvedLater { .. }) => Ok(()),
-		Err(err) => {
-			// There's no point in cancelling the merge of the parent and communicating and error there
-			// if the parent already has been merged
-			if !parent_pr_was_merged {
-				if let Some((parent_sha, parent)) = parent {
-					cleanup_pr(
+		Err(err) => Err(err.map_issue((
+			pr.base.repo.owner.login,
+			pr.base.repo.name,
+			pr.number,
+		))),
+	}
+}
+
+pub async fn handle_dependents_after_merge(
+	state: &AppState,
+	pr: &PullRequest,
+	requested_by: &str,
+) -> Result<()> {
+	let AppState {
+		github_bot,
+		db,
+		config,
+		..
+	} = state;
+
+	log::info!("Handling dependents of {}", pr.html_url);
+
+	let mut updated_dependents: Vec<(String, MergeRequest)> = vec![];
+	let dependents = github_bot
+		.resolve_pr_dependents(config, pr, requested_by, &[])
+		.await?;
+	if let Some(dependents) = dependents {
+		for dependent in dependents {
+			let depends_on_another_pr = dependent
+				.dependencies
+				.as_ref()
+				.map(|dependencies| {
+					dependencies
+						.iter()
+						.any(|dependency| dependency.repo != pr.base.repo.name)
+				})
+				.unwrap_or(false);
+			match update_then_merge(
+				state,
+				&dependent,
+				&WaitToMergeMessage::Default,
+				// This is the start of the dependency chain, therefore the dependents
+				// should always be registered to the database
+				// TODO: perhaps merge the dependencies if this dependent already exists in
+				// the database
+				true,
+				!depends_on_another_pr,
+			)
+			.await
+			{
+				Ok(updated_sha) => {
+					if let Some(updated_sha) = updated_sha {
+						updated_dependents.push((updated_sha, dependent))
+					}
+				}
+				Err(err) => {
+					let _ = cleanup_pr(
 						state,
-						&parent_sha,
-						&parent.owner,
-						&parent.repo,
-						parent.number,
-					)?;
-					handle_error(
-						MergeCancelOutcome::WasCancelled,
-						Error::Message {
-							msg: format!(
-								"Companion {} has error: {}",
-								pr.html_url, err
-							),
-						}
-						.map_issue((parent.owner, parent.repo, parent.number)),
-						state,
+						&dependent.sha,
+						&dependent.owner,
+						&dependent.repo,
+						dependent.number,
+						&PullRequestCleanupReason::Error,
 					)
 					.await;
+					handle_error(MergeCancelOutcome::WasCancelled, err, state)
+						.await;
 				}
 			}
-			Err(err.map_issue((
-				pr.base.repo.owner.login,
-				pr.base.repo.name,
-				pr.number,
-			)))
 		}
 	}
+
+	let mut mrs_to_check = HashMap::new();
+	let iter = db.iterator(rocksdb::IteratorMode::Start);
+	for (key, value) in iter {
+		match bincode::deserialize::<MergeRequest>(&value).context(Bincode) {
+			Ok(mut dependent_dependent) => {
+				let mut should_include = false;
+				let mut record_was_updated = false;
+				dependent_dependent.dependencies =
+					if let Some(mut dependencies) =
+						dependent_dependent.dependencies
+					{
+						for dependency in dependencies.iter_mut() {
+							for (updated_sha, dependent) in &updated_dependents
+							{
+								if dependency.owner == dependent.owner
+									&& dependency.repo == dependent.repo
+									&& dependency.number == dependent.number
+								{
+									record_was_updated = true;
+									log::info!(
+										"Updating {} 's dependency on {} to SHA {}",
+										dependent_dependent.html_url,
+										dependent.html_url,
+										updated_sha,
+									);
+									dependency.sha = updated_sha.clone();
+								}
+							}
+							if dependency.owner == pr.base.repo.owner.login
+								&& dependency.repo == pr.base.repo.name
+								&& dependency.number == pr.number
+							{
+								should_include = true;
+							}
+						}
+						Some(dependencies)
+					} else {
+						None
+					};
+				if record_was_updated {
+					let bytes = bincode::serialize(&dependent_dependent)
+						.context(Bincode)?;
+					if let Err(err) = db.put(&key, bytes).context(Db) {
+						log::error!(
+							"Failed to update a dependent to {:?} due to {:?}",
+							dependent_dependent,
+							err
+						);
+					} else {
+						mrs_to_check.insert(key, dependent_dependent);
+					}
+				} else if should_include {
+					mrs_to_check.insert(key, dependent_dependent);
+				}
+			}
+			Err(err) => {
+				log::error!(
+					"Failed to deserialize {} during cleanup_pr due to {:?}",
+					String::from_utf8_lossy(&key),
+					err
+				);
+			}
+		};
+	}
+
+	for dependent in mrs_to_check.into_values() {
+		if let Err(err) = checks_and_status(state, &dependent.sha).await {
+			let _ = cleanup_pr(
+				state,
+				&dependent.sha,
+				&dependent.owner,
+				&dependent.repo,
+				dependent.number,
+				&PullRequestCleanupReason::Error,
+			)
+			.await;
+			handle_error(MergeCancelOutcome::WasCancelled, err, state).await;
+		}
+	}
+
+	Ok(())
 }
 
 async fn handle_command(
@@ -788,14 +758,25 @@ async fn handle_command(
 	let AppState { github_bot, .. } = state;
 
 	match cmd {
+		// This command marks the start of the chain of merges. The PR where the
+		// command was received will act as the starting point for resolving further
+		// dependencies.
 		CommentCommand::Merge(cmd) => {
 			let mr = MergeRequest {
-				owner: pr.base.repo.owner.login.to_owned(),
-				repo: pr.base.repo.name.to_owned(),
+				sha: (&pr.head.sha).into(),
+				owner: (&pr.base.repo.owner.login).into(),
+				repo: (&pr.base.repo.name).into(),
 				number: pr.number,
-				html_url: pr.html_url.to_owned(),
-				requested_by: requested_by.to_owned(),
-				companion_children: pr.parse_all_mr_base(&[]),
+				html_url: (&pr.html_url).into(),
+				requested_by: requested_by.into(),
+				// Set "was_updated" from the start so that this branch will not be updated
+				// It's important for it not to be updated because the command issuer has
+				// trusted the current commit, but not the ones coming after it (some
+				// malicious actor might want to sneak in changes after the command starts).
+				was_updated: true,
+				// This is the starting point of the merge chain, hence why always no
+				// dependencies are registered for it upfront
+				dependencies: None,
 			};
 
 			check_merge_is_allowed(state, pr, requested_by, None, &[]).await?;
@@ -815,9 +796,8 @@ async fn handle_command(
 								);
 								wait_to_merge(
 									state,
-									&pr.head.sha,
 									&mr,
-									Some(&msg),
+									&WaitToMergeMessage::Custom(&msg),
 								)
 								.await?;
 								return Err(
@@ -830,7 +810,8 @@ async fn handle_command(
 							_ => (),
 						}
 					} else {
-						wait_to_merge(state, &pr.head.sha, &mr, None).await?;
+						wait_to_merge(state, &mr, &WaitToMergeMessage::Default)
+							.await?;
 						return Ok(());
 					}
 				}
@@ -847,18 +828,7 @@ async fn handle_command(
 				}
 			}
 
-			log::info!("Merging companions of {}", pr.html_url);
-			if let Err(err) =
-				merge_companions(state, pr, requested_by, None).await
-			{
-				log::error!(
-					"Failed to merge the companions of {} due to {:?}",
-					pr.html_url,
-					err
-				);
-			}
-
-			Ok(())
+			handle_dependents_after_merge(state, pr, requested_by).await
 		}
 		CommentCommand::CancelMerge => {
 			log::info!("Deleting merge request for {}", pr.html_url);
@@ -869,7 +839,9 @@ async fn handle_command(
 				&pr.base.repo.owner.login,
 				&pr.base.repo.name,
 				pr.number,
-			)?;
+				&PullRequestCleanupReason::Cancelled,
+			)
+			.await?;
 
 			if let Err(err) = github_bot
 				.create_issue_comment(
@@ -1001,7 +973,7 @@ pub async fn check_merge_is_allowed(
 	pr: &PullRequest,
 	requested_by: &str,
 	min_approvals_required: Option<usize>,
-	companion_reference_trail: &[(String, String)],
+	companion_reference_trail: &[CompanionReferenceTrailItem],
 ) -> Result<MergeAllowedOutcome> {
 	let AppState {
 		github_bot, config, ..
@@ -1173,7 +1145,10 @@ pub async fn check_merge_is_allowed(
 				log::info!("{} has core or team lead approval.", pr.html_url);
 				Ok(relevant_approvals_count)
 			} else {
-				Err(Error::Approval { errors })
+				Err(Error::Approval {
+					errors,
+					html_url: (&pr.html_url).to_owned(),
+				})
 			}
 		}?;
 
@@ -1260,27 +1235,28 @@ pub async fn ready_to_merge(
 
 async fn register_merge_request(
 	state: &AppState,
-	sha: &str,
 	mr: &MergeRequest,
 ) -> Result<()> {
-	// Keep only one instance of the PR in the database so that companions are sure to find the latest
-	// active parent
-	cleanup_pr(state, sha, &mr.owner, &mr.repo, mr.number)?;
 	let AppState { db, .. } = state;
+	let MergeRequest { sha, .. } = mr;
 	log::info!("Registering merge request (sha: {}): {:?}", sha, mr);
 	let bytes = bincode::serialize(mr).context(Bincode)?;
 	db.put(sha.as_bytes(), bytes).context(Db)
 }
 
+pub enum WaitToMergeMessage<'a> {
+	Custom(&'a str),
+	Default,
+	None,
+}
 /// Create a merge request, add it to the database, and post a comment stating the merge is
 /// pending.
 pub async fn wait_to_merge(
 	state: &AppState,
-	sha: &str,
 	mr: &MergeRequest,
-	msg: Option<&str>,
+	msg: &WaitToMergeMessage<'_>,
 ) -> Result<()> {
-	register_merge_request(state, sha, mr).await?;
+	register_merge_request(state, mr).await?;
 
 	let AppState { github_bot, .. } = state;
 
@@ -1291,13 +1267,14 @@ pub async fn wait_to_merge(
 		..
 	} = mr;
 
+	let msg = match msg {
+		WaitToMergeMessage::Custom(msg) => msg,
+		WaitToMergeMessage::Default => "Waiting for commit status.",
+		WaitToMergeMessage::None => return Ok(()),
+	};
+
 	let post_comment_result = github_bot
-		.create_issue_comment(
-			owner,
-			repo,
-			*number,
-			msg.unwrap_or("Waiting for commit status."),
-		)
+		.create_issue_comment(owner, repo, *number, msg)
 		.await;
 	if let Err(err) = post_comment_result {
 		log::error!("Error posting comment: {}", err);
@@ -1306,7 +1283,10 @@ pub async fn wait_to_merge(
 	Ok(())
 }
 
-pub fn cleanup_merged_pr(state: &AppState, pr: &PullRequest) -> Result<bool> {
+pub async fn cleanup_merged_pr(
+	state: &AppState,
+	pr: &PullRequest,
+) -> Result<bool> {
 	if !pr.merged {
 		return Ok(false);
 	}
@@ -1317,54 +1297,75 @@ pub fn cleanup_merged_pr(state: &AppState, pr: &PullRequest) -> Result<bool> {
 		&pr.base.repo.owner.login,
 		&pr.base.repo.name,
 		pr.number,
+		&PullRequestCleanupReason::AfterMerge,
 	)
+	.await
 	.map(|_| true)
 }
 
-pub fn cleanup_pr(
+pub enum PullRequestCleanupReason<'a> {
+	AfterMerge,
+	AfterSHAUpdate(&'a String),
+	Cancelled,
+	Error,
+}
+
+// Removes a pull request from the database (e.g. when it has been merged) and
+// executes side-effects related to the kind of trigger for this function
+pub async fn cleanup_pr(
 	state: &AppState,
 	key_to_guarantee_deleted: &str,
 	owner: &str,
 	repo: &str,
 	number: i64,
+	reason: &PullRequestCleanupReason<'_>,
 ) -> Result<()> {
 	let AppState { db, .. } = state;
 
+	let mut related_dependents = HashMap::new();
+
 	let iter = db.iterator(rocksdb::IteratorMode::Start);
-	for (key, value) in iter {
-		let db_mr: MergeRequest =
-			match bincode::deserialize(&value).context(Bincode) {
-				Ok(mr) => mr,
-				Err(err) => {
-					log::error!(
-						"Failed to deserialize {} during cleanup_pr due to {:?}",
-						String::from_utf8_lossy(&key),
-						err
+	'to_next_db_item: for (key, value) in iter {
+		match bincode::deserialize::<MergeRequest>(&value).context(Bincode) {
+			Ok(mr) => {
+				if mr.owner == owner && mr.repo == repo && mr.number == number {
+					log::info!(
+						"Cleaning up {:?} due to key {} of {}/{}/pull/{}",
+						mr,
+						key_to_guarantee_deleted,
+						owner,
+						repo,
+						number
 					);
-					continue;
+
+					if let Err(err) = db.delete(&key) {
+						log::error!(
+							"Failed to delete {} during cleanup_pr due to {:?}",
+							String::from_utf8_lossy(&key),
+							err
+						);
+					}
 				}
-			};
 
-		if db_mr.owner != owner || db_mr.repo != repo || db_mr.number != number
-		{
-			continue;
-		}
-
-		log::info!(
-			"Cleaning up {:?} due to SHA {} of {}/{}#{}",
-			db_mr,
-			key_to_guarantee_deleted,
-			owner,
-			repo,
-			number
-		);
-
-		if let Err(err) = db.delete(&key) {
-			log::error!(
-				"Failed to delete {} during cleanup_pr due to {:?}",
-				String::from_utf8_lossy(&key),
-				err
-			);
+				if let Some(dependencies) = &mr.dependencies {
+					for dependency in dependencies.iter() {
+						if dependency.owner == owner
+							&& dependency.repo == repo && dependency.number
+							== number
+						{
+							related_dependents.insert((&mr.sha).clone(), mr);
+							continue 'to_next_db_item;
+						}
+					}
+				}
+			}
+			Err(err) => {
+				log::error!(
+					"Failed to deserialize {} during cleanup_pr due to {:?}",
+					String::from_utf8_lossy(&key),
+					err
+				);
+			}
 		}
 	}
 
@@ -1378,6 +1379,122 @@ pub fn cleanup_pr(
 		});
 	}
 
+	struct CleanedUpPullRequest {
+		pub owner: String,
+		pub repo: String,
+		pub key_to_guarantee_deleted: String,
+		pub number: i64,
+	}
+	lazy_static::lazy_static! {
+		static ref CLEANUP_PR_RECURSION_PREVENTION: parking_lot::Mutex<Vec<CleanedUpPullRequest>> = {
+			parking_lot::Mutex::new(vec![])
+		};
+	}
+	// Prevent mutual recursion since the side-effects might end up calling this
+	// function again. We want to trigger the further side-effects at most once for
+	// each pull request.
+	{
+		log::info!("Acquiring cleanup_pr's recursion prevention lock");
+		let mut cleaned_up_prs = CLEANUP_PR_RECURSION_PREVENTION.lock();
+		for pr in &*cleaned_up_prs {
+			if pr.owner == owner
+				&& pr.repo == repo
+				&& pr.number == number
+				&& pr.key_to_guarantee_deleted == key_to_guarantee_deleted
+			{
+				log::info!(
+					"Skipping side-effects of {}/{}/pull/{} (key {}) because they have already been processed",
+					owner,
+					repo,
+					number,
+					key_to_guarantee_deleted
+				);
+				return Ok(());
+			}
+		}
+		cleaned_up_prs.push(CleanedUpPullRequest {
+			owner: owner.into(),
+			repo: repo.into(),
+			key_to_guarantee_deleted: key_to_guarantee_deleted.into(),
+			number,
+		});
+		log::info!("Releasing cleanup_pr's recursion prevention lock");
+	}
+
+	log::info!(
+		"Related dependents of {}/{}/pull/{} (key {}): {:?}",
+		owner,
+		repo,
+		number,
+		key_to_guarantee_deleted,
+		related_dependents
+	);
+
+	match reason {
+		PullRequestCleanupReason::Error
+		| PullRequestCleanupReason::Cancelled => {
+			for dependent in related_dependents.values() {
+				let _ = cleanup_pr(
+					state,
+					&dependent.sha,
+					&dependent.owner,
+					&dependent.repo,
+					dependent.number,
+					reason,
+				);
+			}
+		}
+		PullRequestCleanupReason::AfterSHAUpdate(updated_sha) => {
+			for mut dependent in related_dependents.into_values() {
+				let mut was_updated = false;
+				dependent.dependencies =
+					if let Some(mut dependencies) = dependent.dependencies {
+						for dependency in dependencies.iter_mut() {
+							if dependency.owner == owner
+								&& dependency.repo == repo && dependency.number
+								== number
+							{
+								was_updated = true;
+								log::info!(
+									"Dependency of {} on {}/{}/pull/{} was updated to SHA {}",
+									dependent.html_url,
+									owner,
+									repo,
+									number,
+									updated_sha
+								);
+								dependency.sha = updated_sha.to_string();
+							}
+						}
+						Some(dependencies)
+					} else {
+						None
+					};
+
+				if was_updated {
+					let bytes =
+						bincode::serialize(&dependent).context(Bincode)?;
+					if let Err(err) =
+						db.put(dependent.sha.as_bytes(), bytes).context(Db)
+					{
+						log::error!(
+							"Failed to update a dependent to {:?} while cleaning up {}/{}/pull/{} due to {:?}",
+							dependent,
+							owner,
+							repo,
+							number,
+							err
+					);
+					}
+				}
+			}
+		}
+		PullRequestCleanupReason::AfterMerge => {}
+	}
+
+	log::info!("Cleaning up cleanup_pr recursion prevention lock's entries");
+	CLEANUP_PR_RECURSION_PREVENTION.lock().clear();
+
 	Ok(())
 }
 
@@ -1389,7 +1506,7 @@ pub async fn merge(
 	requested_by: &str,
 	created_approval_id: Option<i64>,
 ) -> Result<Result<()>> {
-	if cleanup_merged_pr(state, pr)? {
+	if cleanup_merged_pr(state, pr).await? {
 		return Ok(Ok(()));
 	}
 
@@ -1407,13 +1524,15 @@ pub async fn merge(
 		{
 			Ok(_) => {
 				log::info!("{} merged successfully.", pr.html_url);
+				// Merge succeeded! Now clean it from the database
 				if let Err(err) = cleanup_pr(
 					state,
 					&pr.head.sha,
 					&pr.base.repo.owner.login,
 					&pr.base.repo.name,
 					pr.number,
-				) {
+					&PullRequestCleanupReason::AfterMerge
+				).await {
 					log::error!("Failed to cleanup PR on the database after merge: {}", err);
 				};
 				return Ok(());
@@ -1550,7 +1669,7 @@ pub async fn merge(
 			state,
 			pr,
 			requested_by,
-			review
+			review,
 		).await??;
 
 		Ok(())
@@ -1582,11 +1701,11 @@ pub async fn merge(
 
 fn get_troubleshoot_msg(state: &AppState) -> String {
 	let AppState { config, .. } = state;
-	return format!(
+	format!(
 		"Merge failed. Check out the [criteria for merge](https://github.com/paritytech/parity-processbot#criteria-for-merge). If you're not meeting the approval count, check if the approvers are team members of {} or {}.",
 		&config.team_leads_team,
 		&config.core_devs_team,
-	);
+	)
 }
 
 fn display_errors_along_the_way(errors: Vec<String>) -> String {
@@ -1598,8 +1717,9 @@ fn display_errors_along_the_way(errors: Vec<String>) -> String {
 
 fn format_error(state: &AppState, err: Error) -> String {
 	match err {
-		Error::Approval { errors } => format!(
-			"Approval criteria was not satisfied.\n\n{}\n\n{}",
+		Error::Approval { errors, html_url } => format!(
+			"Approval criteria was not satisfied in {}.\n\n{}\n\n{}",
+			html_url,
 			display_errors_along_the_way(errors),
 			get_troubleshoot_msg(state)
 		),
@@ -1657,43 +1777,4 @@ pub async fn handle_error(
 			}
 		}
 	}
-}
-
-async fn get_match_from_registered_companions(
-	state: &AppState,
-	sha: &str,
-) -> Result<Option<((String, MergeRequest), PullRequest)>> {
-	let AppState { db, github_bot, .. } = state;
-
-	let iter = db.iterator(rocksdb::IteratorMode::Start);
-	for (parent_sha, value) in iter {
-		let parent: MergeRequest =
-			bincode::deserialize(&value).context(Bincode)?;
-
-		let companion_children = match parent.companion_children {
-			Some(ref companion_children) => companion_children,
-			_ => continue,
-		};
-
-		for child in companion_children {
-			let pr = github_bot
-				.pull_request(&child.owner, &child.repo, child.number)
-				.await?;
-			// TODO: consider that a PR could be a companion of multiple parents
-			if pr.head.sha == sha {
-				log::info!(
-					"Matched pull request {} for sha {} with parent {:?}",
-					pr.html_url,
-					sha,
-					parent
-				);
-				return Ok(Some((
-					(String::from_utf8_lossy(&parent_sha).to_string(), parent),
-					pr,
-				)));
-			}
-		}
-	}
-
-	Ok(None)
 }

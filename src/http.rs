@@ -128,12 +128,15 @@ impl Client {
 			};
 		}
 
+		// Add some padding for avoiding token use just as it's about to expire
+		let installation_lease_with_padding =
+			Utc::now() + Duration::minutes(10);
 		let token = {
 			TOKEN_CACHE
 				.lock()
 				.as_ref()
 				// Ensure token is not expired if set.
-				.filter(|(time, _)| time > &Utc::now())
+				.filter(|(time, _)| time > &installation_lease_with_padding)
 				.map(|(_, token)| token.clone())
 		};
 
