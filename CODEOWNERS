@@ -21,4 +21,4 @@
 /.gitlab-ci.yml @paritytech/ci @joao-paulo-parity
 
 # DevOps
-/helm/
+/helm/ @paritytech/devops
