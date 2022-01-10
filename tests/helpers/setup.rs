@@ -26,6 +26,8 @@ pub struct CommonSetupOutput {
 	pub github_app_id: usize,
 	pub next_team_id: i64,
 	pub initial_branch: String,
+	pub core_devs_team: &'static str,
+	pub team_leads_team: &'static str,
 }
 pub fn common_setup() -> CommonSetupOutput {
 	let git_daemon_base_path_tracker =
@@ -161,11 +163,11 @@ GcZ0izY/30012ajdHY+/QK5lsMoxTnn0skdS+spLxaS5ZEO4qvPVb8RAoCkWMMal
 				.body(serde_json::to_string(&json!({})).unwrap()),
 		),
 	);
+
+	let core_devs_team = "core-devs";
+	let team_leads_team = "team-leads";
 	let mut next_team_id = 0;
-	for team in &[
-		parity_processbot::constants::CORE_DEVS_GROUP,
-		parity_processbot::constants::SUBSTRATE_TEAM_LEADS_GROUP,
-	] {
+	for team in &[core_devs_team, team_leads_team] {
 		next_team_id += 1;
 		setup_team(
 			&github_api,
@@ -193,6 +195,8 @@ GcZ0izY/30012ajdHY+/QK5lsMoxTnn0skdS+spLxaS5ZEO4qvPVb8RAoCkWMMal
 		private_key,
 		next_team_id,
 		initial_branch: initial_branch.to_string(),
+		core_devs_team,
+		team_leads_team,
 	}
 }
 
