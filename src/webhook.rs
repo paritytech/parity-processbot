@@ -1583,7 +1583,7 @@ pub async fn merge(
 fn get_troubleshoot_msg(state: &AppState) -> String {
 	let AppState { config, .. } = state;
 	return format!(
-		"Merge failed. Check out the [criteria for merge](https://github.com/paritytech/parity-processbot#criteria-for-merge). If you're not meeting the approval count, check if the approvers are members of {} or {}.",
+		"Merge failed. Check out the [criteria for merge](https://github.com/paritytech/parity-processbot#criteria-for-merge). If you're not meeting the approval count, check if the approvers are team members of {} or {}.",
 		&config.team_leads_team,
 		&config.core_devs_team,
 	);
