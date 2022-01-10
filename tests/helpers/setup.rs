@@ -148,22 +148,6 @@ GcZ0izY/30012ajdHY+/QK5lsMoxTnn0skdS+spLxaS5ZEO4qvPVb8RAoCkWMMal
 		})),
 	);
 
-	// An empty Process.json file is served because we are not interested in testing that feature
-	// https://github.com/paritytech/parity-processbot/issues/333
-	github_api.expect(
-		Expectation::matching(request::method_path(
-			"GET",
-			format!(
-				"/repos/{}/{}/contents/{}",
-				&owner.login,
-				repo,
-				parity_processbot::constants::PROCESS_FILE
-			),
-		))
-		.times(0..)
-		.respond_with(|| status_code(200).body(base64::encode("[]"))),
-	);
-
 	// Set up the membership for the initial user so that the organization checks will pass
 	github_api.expect(
 		Expectation::matching(request::method_path(

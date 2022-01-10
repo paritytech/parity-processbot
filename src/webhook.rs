@@ -13,10 +13,9 @@ use tokio::{sync::Mutex, time::delay_for};
 
 use crate::{
 	companion::*, config::MainConfig, constants::*, error::*, github::*,
-	github_bot::GithubBot, process, rebase::*,
-	utils::parse_bot_comment_from_text, vanity_service, CommentCommand,
-	MergeAllowedOutcome, MergeCancelOutcome, MergeCommentCommand, Result,
-	Status, PROCESS_INFO_ERROR_TEMPLATE, WEBHOOK_PARSING_ERROR_TEMPLATE,
+	github_bot::GithubBot, rebase::*, utils::parse_bot_comment_from_text,
+	vanity_service, CommentCommand, MergeAllowedOutcome, MergeCancelOutcome,
+	MergeCommentCommand, Result, Status, WEBHOOK_PARSING_ERROR_TEMPLATE,
 };
 
 pub struct AppState {
@@ -1161,39 +1160,7 @@ pub async fn check_merge_is_allowed(
 				log::info!("{} has core or team lead approval.", pr.html_url);
 				Ok(relevant_approvals_count)
 			} else {
-				let (process, process_warnings) = process::get_process(
-					github_bot,
-					&pr.base.repo.owner.login,
-					&pr.base.repo.name,
-					pr.number,
-				)
-				.await?;
-
-				let project_owner_approved =
-					approved_reviews.iter().rev().any(|review| {
-						review
-							.user
-							.as_ref()
-							.map(|user| process.is_owner(&user.login))
-							.unwrap_or(false)
-					});
-				let project_owner_requested = process.is_owner(requested_by);
-
-				if project_owner_approved || project_owner_requested {
-					log::info!("{} has project owner approval.", pr.html_url);
-					Ok(relevant_approvals_count)
-				} else {
-					errors.extend(process_warnings);
-					if process.is_empty() {
-						Err(Error::ProcessInfo {
-							errors: Some(errors),
-						})
-					} else {
-						Err(Error::Approval {
-							errors: Some(errors),
-						})
-					}
-				}
+				Err(Error::Approval { errors })
 			}
 		}?;
 
@@ -1232,21 +1199,10 @@ pub async fn check_merge_is_allowed(
 	{
 		"a team lead".to_string()
 	} else {
-		let (process, _) = process::get_process(
-			github_bot,
-			&pr.base.repo.owner.login,
-			&pr.base.repo.name,
-			pr.number,
-		)
-		.await?;
-		if process.is_owner(requested_by) {
-			"a project owner".to_string()
-		} else {
-			return Ok(MergeAllowedOutcome::Disallowed(format!(
-				"@{} 's approval is not enough to make {} mergeable by processbot's rules",
-				requested_by, pr.html_url
-			)));
-		}
+		return Ok(MergeAllowedOutcome::Disallowed(format!(
+			"@{} 's approval is not enough to make {} mergeable by processbot's rules",
+			requested_by, pr.html_url
+		)));
 	};
 
 	Ok(MergeAllowedOutcome::GrantApprovalForRole(role))
@@ -1619,31 +1575,15 @@ fn get_troubleshoot_msg() -> String {
 	);
 }
 
-fn display_errors_along_the_way(errors: Option<Vec<String>>) -> String {
-	errors
-		.map(|errors| {
-			if errors.is_empty() {
-				"".to_string()
-			} else {
-				format!(
-					"The following errors **might** have affected the outcome of this attempt:\n{}",
-					errors.iter().map(|e| format!("- {}", e)).join("\n")
-				)
-			}
-		})
-		.unwrap_or_else(|| "".to_string())
+fn display_errors_along_the_way(errors: Vec<String>) -> String {
+	format!(
+		"The following errors **might** have affected the outcome of this attempt:\n{}",
+		errors.iter().map(|e| format!("- {}", e)).join("\n")
+	)
 }
 
 fn format_error(err: Error) -> String {
 	match err {
-		Error::ProcessInfo { errors } => {
-			format!(
-				PROCESS_INFO_ERROR_TEMPLATE!(),
-				PROCESS_FILE,
-				display_errors_along_the_way(errors),
-				get_troubleshoot_msg()
-			)
-		}
 		Error::Approval { errors } => format!(
 			"Approval criteria was not satisfied.\n\n{}\n\n{}",
 			display_errors_along_the_way(errors),
