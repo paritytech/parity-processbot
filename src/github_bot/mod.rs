@@ -1,5 +1,4 @@
-use crate::{config::MainConfig, constants::*, github::*, Result};
-use futures_util::TryFutureExt;
+use crate::{config::MainConfig, github::*, Result};
 
 pub mod issue;
 pub mod project;
@@ -100,17 +99,5 @@ impl GithubBot {
 			"message": "Merge failed despite bot approval, therefore the approval will be dismissed."
 		});
 		self.client.put(url, body).await
-	}
-
-	pub async fn core_devs(&self, owner: &str) -> Result<Vec<User>> {
-		self.team(owner, CORE_DEVS_GROUP)
-			.and_then(|team| self.team_members(team.id))
-			.await
-	}
-
-	pub async fn substrate_team_leads(&self, owner: &str) -> Result<Vec<User>> {
-		self.team(owner, SUBSTRATE_TEAM_LEADS_GROUP)
-			.and_then(|team| self.team_members(team.id))
-			.await
 	}
 }

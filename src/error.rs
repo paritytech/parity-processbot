@@ -35,14 +35,9 @@ pub enum Error {
 		actual: String,
 	},
 
-	#[snafu(display("Missing process info."))]
-	ProcessInfo {
-		errors: Option<Vec<String>>,
-	},
-
 	#[snafu(display("Missing approval."))]
 	Approval {
-		errors: Option<Vec<String>>,
+		errors: Vec<String>,
 	},
 
 	#[snafu(display("{}", msg))]

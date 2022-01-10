@@ -52,15 +52,10 @@ which will allow processbot to detect and disregard them.
 A Pull Request needs either (meaning, only **one of** the following
 requirements needs to be fulfilled)
 
-- [core-dev](#core-devs) member approvals (2 for Substrate, 1 otherwise), or
-- One [substrateteamleads](#substrateteamleads) member approval, or
-- One approval from the project owner **for the PR**. Projects are managed
-  [through the Github UI](#github-project) and its [owners](#project-owners)
-  are defined in `Process.json`. If the PR does not belong to any project or if
-  it has been approved by a project owner which is not the PR's project owner,
-  then this rule will not take effect.
+- [core-dev](https://github.com/orgs/paritytech/teams/core-devs) member approvals (2 for Substrate, 1 otherwise), or
+- One [substrateteamleads](https://github.com/orgs/paritytech/teams/substrateteamleads) member approval
 
-This criteria strictly matters only for the bot's internal logic irrespective
+This criterion strictly matters only for the bot's internal logic irrespective
 of Github Repository Settings and will not trump the latter in any case. For
 instance, the rule:
 
@@ -69,50 +64,32 @@ instance, the rule:
 does not imply that the pull request will be mergeable if the Github Settings
 require more approvals than that. The bot's rules work *in addition* to the
 repository's settings while still respecting them. Specifically when it comes
-to the approvals' count, however, the bot might able to help if an "Allowed
-Developer" is requesting the merge.
-
-Consider "Allowed Developers" to be either
-
-- [Project Owners](#project-owners)
-- [substrateteamleads](#substrateteamleads)
+to the approvals' count, however, the bot might able to help if a
+[team lead](https://github.com/orgs/paritytech/teams/substrateteamleads)
+is requesting the merge.
 
 When the bot is commanded to merge, if the PR is short of 1 approval and the
 command's requester might not be able to fulfill the approval count on their
 own, then the bot will try to pitch in the missing approval if the requester is
-an Allowed Developer. The reasoning for this feature is as follows:
+a [team lead](https://github.com/orgs/paritytech/teams/substrateteamleads).
+The reasoning for this feature is as follows:
 
-1. PR authors cannot approve their own merge requests, although Allowed
-   Developers should have the means to bypass that requirement e.g. for trivial
-   or urgent changes.
+1. PR authors cannot approve their own merge requests, although
+	[team leads](https://github.com/orgs/paritytech/teams/substrateteamleads)
+	should have the means to bypass that requirement e.g. for trivial or urgent
+	changes.
 
-2. If the Allowed Developer has already approved and it's still short of one,
-   they cannot "approve twice" in order to meet the quota. In that case, the
-   bot should contribute one approval in order to help them meet that
-   requirement.
+2. If the
+	[team lead](https://github.com/orgs/paritytech/teams/substrateteamleads)
+	has already approved and it's still
+	short of one, they cannot "approve twice" in order to meet the quota. In that
+	case, the bot should contribute one approval in order to help them meet that
+	requirement.
 
 ## Checks and statuses
 
 All [Important and above](#relation-to-ci) checks should be green when using
 `bot merge` (can be bypassed by using `bot merge force`).
-
-# Project Owners <a name="project-owners"></a>
-
-Project owners can be configured by placing a `Process.json` file in the root
-of your repository. **The bot always considers only the `master` branch's
-version of the file**. See [./Process.json](./Process.json) or
-[Substrate's Process.json](https://github.com/paritytech/substrate/blob/master/Process.json)
-for examples.
-
-The file should have a valid JSON array of
-`{ "project_name": string, "owner": string, "matrix_room_id": string }`
-where:
-
-- `project_name` is the [Github Project](#github-project)'s name
-- `owner` is the Github Username of the project's lead
-- `matrix_room_id` is the project's room address on Matrix, like
-  `"!yBKstWVBkwzUkPslsp:matrix.parity.io"`. It's not currently used, but needs to
-  be defined.
 
 # Github App Configuration
 
@@ -221,22 +198,3 @@ The deployment's status can be followed through
 All of the relevant configuration for deployment lives in the [./helm](./helm)
 folder. The values for each specific environment are in `values-*.yml`. If you
 add a value, it needs to be used in `templates/processbot.yaml`.
-
-# FAQ
-
-- Who are "core-devs"? <a name="core-devs"></a>
-	- https://github.com/orgs/paritytech/teams/core-devs/members
-
-- Who are "substrateteamleads"? <a name="substrateteamleads"></a>
-	- https://github.com/orgs/paritytech/teams/substrateteamleads/members
-
-- What is a project column and how do I attach one? <a name="github-project"></a>
-	- A project column is necessary for Processbot to identify a
-	  [Project Owner](#project-owners).
-	- A pull request can be attached to a project column using the Github UI:
-		- Having no project, it *will not be recognized*
-		![](https://github.com/paritytech/parity-processbot/blob/master/doc/no-project.png)
-		- Having a project, but no column, it *will not be recognized*
-		![](https://github.com/paritytech/parity-processbot/blob/master/doc/no-column.png)
-		- Having both project a column, it *will be recognized*
-		![](https://github.com/paritytech/parity-processbot/blob/master/doc/proj-column.png)

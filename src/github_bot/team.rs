@@ -1,4 +1,5 @@
 use crate::{github, Result};
+use futures_util::TryFutureExt;
 
 use super::GithubBot;
 
@@ -18,6 +19,16 @@ impl GithubBot {
 				"{}/teams/{}/members",
 				self.github_api_url, team_id,
 			))
+			.await
+	}
+
+	pub async fn team_members_by_team_name(
+		&self,
+		owner: &str,
+		team: &str,
+	) -> Result<Vec<github::User>> {
+		self.team(owner, team)
+			.and_then(|team| self.team_members(team.id))
 			.await
 	}
 }

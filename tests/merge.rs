@@ -26,6 +26,8 @@ async fn simple_merge_succeeds() {
 		github_app_id,
 		repo_name,
 		repo_full_name,
+		core_devs_team,
+		team_leads_team,
 		..
 	} = &common_setup;
 
@@ -87,6 +89,8 @@ async fn simple_merge_succeeds() {
 		github_app_id: *github_app_id,
 		merge_command_delay: 0,
 		companion_status_settle_delay: 0,
+		core_devs_team: core_devs_team.to_string(),
+		team_leads_team: team_leads_team.to_string(),
 	};
 	let github_bot = GithubBot::new(&config);
 	let db = DB::open_default(&config.db_path).unwrap();

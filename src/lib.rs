@@ -14,7 +14,6 @@ pub mod error;
 pub mod github;
 pub mod github_bot;
 pub mod http;
-pub mod process;
 pub mod rebase;
 pub mod server;
 pub mod utils;
