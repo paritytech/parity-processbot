@@ -42,21 +42,6 @@ macro_rules! COMPANION_SHORT_REGEX {
 }
 
 #[macro_export]
-macro_rules! PROCESS_INFO_ERROR_TEMPLATE {
-	() => {
-"
-Error: When trying to meet the \"Project Owners\" approval requirements: this pull request does not belong to a project defined in {}.
-
-Approval by \"Project Owners\" is only attempted if other means defined in the [criteria for merge](https://github.com/paritytech/parity-processbot#criteria-for-merge) are not satisfied first.
-
-{}
-
-{}
-"
-	}
-}
-
-#[macro_export]
 macro_rules! WEBHOOK_PARSING_ERROR_TEMPLATE {
 	() => {
 		"Webhook event parsing failed due to:

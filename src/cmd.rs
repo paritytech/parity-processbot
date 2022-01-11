@@ -1,7 +1,7 @@
 use crate::{error::*, Result};
 use snafu::ResultExt;
 use std::ffi::OsStr;
-use std::fmt::Display;
+use std::fmt::{Debug, Display};
 use std::path::Path;
 use std::process::{Output, Stdio};
 use tokio::process::Command;
@@ -25,7 +25,7 @@ pub async fn run_cmd<Cmd, Dir>(
 ) -> Result<Output>
 where
 	Cmd: AsRef<OsStr> + Display,
-	Dir: AsRef<Path> + Display,
+	Dir: AsRef<Path> + Debug,
 {
 	before_cmd(&cmd, args, Some(&dir), &logging);
 
@@ -63,7 +63,7 @@ pub async fn run_cmd_with_output<Cmd, Dir>(
 ) -> Result<Output>
 where
 	Cmd: AsRef<OsStr> + Display,
-	Dir: AsRef<Path> + Display,
+	Dir: AsRef<Path> + Debug,
 {
 	before_cmd(&cmd, args, Some(&dir), &logging);
 
@@ -86,7 +86,7 @@ fn before_cmd<'a, Cmd, Dir>(
 	logging: &CommandMessage<'a>,
 ) where
 	Cmd: AsRef<OsStr> + Display,
-	Dir: AsRef<Path> + Display,
+	Dir: AsRef<Path> + Debug,
 {
 	match logging {
 		CommandMessage::Configured(CommandMessageConfiguration {
@@ -103,7 +103,7 @@ fn before_cmd<'a, Cmd, Dir>(
 			}
 
 			if let Some(dir) = dir {
-				log::info!("Run {} {} in {}", cmd_display, args_display, dir);
+				log::info!("Run {} {} in {:?}", cmd_display, args_display, dir);
 			} else {
 				log::info!(
 					"Run {} {} in the current directory",
@@ -148,7 +148,7 @@ fn handle_cmd_result<'a>(
 									err_output.replace(secret, "${SECRET}");
 							}
 						}
-						log::info!(
+						log::error!(
 							"handle_cmd_result: {} failed with error: {}",
 							cmd_display,
 							err_output

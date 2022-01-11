@@ -13,6 +13,9 @@ INFO [parity_processbot::webhook] https://localhost/owner/repo/pull/1 checks: Ch
 INFO [parity_processbot::webhook] https://localhost/owner/repo/pull/1 latest_checks,: {"does not matter": (1, Completed, Some(Success))}
 INFO [parity_processbot::webhook] https://localhost/owner/repo/pull/1 has successful checks
 INFO [parity_processbot::webhook] https://localhost/owner/repo/pull/1 merged successfully.
-INFO [parity_processbot::webhook] Merging companions of https://localhost/owner/repo/pull/1
-INFO [parity_processbot::companion] Checking for companions in https://localhost/owner/repo/pull/1
+INFO [parity_processbot::webhook] Acquiring cleanup_pr's recursion prevention lock
+INFO [parity_processbot::webhook] Releasing cleanup_pr's recursion prevention lock
+INFO [parity_processbot::webhook] Related dependents of owner/repo/pull/1 (key {REDACTED}): {}
+INFO [parity_processbot::webhook] Cleaning up cleanup_pr recursion prevention lock's entries
+INFO [parity_processbot::webhook] Handling dependents of https://localhost/owner/repo/pull/1
 

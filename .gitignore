@@ -2,10 +2,6 @@
 *.swp
 .DS_Store
 .env
-engineers.csv
 *.pem
 db/
-polkadot/
-substrate/
-main-for-processbot-staging
-companion-for-processbot-staging
+repositories/

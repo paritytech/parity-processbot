@@ -28,6 +28,7 @@ async fn simple_merge_succeeds() {
 		repo_full_name,
 		core_devs_team,
 		team_leads_team,
+		git_daemon_dir,
 		..
 	} = &common_setup;
 
@@ -81,7 +82,8 @@ async fn simple_merge_succeeds() {
 		installation_login: owner.login.clone(),
 		webhook_secret: "does not matter".to_owned(),
 		webhook_port: "does not matter".to_string(),
-		db_path: db_dir.path().display().to_string(),
+		db_path: db_dir.path().to_path_buf(),
+		repos_path: git_daemon_dir.path().to_path_buf(),
 		private_key: private_key.clone(),
 		webhook_proxy_url: None,
 		disable_org_check: false,
@@ -91,6 +93,8 @@ async fn simple_merge_succeeds() {
 		companion_status_settle_delay: 0,
 		core_devs_team: core_devs_team.to_string(),
 		team_leads_team: team_leads_team.to_string(),
+		github_source_prefix: "https://github.com".into(),
+		github_source_suffix: "".into(),
 	};
 	let github_bot = GithubBot::new(&config);
 	let db = DB::open_default(&config.db_path).unwrap();
