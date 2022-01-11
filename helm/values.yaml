@@ -8,4 +8,6 @@ app:
   CORE_DEVS_TEAM: from-gitlab-vars
   TEAM_LEADS_TEAM: from-gitlab-vars
   START_FROM_CWD: true
-  STORAGE_PATH: /processbot
+
+config:
+  storagePath: /storage

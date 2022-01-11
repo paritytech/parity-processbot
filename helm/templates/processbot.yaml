@@ -38,7 +38,7 @@ spec:
         secret:
           secretName: processbot-key
           defaultMode: 256
-      - name: database
+      - name: storage
         persistentVolumeClaim:
           claimName: processbot-pv-claim
       containers:
@@ -50,7 +50,7 @@ spec:
           mountPath: "/etc/processbot-key"
           readOnly: true
         - name: storage
-          mountPath: {{ .Values.app.STORAGE_PATH }}
+          mountPath: {{ .Values.config.storagePath }}
         ports:
         - name: backend
           containerPort: {{ .Values.app.WEBHOOK_PORT }}
@@ -86,9 +86,9 @@ spec:
             - name: TEAM_LEADS_TEAM
               value: {{ .Values.app.TEAM_LEADS_TEAM }}
             - name: DB_PATH
-              value: {{ .Values.app.STORAGE_PATH }}/db
+              value: {{ .Values.config.storagePath }}/db
             - name: REPOSITORIES_PATH
-              value: {{ .Values.app.STORAGE_PATH }}/repositories
+              value: {{ .Values.config.storagePath }}/repositories
             - name: WEBHOOK_SECRET
               valueFrom:
                 secretKeyRef:
