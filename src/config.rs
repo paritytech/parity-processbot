@@ -22,10 +22,11 @@ pub struct MainConfig {
 
 impl MainConfig {
 	pub fn from_env() -> Self {
-		let repo_root = PathBuf::from(
-			std::env::var("CARGO_MANIFEST_DIR")
-			.expect("CARGO_MANIFEST_DIR is not set, please run the application through cargo")
-		);
+		let root_dir = if std::env::var("START_FROM_CWD").is_ok() {
+			std::env::current_dir().expect("START_FROM_CWD was set, but it was not possible to get the current directory")
+		} else {
+			PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR is not set, please run the application through cargo"))
+		};
 
 		dotenv::dotenv().ok();
 
@@ -39,7 +40,7 @@ impl MainConfig {
 		let db_path = if db_path.starts_with('/') {
 			PathBuf::from(db_path)
 		} else {
-			repo_root.join(db_path)
+			root_dir.join(db_path)
 		};
 		std::fs::create_dir_all(&db_path)
 			.expect("Could not create database directory (DB_PATH)");
@@ -49,7 +50,7 @@ impl MainConfig {
 		let repos_path = if repos_path.starts_with('/') {
 			PathBuf::from(repos_path)
 		} else {
-			repo_root.join(repos_path)
+			root_dir.join(repos_path)
 		};
 		std::fs::create_dir_all(&repos_path).expect(
 			"Could not create repositories directory (REPOSITORIES_PATH)",

@@ -7,3 +7,7 @@ app:
   KUBE_NAMESPACE: from-gitlab-vars
   CORE_DEVS_TEAM: from-gitlab-vars
   TEAM_LEADS_TEAM: from-gitlab-vars
+  START_FROM_CWD: true
+
+config:
+  storagePath: /storage
