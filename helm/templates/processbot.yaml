@@ -49,8 +49,8 @@ spec:
         - name: processbot-key-volume
           mountPath: "/etc/processbot-key"
           readOnly: true
-        - name: database
-          mountPath: /usr/local/share/db
+        - name: storage
+          mountPath: {{ .Values.app.STORAGE_PATH }}
         ports:
         - name: backend
           containerPort: {{ .Values.app.WEBHOOK_PORT }}
@@ -86,9 +86,9 @@ spec:
             - name: TEAM_LEADS_TEAM
               value: {{ .Values.app.TEAM_LEADS_TEAM }}
             - name: DB_PATH
-              value: /usr/local/share/db
+              value: {{ .Values.app.STORAGE_PATH }}/db
             - name: REPOSITORIES_PATH
-              value: /usr/local/share/repositories
+              value: {{ .Values.app.STORAGE_PATH }}/repositories
             - name: WEBHOOK_SECRET
               valueFrom:
                 secretKeyRef:
