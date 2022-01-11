@@ -77,6 +77,8 @@ spec:
               value: "/etc/processbot-key/PROCESSBOT_KEY"
             - name: WEBHOOK_PORT
               value: {{ quote .Values.app.WEBHOOK_PORT }}
+            - name: START_FROM_CWD
+              value: {{ quote .Values.app.START_FROM_CWD }}
             - name: GITHUB_APP_ID
               value: {{ quote .Values.app.GITHUB_APP_ID }}
             - name: CORE_DEVS_TEAM
@@ -85,6 +87,8 @@ spec:
               value: {{ .Values.app.TEAM_LEADS_TEAM }}
             - name: DB_PATH
               value: /usr/local/share/db
+            - name: REPOSITORIES_PATH
+              value: /usr/local/share/repositories
             - name: WEBHOOK_SECRET
               valueFrom:
                 secretKeyRef:
