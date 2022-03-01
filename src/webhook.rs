@@ -1067,10 +1067,7 @@ pub async fn check_merge_is_allowed(
 		vec![]
 	} else {
 		github_bot
-			.team_members_by_team_name(
-				&pr.base.repo.owner.login,
-				&config.team_leads_team,
-			)
+			.team_members(&pr.base.repo.owner.login, &config.team_leads_team)
 			.await
 			.unwrap_or_else(|e| {
 				let msg = format!(
@@ -1099,10 +1096,7 @@ pub async fn check_merge_is_allowed(
 		vec![]
 	} else {
 		github_bot
-			.team_members_by_team_name(
-				&pr.base.repo.owner.login,
-				&config.core_devs_team,
-			)
+			.team_members(&pr.base.repo.owner.login, &config.core_devs_team)
 			.await
 			.unwrap_or_else(|e| {
 				let msg = format!(
