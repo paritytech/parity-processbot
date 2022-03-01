@@ -108,11 +108,6 @@ pub struct ProjectColumn {
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Team {
-	pub id: i64,
-}
-
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Head {
 	pub sha: String,
 	pub repo: HeadRepo,
@@ -133,12 +128,6 @@ pub struct Review {
 	// User might be missing when it has been deleted
 	pub user: Option<User>,
 	pub state: Option<ReviewState>,
-}
-
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct RequestedReviewers {
-	pub users: Vec<User>,
-	pub teams: Vec<Team>,
 }
 
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
