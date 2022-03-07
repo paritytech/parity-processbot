@@ -296,7 +296,7 @@ folder. The values for each specific environment are in
 
 ## Logs <a name="deployment-logs"></a>
 
-See https://gitlab.parity.io/groups/parity/opstooling/-/wikis/Home
+See https://gitlab.parity.io/groups/parity/opstooling/-/wikis/.Home
 
 # Implementation <a name="implementation"></a>
 
