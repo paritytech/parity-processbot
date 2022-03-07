@@ -210,9 +210,11 @@ application starts.
 
 1. [Set up the GitHub App](#github-app)
 2. [Set up the application](#setup)
-  - During development it's handy to use a [smee.io](https://smee.io/) proxy,
+
+    During development it's handy to use a [smee.io](https://smee.io/) proxy,
     through the `WEBHOOK_PROXY_URL` environment variable, for receiving GitHub
     Webhook Events in your local server instance.
+
 3. Run the project with `cargo run`
 4. Optionally [try out the example workflows](#development-example-workflows) in
    the repositories where you have installed the app or the
