@@ -304,9 +304,7 @@ See https://gitlab.parity.io/groups/parity/opstooling/-/wikis
 
 To have a better understanding on the Companion Build System we strongly
 recommend to
-[read its explanation](https://github.com/paritytech/parity-processbot/issues/327)
-and
-[watch the presentation](https://drive.google.com/file/d/1E4Fd3aO2QRJuoUBI4j0Zp4027yGeHeer/view).
+[consult its explanation](https://github.com/paritytech/parity-processbot/issues/327).
 
 A
 [web server](https://github.com/paritytech/parity-processbot/blob/4b36d6dcb8dd6d2ba9063c28c1c61bff503c364d/src/server.rs#L88)
@@ -340,7 +338,11 @@ After a pull request is merged,
 [its dependents are checked](https://github.com/paritytech/parity-processbot/blob/4b36d6dcb8dd6d2ba9063c28c1c61bff503c364d/src/webhook.rs#L831)
 and possibly merged if all of their requirements are ready (note that a pull
 request my might depend on more than one pull request, as
-[explained in the presentation at 4:48](https://drive.google.com/file/d/1E4Fd3aO2QRJuoUBI4j0Zp4027yGeHeer/view?t=4m48s)).
+[explained in the presentation at 4:48](https://drive.google.com/file/d/1E4Fd3aO2QRJuoUBI4j0Zp4027yGeHeer/view?t=4m48s)
+or
+[slide number 6](https://docs.google.com/presentation/d/12ksmejR_UXC1tIHD2f4pQQZ1uw5NK3n8enmwkTCPOpw/edit?usp=sharing)).
 This process is repeated for each item that is merged throughout the merge
 chain (referred as "Phase 1 and Phase 2"
-[in the presentation at 25:48](https://drive.google.com/file/d/1E4Fd3aO2QRJuoUBI4j0Zp4027yGeHeer/view?t=25m48s)).
+[in the presentation at 25:48](https://drive.google.com/file/d/1E4Fd3aO2QRJuoUBI4j0Zp4027yGeHeer/view?t=25m48s)
+or
+[slide number 21](https://docs.google.com/presentation/d/12ksmejR_UXC1tIHD2f4pQQZ1uw5NK3n8enmwkTCPOpw/edit?usp=sharing)).
