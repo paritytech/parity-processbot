@@ -254,7 +254,8 @@ Steps:
   - Repository B needs to be a dependency of Repository A
     ([example](https://github.com/paritytech/companion-for-processbot-staging/blob/8ff68ae8287342f2a4581b1950913b4e9e88a0e0/Cargo.toml#L8))
 3. Create a pull request on Repository B and copy its link
-4. Create a pull request on Repository A and say `companion: [link from step 3]`
+4. Create a pull request on Repository A and put `companion: [link from step 3]`
+  in its description
 5. Comment `bot merge` on the pull request in Repository A
 6. Observe that the the pull request in Repository A will be merged first and
    the pull request on Repository B will be merged after
