@@ -635,10 +635,9 @@ pub async fn handle_dependents_after_merge(
 				state,
 				&dependent,
 				&WaitToMergeMessage::Default,
-				// This is the start of the dependency chain, therefore the dependents
-				// should always be registered to the database
-				// TODO: perhaps merge the dependencies if this dependent already exists in
-				// the database
+				// The dependent should always be registered to the database as a pending
+				// item since its dependency just got merged, therefore it becomes eligible
+				// for merge in the future
 				true,
 				!depends_on_another_pr,
 			)
