@@ -289,8 +289,7 @@ patterns:
     - The staging instance is installed in the [test repositories](#development-test-repositories)
 
 The deployment's status can be followed through
-[Gitlab Pipelines on the parity-processbot mirror](https://gitlab.parity.io/parity/parity-processbot/-/pipelines)
-([example](https://gitlab.parity.io/parity/parity-processbot/-/jobs/867102)).
+[Gitlab Pipelines on the parity-processbot mirror](https://gitlab.parity.io/parity/parity-processbot/-/pipelines).
 
 All of the relevant configuration for deployment lives in the [./helm](./helm)
 folder. The values for each specific environment are in
