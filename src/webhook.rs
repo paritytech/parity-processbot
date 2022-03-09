@@ -8,6 +8,7 @@ use ring::hmac;
 use rocksdb::DB;
 use serde::{Deserialize, Serialize};
 use snafu::{OptionExt, ResultExt};
+use std::collections::HashSet;
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::{sync::Mutex, time::delay_for};
 
@@ -607,6 +608,8 @@ pub async fn handle_dependents_after_merge(
 	pr: &PullRequest,
 	requested_by: &str,
 ) -> Result<()> {
+	log::info!("Handling dependents of {}", pr.html_url);
+
 	let AppState {
 		github_bot,
 		db,
@@ -614,124 +617,309 @@ pub async fn handle_dependents_after_merge(
 		..
 	} = state;
 
-	log::info!("Handling dependents of {}", pr.html_url);
-
-	let mut updated_dependents: Vec<(String, MergeRequest)> = vec![];
-	let dependents = github_bot
+	let detected_dependents = github_bot
 		.resolve_pr_dependents(config, pr, requested_by, &[])
 		.await?;
-	if let Some(dependents) = dependents {
-		for dependent in dependents {
-			let depends_on_another_pr = dependent
-				.dependencies
-				.as_ref()
-				.map(|dependencies| {
-					dependencies
-						.iter()
-						.any(|dependency| dependency.repo != pr.base.repo.name)
-				})
-				.unwrap_or(false);
-			match update_then_merge(
-				state,
-				&dependent,
-				&WaitToMergeMessage::Default,
-				// This is the start of the dependency chain, therefore the dependents
-				// should always be registered to the database
-				// TODO: perhaps merge the dependencies if this dependent already exists in
-				// the database
-				true,
-				!depends_on_another_pr,
-			)
-			.await
-			{
-				Ok(updated_sha) => {
-					if let Some(updated_sha) = updated_sha {
-						updated_dependents.push((updated_sha, dependent))
+	if let Some(dependents) = &detected_dependents {
+		log::info!("Found dependents of {}: {:?}", pr.html_url, dependents);
+	}
+
+	/*
+		Step 1: Update dangling references
+
+		The dependents we have detected when the merge chain was first built might not
+		be referenced in the PR description anymore (i.e. they have become dangling
+		references); in that case try to invalidate them from the database
+	*/
+	let iter = db.iterator(rocksdb::IteratorMode::Start);
+	'to_next_item: for (key, value) in iter {
+		match bincode::deserialize::<MergeRequest>(&value).context(Bincode) {
+			Ok(mut item) => {
+				if let Some(dependents) = &detected_dependents {
+					for dependent in dependents {
+						if dependent.owner == item.owner
+							&& dependent.repo == item.repo
+							&& dependent.number == item.number
+						{
+							// This item was detected a dependent, therefore it is not potentially
+							// dangling for this PR specifically
+							continue 'to_next_item;
+						}
 					}
 				}
-				Err(err) => {
-					let _ = cleanup_pr(
-						state,
-						&dependent.sha,
-						&dependent.owner,
-						&dependent.repo,
-						dependent.number,
-						&PullRequestCleanupReason::Error,
-					)
-					.await;
-					handle_error(MergeCancelOutcome::WasCancelled, err, state)
-						.await;
+
+				enum ItemOutcome {
+					Updated,
+					Dangling,
 				}
+				let mut item_outcome: Option<ItemOutcome> = None;
+
+				item.dependencies = item.dependencies.map(|dependencies| {
+					dependencies
+						.into_iter()
+						.filter(|dependency| {
+							if dependency.owner == pr.base.repo.owner.login
+								&& dependency.repo == pr.base.repo.name
+								&& dependency.number == pr.number
+							{
+								if item_outcome.is_none() {
+									item_outcome = Some(ItemOutcome::Dangling);
+								}
+								false
+							} else {
+								item_outcome = Some(ItemOutcome::Updated);
+								true
+							}
+						})
+						.collect()
+				});
+
+				if let Some(item_outcome) = item_outcome {
+					match item_outcome {
+						ItemOutcome::Updated => {
+							let bytes =
+								bincode::serialize(&item).context(Bincode)?;
+							if let Err(err) = db.put(&key, bytes).context(Db) {
+								log::error!(
+									"Failed to update database references after merge of {} in dependent {} due to {:?}",
+									pr.html_url,
+									item.html_url,
+									err
+								);
+								let _ = cleanup_pr(
+									state,
+									&item.sha,
+									&item.owner,
+									&item.repo,
+									item.number,
+									&PullRequestCleanupReason::Error,
+								)
+								.await;
+								handle_error(
+									MergeCancelOutcome::WasCancelled,
+									Error::Message {
+										msg: format!(
+											"Unable to update {} in the database (detected as a dependent of {})",
+											&item.html_url,
+											pr.html_url
+										),
+									}
+									.map_issue((
+										(&item.owner).into(),
+										(&item.repo).into(),
+										item.number,
+									)),
+									state,
+								)
+								.await;
+							}
+						}
+						ItemOutcome::Dangling => {
+							let _ = db.delete(&key);
+						}
+					}
+				}
+			}
+			Err(err) => {
+				log::error!(
+					"Failed to deserialize {} during due to {:?}",
+					String::from_utf8_lossy(&key),
+					err
+				);
+				let _ = db.delete(&key);
+			}
+		};
+	}
+
+	let dependents = match detected_dependents {
+		Some(dependents) => dependents,
+		None => return Ok(()),
+	};
+
+	/*
+		Step 2: Update the dependents (and merge them right away if possible)
+
+		Update dependents which can be updated (i.e. those who have the PR which was
+		just merged as their *only* pending dependency)
+	*/
+	let mut updated_dependents: Vec<(String, &MergeRequest)> = vec![];
+	for dependent in &dependents {
+		let depends_on_another_pr = dependent
+			.dependencies
+			.as_ref()
+			.map(|dependencies| {
+				dependencies
+					.iter()
+					.any(|dependency| dependency.repo != pr.base.repo.name)
+			})
+			.unwrap_or(false);
+		match update_then_merge(
+			state,
+			dependent,
+			&WaitToMergeMessage::Default,
+			// The dependent should always be registered to the database as a pending
+			// item since one of its dependencies just got merged, therefore it becomes
+			// eligible for merge in the future
+			true,
+			!depends_on_another_pr,
+		)
+		.await
+		{
+			Ok(updated_sha) => {
+				if let Some(updated_sha) = updated_sha {
+					updated_dependents.push((updated_sha, dependent))
+				}
+			}
+			Err(err) => {
+				let _ = cleanup_pr(
+					state,
+					&dependent.sha,
+					&dependent.owner,
+					&dependent.repo,
+					dependent.number,
+					&PullRequestCleanupReason::Error,
+				)
+				.await;
+				handle_error(
+					MergeCancelOutcome::WasCancelled,
+					err.map_issue((
+						(&dependent.owner).into(),
+						(&dependent.repo).into(),
+						dependent.number,
+					)),
+					state,
+				)
+				.await;
 			}
 		}
 	}
 
-	let mut mrs_to_check = HashMap::new();
+	/*
+		Step 3: Collect the relevant dependents which should be checked
+
+		If the dependent was merged in the previous step or someone merged it manually
+		in-between this step and the previous one, the dependents of that dependent
+		should be collected for the check because they might be mergeable now,
+		because one of its dependencies (the dependent) was merged.
+
+		If the dependent was updated in the previous step, it might already be
+		mergeable (i.e. their statuses might already be passing after the update),
+		therefore it should be included in the dependents_to_check. Also, since it was
+		updated, its dependencies should be updated as well to track the resulting SHA
+		after the update, otherwise their processing would result in the HeadChanged
+		error unintendedly (HeadChanged is a security measure to prevent malicious
+		commits from sneaking in after the chain is built, but in this case we changed
+		the HEAD of the PR ourselves through the update, which is safe).
+	*/
+	let mut dependents_to_check = HashMap::new();
 	let iter = db.iterator(rocksdb::IteratorMode::Start);
 	for (key, value) in iter {
 		match bincode::deserialize::<MergeRequest>(&value).context(Bincode) {
-			Ok(mut dependent_dependent) => {
-				let mut should_include = false;
-				let mut record_was_updated = false;
-				dependent_dependent.dependencies =
+			Ok(mut dependent_of_dependent) => {
+				let mut should_be_included_in_check = false;
+				let mut record_needs_update = false;
+
+				let mut updated_dependencies = HashSet::new();
+				dependent_of_dependent.dependencies =
 					if let Some(mut dependencies) =
-						dependent_dependent.dependencies
+						dependent_of_dependent.dependencies
 					{
 						for dependency in dependencies.iter_mut() {
-							for (updated_sha, dependent) in &updated_dependents
+							for (updated_sha, updated_dependent) in
+								&updated_dependents
 							{
-								if dependency.owner == dependent.owner
-									&& dependency.repo == dependent.repo
-									&& dependency.number == dependent.number
+								if dependency.owner == updated_dependent.owner
+									&& dependency.repo == updated_dependent.repo
+									&& dependency.number
+										== updated_dependent.number
 								{
-									record_was_updated = true;
+									record_needs_update = true;
 									log::info!(
 										"Updating {} 's dependency on {} to SHA {}",
-										dependent_dependent.html_url,
-										dependent.html_url,
+										dependency.html_url,
+										dependent_of_dependent.html_url,
 										updated_sha,
 									);
 									dependency.sha = updated_sha.clone();
+									updated_dependencies
+										.insert(&updated_dependent.html_url);
 								}
 							}
 							if dependency.owner == pr.base.repo.owner.login
 								&& dependency.repo == pr.base.repo.name
 								&& dependency.number == pr.number
 							{
-								should_include = true;
+								should_be_included_in_check = true;
 							}
 						}
 						Some(dependencies)
 					} else {
 						None
 					};
-				if record_was_updated {
-					let bytes = bincode::serialize(&dependent_dependent)
+
+				if record_needs_update {
+					let bytes = bincode::serialize(&dependent_of_dependent)
 						.context(Bincode)?;
 					if let Err(err) = db.put(&key, bytes).context(Db) {
 						log::error!(
 							"Failed to update a dependent to {:?} due to {:?}",
-							dependent_dependent,
+							dependent_of_dependent,
 							err
 						);
+						let _ = cleanup_pr(
+							state,
+							&dependent_of_dependent.sha,
+							&dependent_of_dependent.owner,
+							&dependent_of_dependent.repo,
+							dependent_of_dependent.number,
+							&PullRequestCleanupReason::Error,
+						)
+						.await;
+						handle_error(
+							MergeCancelOutcome::WasCancelled,
+							Error::Message {
+								msg: format!(
+									 "Failed to update database references of {:?} in dependent {} after the merge of {}",
+									 updated_dependencies,
+									 dependent_of_dependent.html_url,
+									 pr.html_url
+								),
+							}
+							.map_issue((
+								(&dependent_of_dependent.owner).into(),
+								(&dependent_of_dependent.repo).into(),
+								dependent_of_dependent.number,
+							)),
+							state,
+						)
+						.await;
 					} else {
-						mrs_to_check.insert(key, dependent_dependent);
+						dependents_to_check.insert(key, dependent_of_dependent);
 					}
-				} else if should_include {
-					mrs_to_check.insert(key, dependent_dependent);
+				} else if should_be_included_in_check {
+					dependents_to_check.insert(key, dependent_of_dependent);
 				}
 			}
 			Err(err) => {
 				log::error!(
-					"Failed to deserialize {} during cleanup_pr due to {:?}",
+					"Failed to deserialize {} due to {:?}",
 					String::from_utf8_lossy(&key),
 					err
 				);
+				let _ = db.delete(&key);
 			}
 		};
 	}
 
-	for dependent in mrs_to_check.into_values() {
+	/*
+		Step 4: Check the dependents collected in the previous step
+
+		Because the PR passed as an argument to this function is merged and its
+		dependents might have been merged in the previous steps, the dependents we
+		collected (which might include dependents of the dependents which were just
+		merged) might have become ready to be merged at this point.
+	*/
+	for dependent in dependents_to_check.into_values() {
 		if let Err(err) = checks_and_status(state, &dependent.sha).await {
 			let _ = cleanup_pr(
 				state,
