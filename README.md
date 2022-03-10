@@ -161,7 +161,7 @@ After creating the app, you should [configure](#github-app-configuration) and
 ### Organization permissions
 
 - Members: Read-only
-  - Enables fetching the command's requester organization membership even if
+  - Enables fetching the command requester's organization membership even if
     their membership is private
 
 ### Events
