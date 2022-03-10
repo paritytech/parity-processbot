@@ -306,9 +306,9 @@ See https://gitlab.parity.io/groups/parity/opstooling/-/wikis
 
 # Implementation <a name="implementation"></a>
 
-To have a better understanding on the Companion Build System we strongly
-recommend to
-[consult its explanation](https://github.com/paritytech/parity-processbot/issues/327).
+Before reading any of this, we strongly recommend to have a good understanding
+of the Companion Build System by
+[consulting its explanation](https://github.com/paritytech/parity-processbot/issues/327).
 
 A
 [web server](https://github.com/paritytech/parity-processbot/blob/4b36d6dcb8dd6d2ba9063c28c1c61bff503c364d/src/server.rs#L88)
