@@ -194,12 +194,12 @@ demonstrated below:
 
 ## Requirements <a name="setup-requirements"></a>
 
-- Rust
+- Rust for running the application
   - [rustup](https://rustup.rs/) is the recommended way of setting up a Rust
     toolchain
-- libssl
-- libclang
-- git
+- libssl for the HTTPS requests library
+- libclang for building the database (RocksDB)
+- git for cloning companions and updating them
 
 ## Environment variables <a name="setup-environment-variables"></a>
 
