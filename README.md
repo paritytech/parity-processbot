@@ -134,9 +134,13 @@ Non-Required statuses can bypassed by using `bot merge force`.
 
 # GitHub App <a name="github-app"></a>
 
-You can create a new app at <https://github.com/settings/apps/new>. More context:
-- <https://docs.github.com/en/developers/apps/building-github-apps/creating-a-github-app>
-- <https://probot.github.io/docs/deployment/#register-the-github-app>
+The GitHub App is necessary for the application to receive
+[webhook events](https://docs.github.com/en/developers/webhooks-and-events/webhooks/about-webhooks)
+and access the GitHub API properly.
+
+Follow the instructions of
+<https://gitlab.parity.io/groups/parity/opstooling/-/wikis/Bots/Development/Create-a-new-GitHub-App>
+for creating a new GitHub App.
 
 After creating the app, you should [configure](#github-app-configuration) and
 [install it](#github-app-installation) (make sure the
