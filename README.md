@@ -156,7 +156,7 @@ After creating the app, you should [configure](#github-app-configuration) and
 - Commit statuses: Read-only
   - Enables fetching the CI statuses before merge
 - Checks: Read-only
-  - Enables fetching the checks's statuses before merge
+  - Enables fetching the checks' statuses before merge
 
 ### Organization permissions
 
