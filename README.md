@@ -278,10 +278,10 @@ review` to manage the results.
 
 # Deployment <a name="deployment"></a>
 
-When you push a deployment tag to GitHub, it will be [mirrored to
-GitLab](https://gitlab.parity.io/parity/parity-processbot) and then its [CI
-pipeline](./.gitlab-ci.yml) will be ran for deploying the app. Deployment tags
-should conform to one of the following patterns:
+When you push a deployment tag to GitHub, it will be
+[mirrored to GitLab](https://gitlab.parity.io/parity/parity-processbot) and then
+its [CI pipeline](./.gitlab-ci.yml) will be run for deploying the app.
+Deployment tags should conform to one of the following patterns:
 
 - `/^v[0-9]+\.[0-9]+.*$/`, e.g. `v1.1`, will be deployed to production
     - The production instance is installed in
