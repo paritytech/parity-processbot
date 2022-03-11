@@ -37,6 +37,7 @@ Before starting to work on this project we recommend reading the
   - [Test repositories](#development-test-repositories)
 - [Deployment](#deployment)
   - [Logs](#deployment-logs)
+  - [Environments](#deployment-environments)
 
 # Commands <a name="commands"></a>
 
@@ -278,23 +279,6 @@ review` to manage the results.
 
 # Deployment <a name="deployment"></a>
 
-When you push a deployment tag to GitHub, it will be
-[mirrored to GitLab](https://gitlab.parity.io/parity/parity-processbot) and then
-its [CI pipeline](./.gitlab-ci.yml) will be run for deploying the app.
-Deployment tags should conform to one of the following patterns:
-
-- `/^v[0-9]+\.[0-9]+.*$/`, e.g. `v1.1`, will be deployed to production
-    - The production instance is installed in
-      [Substrate](https://github.com/paritytech/substrate),
-      [Polkadot](https://github.com/paritytech/polkadot) and
-      [Cumulus](https://github.com/paritytech/cumulus)
-
-- `/^pre-v[0-9]+\.[0-9]+.*$/`, e.g. `pre-v0.6` will be deployed to staging
-    - The staging instance is installed in the [test repositories](#development-test-repositories)
-
-The deployment's status can be followed through
-[Gitlab Pipelines on the parity-processbot mirror](https://gitlab.parity.io/parity/parity-processbot/-/pipelines).
-
 All of the relevant configuration for deployment lives in the [./helm](./helm)
 folder. The values for each specific environment are in
 `helm/values-${ENVIRONMENT}.yml`. If you add a value, it needs to be used in
@@ -302,7 +286,28 @@ folder. The values for each specific environment are in
 
 ## Logs <a name="deployment-logs"></a>
 
-See https://gitlab.parity.io/groups/parity/opstooling/-/wikis
+See <https://gitlab.parity.io/groups/parity/opstooling/-/wikis>
+
+## Environments <a name="deployment-environments"></a>
+
+When you push a deployment tag to GitHub, it will be
+[mirrored to GitLab](https://gitlab.parity.io/parity/parity-processbot) and then
+its [CI pipeline](./.gitlab-ci.yml) will be run for deploying the app.
+
+The application can be deployed to the following environments:
+
+- Production: push a tag with the pattern `/^pre-v[0-9]+\.[0-9]+.*$/`, e.g.
+  `pre-v0.6`
+
+    The production instance is installed in
+    [Substrate](https://github.com/paritytech/substrate),
+    [Polkadot](https://github.com/paritytech/polkadot) and
+    [Cumulus](https://github.com/paritytech/cumulus).
+
+- Staging: push a tag with the pattern `/^v[0-9]+\.[0-9]+.*$/`, e.g. `v1.1`
+
+    The staging instance is installed in the
+    [test repositories](#development-test-repositories).
 
 # Implementation <a name="implementation"></a>
 
