@@ -9,7 +9,7 @@ events it will resume processing all pending pull requests until they can be
 merged; a more detailed breakdown is available in the
 [Implementation section](#implementation).
 
-Note that parity-processbot does not implement the Companion Build System's
+Note that parity-processbot works independently of Companion Build System's
 cross-repository integration check, which is done on CI (see
 [check_dependent_project](https://github.com/paritytech/pipeline-scripts#check_dependent_project)
 for that).
