@@ -296,15 +296,15 @@ its [CI pipeline](./.gitlab-ci.yml) will be run for deploying the app.
 
 The application can be deployed to the following environments:
 
-- Production: push a tag with the pattern `/^pre-v[0-9]+\.[0-9]+.*$/`, e.g.
-  `pre-v0.6`
+- Production: push a tag with the pattern `/^v[0-9]+\.[0-9]+.*$/`, e.g. `v1.1`
 
     The production instance is installed in
     [Substrate](https://github.com/paritytech/substrate),
     [Polkadot](https://github.com/paritytech/polkadot) and
     [Cumulus](https://github.com/paritytech/cumulus).
 
-- Staging: push a tag with the pattern `/^v[0-9]+\.[0-9]+.*$/`, e.g. `v1.1`
+- Staging: push a tag with the pattern `/^pre-v[0-9]+\.[0-9]+.*$/`, e.g.
+  `pre-v0.6`
 
     The staging instance is installed in the
     [test repositories](#development-test-repositories).
