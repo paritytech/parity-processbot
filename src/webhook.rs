@@ -353,12 +353,10 @@ pub async fn handle_payload(
 						}
 					};
 
-					let err = match err {
-						Error::WithIssue { .. } => err,
-						err => err.map_issue((mr.owner, mr.repo, mr.number)),
-					};
-
-					(merge_cancel_outcome, Err(err))
+					(
+						merge_cancel_outcome,
+						Err(err.map_issue((mr.owner, mr.repo, mr.number))),
+					)
 				}
 				Err(db_err) => {
 					log::error!(
@@ -676,9 +674,14 @@ pub async fn handle_dependents_after_merge(
 				if let Some(item_outcome) = item_outcome {
 					match item_outcome {
 						ItemOutcome::Updated => {
-							let bytes =
-								bincode::serialize(&item).context(Bincode)?;
-							if let Err(err) = db.put(&key, bytes).context(Db) {
+							if let Err(err) = db
+								.put(
+									&key,
+									bincode::serialize(&item)
+										.context(Bincode)?,
+								)
+								.context(Db)
+							{
 								log::error!(
 									"Failed to update database references after merge of {} in dependent {} due to {:?}",
 									pr.html_url,
@@ -857,9 +860,14 @@ pub async fn handle_dependents_after_merge(
 					};
 
 				if record_needs_update {
-					let bytes = bincode::serialize(&dependent_of_dependent)
-						.context(Bincode)?;
-					if let Err(err) = db.put(&key, bytes).context(Db) {
+					if let Err(err) = db
+						.put(
+							&key,
+							bincode::serialize(&dependent_of_dependent)
+								.context(Bincode)?,
+						)
+						.context(Db)
+					{
 						log::error!(
 							"Failed to update a dependent to {:?} due to {:?}",
 							dependent_of_dependent,
@@ -1421,8 +1429,8 @@ async fn register_merge_request(
 	let AppState { db, .. } = state;
 	let MergeRequest { sha, .. } = mr;
 	log::info!("Registering merge request (sha: {}): {:?}", sha, mr);
-	let bytes = bincode::serialize(mr).context(Bincode)?;
-	db.put(sha.as_bytes(), bytes).context(Db)
+	db.put(sha.as_bytes(), bincode::serialize(mr).context(Bincode)?)
+		.context(Db)
 }
 
 pub enum WaitToMergeMessage<'a> {
@@ -1653,10 +1661,12 @@ pub async fn cleanup_pr(
 					};
 
 				if was_updated {
-					let bytes =
-						bincode::serialize(&dependent).context(Bincode)?;
-					if let Err(err) =
-						db.put(dependent.sha.as_bytes(), bytes).context(Db)
+					if let Err(err) = db
+						.put(
+							dependent.sha.as_bytes(),
+							bincode::serialize(&dependent).context(Bincode)?,
+						)
+						.context(Db)
 					{
 						log::error!(
 							"Failed to update a dependent to {:?} while cleaning up {}/{}/pull/{} due to {:?}",
