@@ -507,7 +507,7 @@ pub async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 	);
 
 	match async {
-		if cleanup_merged_pr(state, &pr).await? {
+		if cleanup_merged_pr(state, &pr, &mr.requested_by).await? {
 			return Ok(());
 		}
 
@@ -526,8 +526,6 @@ pub async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 		check_merge_is_allowed(state, &pr, &mr.requested_by, None, &[]).await?;
 
 		if let Some(dependencies) = &mr.dependencies {
-			let mut shas_to_exclude = Vec::with_capacity(dependencies.len());
-			shas_to_exclude.push(sha.to_owned());
 			for dependency in dependencies {
 				let dependency_pr = github_bot
 					.pull_request(
@@ -562,7 +560,6 @@ pub async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 						&PullRequestCleanupReason::AfterMerge,
 					)
 					.await?;
-					shas_to_exclude.push((&dependency_pr.head.sha).to_owned());
 				} else {
 					log::info!(
 						"Giving up on merging {} because its dependency {} has not been merged yet",
@@ -1475,12 +1472,13 @@ pub async fn wait_to_merge(
 pub async fn cleanup_merged_pr(
 	state: &AppState,
 	pr: &PullRequest,
+	requested_by: &str,
 ) -> Result<bool> {
 	if !pr.merged {
 		return Ok(false);
 	}
 
-	cleanup_pr(
+	let result = cleanup_pr(
 		state,
 		&pr.head.sha,
 		&pr.base.repo.owner.login,
@@ -1489,7 +1487,18 @@ pub async fn cleanup_merged_pr(
 		&PullRequestCleanupReason::AfterMerge,
 	)
 	.await
-	.map(|_| true)
+	.map(|_| true);
+
+	if let Err(err) =
+		handle_dependents_after_merge(state, pr, requested_by).await
+	{
+		log::error!(
+			"Failed to process handle_dependents_after_merge in cleanup_merged_pr due to {:?}",
+			err
+		);
+	}
+
+	result
 }
 
 pub enum PullRequestCleanupReason<'a> {
@@ -1661,22 +1670,11 @@ pub async fn cleanup_pr(
 					};
 
 				if was_updated {
-					if let Err(err) = db
-						.put(
-							dependent.sha.as_bytes(),
-							bincode::serialize(&dependent).context(Bincode)?,
-						)
-						.context(Db)
-					{
-						log::error!(
-							"Failed to update a dependent to {:?} while cleaning up {}/{}/pull/{} due to {:?}",
-							dependent,
-							owner,
-							repo,
-							number,
-							err
-					);
-					}
+					db.put(
+						dependent.sha.as_bytes(),
+						bincode::serialize(&dependent).context(Bincode)?,
+					)
+					.context(Db)?;
 				}
 			}
 		}
@@ -1697,7 +1695,7 @@ pub async fn merge(
 	requested_by: &str,
 	created_approval_id: Option<i64>,
 ) -> Result<Result<()>> {
-	if cleanup_merged_pr(state, pr).await? {
+	if cleanup_merged_pr(state, pr, requested_by).await? {
 		return Ok(Ok(()));
 	}
 

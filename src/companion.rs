@@ -553,7 +553,7 @@ pub async fn update_then_merge(
 		let comp_pr = github_bot
 			.pull_request(&comp.owner, &comp.repo, comp.number)
 			.await?;
-		if cleanup_merged_pr(state, &comp_pr).await? {
+		if cleanup_merged_pr(state, &comp_pr, &comp.requested_by).await? {
 			return Ok(None);
 		}
 
