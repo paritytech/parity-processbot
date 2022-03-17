@@ -80,54 +80,82 @@ fn main() -> anyhow::Result<()> {
 			log::info!("Acquiring poll lock");
 			rt.block_on(async {
 				let state = &*state.lock().await;
-				let db_iter = state.db.iterator(rocksdb::IteratorMode::Start);
-				for (key, value) in db_iter {
-					match bincode::deserialize::<MergeRequest>(&value)
-						.context(Bincode)
-					{
-						Ok(mr) => {
-							// It's only worthwhile to try merging this MR if it has no pending
-							// dependencies
-							if mr
-								.dependencies
-								.as_ref()
-								.map(|vec| vec.is_empty())
-								.unwrap_or(true)
-							{
-								log::info!(
-									"Attempting to resume merge request processing during poll: {:?}",
-									mr
-								);
-								if let Err(err) =
-									checks_and_status(state, &mr.sha).await
+
+				let mut processed_mrs = vec![];
+
+				/*
+					Set up a loop for reinitializing the DB's iterator since the operations
+					performed in this loop might modify or delete multiple item from the
+					database, thus potentially making the iteration not work according to
+					expectations.
+				*/
+				'db_iteration_loop: loop {
+					let db_iter =
+						state.db.iterator(rocksdb::IteratorMode::Start);
+					for (key, value) in db_iter {
+						match bincode::deserialize::<MergeRequest>(&value)
+							.context(Bincode)
+						{
+							Ok(mr) => {
+								if processed_mrs.iter().any(
+									|prev_mr: &MergeRequest| {
+										mr.owner == prev_mr.owner
+											&& mr.repo == prev_mr.repo && mr.number
+											== prev_mr.number
+									},
+								) {
+									continue;
+								}
+
+								// It's only worthwhile to try merging this MR if it has no pending
+								// dependencies
+								if mr
+									.dependencies
+									.as_ref()
+									.map(|vec| vec.is_empty())
+									.unwrap_or(true)
 								{
-									let _ = cleanup_pr(
-										state,
-										&mr.sha,
-										&mr.owner,
-										&mr.repo,
-										mr.number,
-										&PullRequestCleanupReason::Error,
-									)
-									.await;
-									handle_error(
-										MergeCancelOutcome::WasCancelled,
-										err,
-										state,
-									)
-									.await;
+									log::info!(
+										"Attempting to resume merge request processing during poll: {:?}",
+										mr
+									);
+
+									if let Err(err) =
+										checks_and_status(state, &mr.sha).await
+									{
+										let _ = cleanup_pr(
+											state,
+											&mr.sha,
+											&mr.owner,
+											&mr.repo,
+											mr.number,
+											&PullRequestCleanupReason::Error,
+										)
+										.await;
+										handle_error(
+											MergeCancelOutcome::WasCancelled,
+											err,
+											state,
+										)
+										.await;
+									}
+
+									processed_mrs.push(mr);
+									continue 'db_iteration_loop;
 								}
 							}
-						}
-						Err(err) => {
-							log::error!(
-									"Failed to deserialize {} during cleanup_pr due to {:?}",
+							Err(err) => {
+								log::error!(
+									"Failed to deserialize key {} from the database due to {:?}",
 									String::from_utf8_lossy(&key),
 									err
 								);
-							let _ = state.db.delete(&key);
+								let _ = state.db.delete(&key);
+							}
 						}
 					}
+
+					break;
 				}
 				log::info!("Releasing poll lock");
 			});

@@ -12,9 +12,9 @@ use crate::{
 	error::*,
 	github::*,
 	webhook::{
-		check_merge_is_allowed, cleanup_merged_pr, cleanup_pr,
-		handle_dependents_after_merge, merge, ready_to_merge, wait_to_merge,
-		AppState, MergeRequest, PullRequestCleanupReason, WaitToMergeMessage,
+		check_merge_is_allowed, cleanup_pr, handle_dependents_after_merge,
+		handle_merged_pr, merge, ready_to_merge, wait_to_merge, AppState,
+		MergeRequest, PullRequestCleanupReason, WaitToMergeMessage,
 	},
 	MergeAllowedOutcome, Result, COMPANION_LONG_REGEX, COMPANION_PREFIX_REGEX,
 	COMPANION_SHORT_REGEX, OWNER_AND_REPO_SEQUENCE, PR_HTML_URL_REGEX,
@@ -553,7 +553,7 @@ pub async fn update_then_merge(
 		let comp_pr = github_bot
 			.pull_request(&comp.owner, &comp.repo, comp.number)
 			.await?;
-		if cleanup_merged_pr(state, &comp_pr, &comp.requested_by).await? {
+		if handle_merged_pr(state, &comp_pr, &comp.requested_by).await? {
 			return Ok(None);
 		}
 
