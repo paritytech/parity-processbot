@@ -4,10 +4,7 @@ parity-processbot is a
 [GitHub App](https://docs.github.com/en/developers/apps/getting-started-with-apps/about-apps)
 which drives the
 [Companion Build System](https://github.com/paritytech/parity-processbot/issues/327)'s
-merge process. It receives [commands](#commands) and from subsequent GitHub
-events it will resume processing all pending pull requests until they can be
-merged; a more detailed breakdown is available in the
-[Implementation section](#implementation).
+merge process.
 
 Note that parity-processbot works independently of the Companion Build System's
 cross-repository integration check, which is done on CI (see
@@ -19,6 +16,7 @@ Before starting to work on this project we recommend reading the
 
 # TOC
 
+- [How it works](#how-it-works)
 - [Commands](#commands)
   - [Relation to CI](#commands-relation-to-ci)
 - [Criteria for merge](#criteria-for-merge)
@@ -32,12 +30,21 @@ Before starting to work on this project we recommend reading the
   - [Environment variables](#setup-environment-variables)
 - [Development](#development)
   - [Run the application](#development-run)
-  - [Integration tests](#development-integration-tests)
   - [Example workflows](#development-example-workflows)
   - [Test repositories](#development-test-repositories)
+  - [Integration tests](#development-integration-tests)
 - [Deployment](#deployment)
   - [Logs](#deployment-logs)
   - [Environments](#deployment-environments)
+
+# How it works <a name="how-it-works"></a>
+
+processbot receives [commands](#commands) from pull request comments.
+
+The merge commands will either merge the pull request right away, if possible,
+or merge it automatically once all of its requirements are passing; a guided
+description of how that works internally is provided in the
+[Implementation section](#implementation).
 
 # Commands <a name="commands"></a>
 
@@ -225,16 +232,6 @@ application starts.
    the repositories where you have installed the app or the
    [test repositories](#development-test-repositories) after a deployment
 
-## Test repositories <a name="development-test-repositories"></a>
-
-The staging instance is installed in the following repositories:
-
-- https://github.com/paritytech/main-for-processbot-staging
-- https://github.com/paritytech/companion-for-processbot-staging
-
-The GitHub App for staging is managed by
-[paritytech](http://github.com/paritytech)'s Organizational GitHub Admins.
-
 ## Example workflows <a name="development-example-workflows"></a>
 
 ### Single merge use-case
@@ -264,6 +261,16 @@ Steps:
 5. Comment `bot merge` on the pull request in Repository A
 6. Observe that the the pull request in Repository A will be merged first and
    the pull request on Repository B will be merged after
+
+## Test repositories <a name="development-test-repositories"></a>
+
+The staging instance is installed in the following repositories:
+
+- https://github.com/paritytech/main-for-processbot-staging
+- https://github.com/paritytech/companion-for-processbot-staging
+
+The GitHub App for staging is managed by
+[paritytech](http://github.com/paritytech)'s Organizational GitHub Admins.
 
 ## Integration tests <a name="development-integration-tests"></a>
 
