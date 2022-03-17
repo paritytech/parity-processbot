@@ -250,7 +250,7 @@ pub async fn handle_payload(
 		},
 		Payload::CommitStatus { sha, state: status } => (
 			match status {
-				StatusState::Pending => Ok(()),
+				StatusState::Unknown => Ok(()),
 				_ => checks_and_status(state, &sha).await,
 			},
 			Some(sha),
@@ -429,15 +429,14 @@ pub async fn get_latest_statuses_state(
 		{
 			log::info!("{} has success status", html_url);
 			Status::Success
-		} else if latest_statuses
-			.values()
-			.any(|(_, state)| *state == StatusState::Pending)
-		{
-			log::info!("{} has pending status", html_url);
-			Status::Pending
-		} else {
+		} else if latest_statuses.values().any(|(_, state)| {
+			*state == StatusState::Error || *state == StatusState::Failure
+		}) {
 			log::info!("{} has failed status", html_url);
 			Status::Failure
+		} else {
+			log::info!("{} has pending status", html_url);
+			Status::Pending
 		},
 	)
 }
@@ -490,7 +489,7 @@ pub async fn get_latest_checks_state(
 
 /// Act on a status' outcome to decide on whether a PR relating to this SHA is ready to be merged
 #[async_recursion]
-async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
+pub async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 	let AppState { db, github_bot, .. } = state;
 
 	log::info!("Checking for statuses of {}", sha);

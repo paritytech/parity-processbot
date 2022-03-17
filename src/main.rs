@@ -5,6 +5,11 @@ use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 mod logging;
+use parity_processbot::{
+	error::Bincode, webhook::checks_and_status, MergeCancelOutcome,
+};
+use snafu::ResultExt;
+use std::{thread, time::Duration};
 
 use parity_processbot::{
 	config::MainConfig, constants::*, github::Payload, github_bot, server,
@@ -63,6 +68,73 @@ fn main() -> anyhow::Result<()> {
 		config,
 	}));
 
+	// Poll for pending merge requests
+	{
+		const DELAY: Duration = Duration::from_secs(30 * 60);
+		let state = app_state.clone();
+		let mut rt = tokio::runtime::Builder::new()
+			.threaded_scheduler()
+			.enable_all()
+			.build()?;
+		thread::spawn(move || loop {
+			log::info!("Acquiring poll lock");
+			rt.block_on(async {
+				let state = &*state.lock().await;
+				let db_iter = state.db.iterator(rocksdb::IteratorMode::Start);
+				for (key, value) in db_iter {
+					match bincode::deserialize::<MergeRequest>(&value)
+						.context(Bincode)
+					{
+						Ok(mr) => {
+							// It's only worthwhile to try merging this MR if it has no pending
+							// dependencies
+							if mr
+								.dependencies
+								.as_ref()
+								.map(|vec| vec.is_empty())
+								.unwrap_or(true)
+							{
+								log::info!(
+									"Attempting to resume merge request processing during poll: {:?}",
+									mr
+								);
+								if let Err(err) =
+									checks_and_status(state, &mr.sha).await
+								{
+									let _ = cleanup_pr(
+										state,
+										&mr.sha,
+										&mr.owner,
+										&mr.repo,
+										mr.number,
+										&PullRequestCleanupReason::Error,
+									)
+									.await;
+									handle_error(
+										MergeCancelOutcome::WasCancelled,
+										err,
+										state,
+									)
+									.await;
+								}
+							}
+						}
+						Err(err) => {
+							log::error!(
+									"Failed to deserialize {} during cleanup_pr due to {:?}",
+									String::from_utf8_lossy(&key),
+									err
+								);
+							let _ = state.db.delete(&key);
+						}
+					}
+				}
+				log::info!("Releasing poll lock");
+			});
+			thread::sleep(DELAY);
+		});
+	}
+
 	let mut rt = tokio::runtime::Builder::new()
 		.threaded_scheduler()
 		.enable_all()
@@ -98,7 +170,7 @@ fn main() -> anyhow::Result<()> {
 					match event.event_type.as_deref() {
 						Some("ping") => (),
 						Some("ready") => log::info!("Webhook proxy is ready!"),
-						_ => log::info!("Not parsed {:?}", event),
+						_ => log::info!("Not parsed: {:?}", event),
 					}
 				}
 			});

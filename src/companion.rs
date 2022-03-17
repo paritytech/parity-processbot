@@ -701,17 +701,11 @@ pub async fn update_then_merge(
 	}
 	.await
 	{
-		Err(err) => {
-			let err = match err {
-				Error::WithIssue { .. } => err,
-				err => err.map_issue((
-					comp.owner.to_owned(),
-					comp.repo.to_owned(),
-					comp.number,
-				)),
-			};
-			Err(err)
-		}
+		Err(err) => Err(err.map_issue((
+			comp.owner.to_owned(),
+			comp.repo.to_owned(),
+			comp.number,
+		))),
 		other => other,
 	}
 }

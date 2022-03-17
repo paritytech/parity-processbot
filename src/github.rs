@@ -174,8 +174,9 @@ pub struct Status {
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum StatusState {
-	Pending,
 	Success,
+	Error,
+	Failure,
 	#[serde(other)]
 	Unknown,
 }
