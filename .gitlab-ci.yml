@@ -4,9 +4,6 @@ variables:
   GIT_STRATEGY:                    fetch
   GIT_DEPTH:                       3
   CARGO_TARGET_DIR:                "/ci-cache/${CI_PROJECT_NAME}/targets/${CI_COMMIT_REF_NAME}/${CI_JOB_NAME}"
-  VAULT_SERVER_URL:                "https://vault.parity-mgmt-vault.parity.io"
-  VAULT_AUTH_PATH:                 "gitlab-parity-io-jwt"
-  VAULT_AUTH_ROLE:                 "cicd_gitlab_parity_${CI_PROJECT_NAME}"
   GITHUB_ORGANIZATION:             "paritytech"
 
 default:
@@ -32,8 +29,6 @@ stages:
 check:
   stage:                           check
   script:
-    # TODO: create processbot CI image which already has rustfmt and clippy
-    - rustup component add rustfmt clippy
     - cargo fmt --all -- --check
     - cargo check --all-targets --workspace
     - cargo clippy --all-targets --workspace -- -Dwarnings
@@ -74,20 +69,13 @@ build:
     GIT_STRATEGY:                  none
     DOCKER_IMAGE:                  "${CI_REGISTRY}/${KUBE_NAMESPACE}"
   interruptible:                   true
-  secrets:
-      DOCKER_HUB_USER:
-        vault:                     cicd/gitlab/parity/DOCKER_HUB_USER@kv
-        file:                      false
-      DOCKER_HUB_PASS:
-        vault:                     cicd/gitlab/parity/DOCKER_HUB_PASS@kv
-        file:                      false
   script:
     - cd ./artifacts
     - buildah bud
       --format=docker
       --tag "$DOCKER_IMAGE:$CI_COMMIT_REF_NAME" .
-    - echo "$DOCKER_HUB_PASS" |
-        buildah login --username "$DOCKER_HUB_USER" --password-stdin docker.io
+    - echo "$Docker_Hub_Pass_Parity" |
+        buildah login --username "$Docker_Hub_User_Parity" --password-stdin docker.io
     - buildah push --format=v2s2 "$DOCKER_IMAGE:$CI_COMMIT_REF_NAME"
   tags:
     - kubernetes-parity-build
@@ -106,16 +94,6 @@ dockerize-processbot:
 .deploy-k8s:                       &deploy-k8s
   image:                           paritytech/kubetools:3.5.3
   interruptible:                   true
-  secrets:
-    PROCESSBOT_KEY:
-      vault:                       cicd/gitlab/$CI_PROJECT_PATH/$CI_ENVIRONMENT_NAME/PROCESSBOT_KEY@kv
-      file:                        false
-    GITHUB_APP_ID:
-      vault:                       cicd/gitlab/$CI_PROJECT_PATH/$CI_ENVIRONMENT_NAME/GITHUB_APP_ID@kv
-      file:                        false
-    WEBHOOK_SECRET:
-      vault:                       cicd/gitlab/$CI_PROJECT_PATH/$CI_ENVIRONMENT_NAME/WEBHOOK_SECRET@kv
-      file:                        false
   # PROCESSBOT_KEY should be base64 encoded
   script:
     - helm upgrade processbot ./helm
