@@ -624,12 +624,13 @@ pub async fn handle_dependents_after_merge(
 		The dependents we have detected when the merge chain was first built might not
 		be referenced in the PR description anymore (i.e. they have become dangling
 		references); in that case try to invalidate them from the database
-	*/
 
-	/*
+		---
+
 		Set up a loop for reinitializing the DB's iterator since the operations
-		performed in this loop might modify or delete multiple item from the database,
-		thus potentially making the iteration not work according to expectations.
+		performed in this loop might modify or delete multiple items from the
+		database, thus potentially making the iteration not work according to
+		expectations.
 	*/
 	let mut processed_mrs = vec![];
 	'db_iteration_loop: loop {

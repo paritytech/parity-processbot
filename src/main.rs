@@ -85,7 +85,7 @@ fn main() -> anyhow::Result<()> {
 
 				/*
 					Set up a loop for reinitializing the DB's iterator since the operations
-					performed in this loop might modify or delete multiple item from the
+					performed in this loop might modify or delete multiple items from the
 					database, thus potentially making the iteration not work according to
 					expectations.
 				*/
