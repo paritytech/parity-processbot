@@ -1495,7 +1495,7 @@ pub async fn handle_merged_pr(
 		return Ok(false);
 	}
 
-	let result = cleanup_pr(
+	let was_cleaned_up = cleanup_pr(
 		state,
 		&pr.head.sha,
 		&pr.base.repo.owner.login,
@@ -1506,16 +1506,22 @@ pub async fn handle_merged_pr(
 	.await
 	.map(|_| true);
 
-	if let Err(err) =
-		handle_dependents_after_merge(state, pr, requested_by).await
-	{
-		log::error!(
-			"Failed to process handle_dependents_after_merge in cleanup_merged_pr due to {:?}",
-			err
-		);
+	/*
+		It's not sane to try to handle the dependents if the cleanup went wrong since
+		that hints at some bug in the application
+	*/
+	if was_cleaned_up.is_ok() {
+		if let Err(err) =
+			handle_dependents_after_merge(state, pr, requested_by).await
+		{
+			log::error!(
+				"Failed to process handle_dependents_after_merge in cleanup_merged_pr due to {:?}",
+				err
+			);
+		}
 	}
 
-	result
+	was_cleaned_up
 }
 
 pub enum PullRequestCleanupReason<'a> {
