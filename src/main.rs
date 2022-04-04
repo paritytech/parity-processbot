@@ -154,11 +154,10 @@ fn main() -> anyhow::Result<()> {
 							}
 						}
 					}
-
 					break;
 				}
-				log::info!("Releasing poll lock");
 			});
+			log::info!("Releasing poll lock");
 			thread::sleep(DELAY);
 		});
 	}
