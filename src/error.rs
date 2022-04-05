@@ -120,7 +120,7 @@ pub enum Error {
 impl Error {
 	pub fn map_issue(self, issue: IssueDetails) -> Self {
 		match self {
-			Self::WithIssue { source, .. } => Self::WithIssue { source, issue },
+			Self::WithIssue { .. } => self,
 			_ => Self::WithIssue {
 				source: Box::new(self),
 				issue,
