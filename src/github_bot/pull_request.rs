@@ -76,6 +76,7 @@ impl GithubBot {
 			repo: (&pr.base.repo.name).into(),
 			number: pr.number,
 			html_url: (&pr.html_url).into(),
+			is_directly_referenced: true,
 		};
 		let dependents =
 			// If there's only one companion, then it can't possibly depend on another companion
@@ -104,6 +105,7 @@ impl GithubBot {
 					if comp_repo == &pr.base.repo.owner.login {
 						continue;
 					}
+
 					// Fetch the companion's lockfile in order to detect its dependencies
 					let comp_pr = self
 						.pull_request(comp_owner, comp_repo, *comp_number)
@@ -138,6 +140,7 @@ impl GithubBot {
 					};
 
 					let mut dependencies = base_dependencies.clone();
+
 					// Go through all the other companions to check if any of them is a dependency
 					// of this companion
 					'to_next_other_companion: for (
@@ -173,7 +176,8 @@ impl GithubBot {
 										repo: other_comp_repo.into(),
 										sha: other_comp_pr.head.sha,
 										number: *other_comp_number,
-										html_url: other_comp_html_url.into()
+										html_url: other_comp_html_url.into(),
+										is_directly_referenced: false
 									});
 									continue 'to_next_other_companion;
 								}

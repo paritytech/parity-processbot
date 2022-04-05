@@ -33,6 +33,7 @@ pub struct Dependency {
 	pub repo: String,
 	pub number: i64,
 	pub html_url: String,
+	pub is_directly_referenced: bool,
 }
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[repr(C)]
@@ -611,12 +612,37 @@ pub async fn handle_dependents_after_merge(
 		..
 	} = state;
 
-	let detected_dependents = github_bot
+	let fetched_dependents = github_bot
 		.resolve_pr_dependents(config, pr, requested_by, &[])
 		.await?;
-	if let Some(dependents) = &detected_dependents {
-		log::info!("Found dependents of {}: {:?}", pr.html_url, dependents);
+	if let Some(dependents) = &fetched_dependents {
+		log::info!(
+			"Found current dependents of {}: {:?}",
+			pr.html_url,
+			dependents
+		);
 	}
+
+	/*
+		The alive dependents are the ones which are still referenced in the PR
+		description plus the ones from the database were registered as indirect
+		dependencies
+	*/
+	let mut alive_dependents = fetched_dependents
+		.clone()
+		.unwrap_or_else(std::vec::Vec::new);
+
+	// Helper function to avoid duplicate dependents from being registered
+	let mut register_alive_dependent = |mr: MergeRequest| {
+		if alive_dependents.iter().any(|alive_dep: &MergeRequest| {
+			mr.owner == alive_dep.owner
+				&& mr.repo == alive_dep.repo
+				&& mr.number == alive_dep.number
+		}) {
+			return;
+		};
+		alive_dependents.push(mr)
+	};
 
 	/*
 		Step 1: Update dangling references
@@ -638,28 +664,39 @@ pub async fn handle_dependents_after_merge(
 		'to_next_item: for (key, value) in db_iter {
 			match bincode::deserialize::<MergeRequest>(&value).context(Bincode)
 			{
-				Ok(mut item) => {
-					if let Some(dependents) = &detected_dependents {
+				Ok(mut mr) => {
+					if processed_mrs.iter().any(|prev_mr: &MergeRequest| {
+						mr.owner == prev_mr.owner
+							&& mr.repo == prev_mr.repo && mr.number
+							== prev_mr.number
+					}) {
+						continue;
+					}
+
+					if let Some(dependents) = &fetched_dependents {
 						for dependent in dependents {
-							if dependent.owner == item.owner
-								&& dependent.repo == item.repo && dependent
-								.number == item
-								.number
+							if dependent.owner == mr.owner
+								&& dependent.repo == mr.repo && dependent.number
+								== mr.number
 							{
 								// This item was detected a dependent, therefore it is not potentially
 								// dangling for this PR specifically
+								register_alive_dependent(mr);
 								continue 'to_next_item;
 							}
 						}
 					}
 
-					enum ItemOutcome {
+					#[derive(PartialEq)]
+					enum LivenessOutcome {
 						Updated,
 						Dangling,
+						Alive,
+						AliveNeedsUpdate,
 					}
-					let mut item_outcome: Option<ItemOutcome> = None;
+					let mut liveness_outcome: Option<LivenessOutcome> = None;
 
-					item.dependencies = item.dependencies.map(|dependencies| {
+					mr.dependencies = mr.dependencies.map(|dependencies| {
 						dependencies
 							.into_iter()
 							.filter(|dependency| {
@@ -667,26 +704,45 @@ pub async fn handle_dependents_after_merge(
 									&& dependency.repo == pr.base.repo.name
 									&& dependency.number == pr.number
 								{
-									if item_outcome.is_none() {
-										item_outcome =
-											Some(ItemOutcome::Dangling);
+									if dependency.is_directly_referenced {
+										if liveness_outcome.is_none() {
+											liveness_outcome =
+												Some(LivenessOutcome::Dangling);
+										}
+										false
+									} else {
+										if liveness_outcome != Some(LivenessOutcome::AliveNeedsUpdate) {
+											liveness_outcome = match liveness_outcome {
+												Some(LivenessOutcome::Updated) => Some(LivenessOutcome::AliveNeedsUpdate),
+												_ => Some(LivenessOutcome::Alive)
+											};
+										}
+										true
 									}
-									false
 								} else {
-									item_outcome = Some(ItemOutcome::Updated);
+									if let Some(LivenessOutcome::Dangling) =
+										liveness_outcome
+									{
+										liveness_outcome =
+											Some(LivenessOutcome::Updated);
+									}
 									true
 								}
 							})
 							.collect()
 					});
 
-					if let Some(item_outcome) = item_outcome {
-						match item_outcome {
-							ItemOutcome::Updated => {
+					if let Some(liveness_outcome) = liveness_outcome {
+						match liveness_outcome {
+							LivenessOutcome::Alive => {
+								register_alive_dependent(mr.clone());
+							}
+							LivenessOutcome::Updated
+							| LivenessOutcome::AliveNeedsUpdate => {
 								if let Err(err) = db
 									.put(
 										&key,
-										bincode::serialize(&item)
+										bincode::serialize(&mr)
 											.context(Bincode)?,
 									)
 									.context(Db)
@@ -694,15 +750,15 @@ pub async fn handle_dependents_after_merge(
 									log::error!(
 										"Failed to update database references after merge of {} in dependent {} due to {:?}",
 										pr.html_url,
-										item.html_url,
+										mr.html_url,
 										err
 									);
 									let _ = cleanup_pr(
 										state,
-										&item.sha,
-										&item.owner,
-										&item.repo,
-										item.number,
+										&mr.sha,
+										&mr.owner,
+										&mr.repo,
+										mr.number,
 										&PullRequestCleanupReason::Error,
 									)
 									.await;
@@ -711,26 +767,30 @@ pub async fn handle_dependents_after_merge(
 										Error::Message {
 											msg: format!(
 												"Unable to update {} in the database (detected as a dependent of {})",
-												&item.html_url,
+												&mr.html_url,
 												pr.html_url
 											),
 										}
 										.map_issue((
-											(&item.owner).into(),
-											(&item.repo).into(),
-											item.number,
+											(&mr.owner).into(),
+											(&mr.repo).into(),
+											mr.number,
 										)),
 										state,
 									)
 									.await;
+								} else if liveness_outcome
+									== LivenessOutcome::AliveNeedsUpdate
+								{
+									register_alive_dependent(mr.clone());
 								}
 							}
-							ItemOutcome::Dangling => {
+							LivenessOutcome::Dangling => {
 								let _ = db.delete(&key);
 							}
 						};
 
-						processed_mrs.push(item);
+						processed_mrs.push(mr);
 						continue 'db_iteration_loop;
 					}
 				}
@@ -747,9 +807,11 @@ pub async fn handle_dependents_after_merge(
 		break;
 	}
 
-	let dependents = match detected_dependents {
-		Some(dependents) => dependents,
-		None => return Ok(()),
+	let dependents = {
+		if alive_dependents.is_empty() {
+			return Ok(());
+		}
+		alive_dependents
 	};
 
 	/*
