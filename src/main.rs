@@ -78,10 +78,9 @@ fn main() -> anyhow::Result<()> {
 			.build()?;
 		thread::spawn(move || loop {
 			log::info!("Acquiring poll lock");
+
 			rt.block_on(async {
 				let state = &*state.lock().await;
-
-				let mut processed_mrs = vec![];
 
 				/*
 					Set up a loop for reinitializing the DB's iterator since the operations
@@ -89,6 +88,7 @@ fn main() -> anyhow::Result<()> {
 					database, thus potentially making the iteration not work according to
 					expectations.
 				*/
+				let mut processed_mrs = vec![];
 				'db_iteration_loop: loop {
 					let db_iter =
 						state.db.iterator(rocksdb::IteratorMode::Start);
@@ -157,6 +157,7 @@ fn main() -> anyhow::Result<()> {
 					break;
 				}
 			});
+
 			log::info!("Releasing poll lock");
 			thread::sleep(DELAY);
 		});
