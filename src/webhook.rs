@@ -633,15 +633,15 @@ pub async fn handle_dependents_after_merge(
 		.unwrap_or_else(std::vec::Vec::new);
 
 	// Helper function to avoid duplicate dependents from being registered
-	let mut register_alive_dependent = |mr: MergeRequest| {
+	let mut register_alive_dependent = |dep: MergeRequest| {
 		if alive_dependents.iter().any(|alive_dep: &MergeRequest| {
-			mr.owner == alive_dep.owner
-				&& mr.repo == alive_dep.repo
-				&& mr.number == alive_dep.number
+			dep.owner == alive_dep.owner
+				&& dep.repo == alive_dep.repo
+				&& dep.number == alive_dep.number
 		}) {
 			return;
 		};
-		alive_dependents.push(mr)
+		alive_dependents.push(dep)
 	};
 
 	/*
