@@ -12,11 +12,12 @@ use crate::{
 	error::*,
 	github::*,
 	webhook::{
-		check_merge_is_allowed, cleanup_pr, handle_dependents_after_merge,
-		handle_merged_pr, merge, ready_to_merge, wait_to_merge, AppState,
-		MergeRequest, PullRequestCleanupReason, WaitToMergeMessage,
+		check_merge_is_allowed, cleanup_pr, get_latest_statuses_state,
+		handle_dependents_after_merge, handle_merged_pr, merge, ready_to_merge,
+		wait_to_merge, AppState, MergeRequest, PullRequestCleanupReason,
+		WaitToMergeMessage,
 	},
-	MergeAllowedOutcome, Result, COMPANION_LONG_REGEX, COMPANION_PREFIX_REGEX,
+	Result, COMPANION_LONG_REGEX, COMPANION_PREFIX_REGEX,
 	COMPANION_SHORT_REGEX, OWNER_AND_REPO_SEQUENCE, PR_HTML_URL_REGEX,
 };
 
@@ -509,6 +510,32 @@ pub async fn check_all_companions_are_mergeable(
 			});
 		}
 
+		/*
+			FIXME: Get rid of this ugly hack once the Companion Build System doesn't
+			ignore the companion's CI
+		*/
+		let latest_statuses = get_latest_statuses_state(
+			github_bot,
+			&companion.base.repo.owner.login,
+			&companion.base.repo.name,
+			&companion.head.sha,
+			&companion.html_url,
+		)
+		.await?
+		.1;
+		let reviews_are_passing = latest_statuses
+			.get("Check reviews")
+			.map(|(_, state)| state == &StatusState::Success)
+			.unwrap_or(false);
+		if !reviews_are_passing {
+			return Err(Error::Message {
+				msg: format!(
+					"pr-custom-review is not passing for {}",
+					&companion.html_url
+				),
+			});
+		}
+
 		// Keeping track of the trail of references is necessary to break chains like A -> B -> C -> A
 		// TODO: of course this should be tested
 		let next_companion_reference_trail = {
@@ -521,17 +548,14 @@ pub async fn check_all_companions_are_mergeable(
 			});
 			next_trail
 		};
-		if let MergeAllowedOutcome::Disallowed(msg) = check_merge_is_allowed(
+
+		check_merge_is_allowed(
 			state,
 			&companion,
 			requested_by,
-			None,
 			&next_companion_reference_trail,
 		)
-		.await?
-		{
-			return Err(Error::Message { msg });
-		}
+		.await?;
 	}
 
 	Ok(())
@@ -566,14 +590,8 @@ pub async fn update_then_merge(
 			}
 			(None, comp_pr)
 		} else {
-			check_merge_is_allowed(
-				state,
-				&comp_pr,
-				&comp.requested_by,
-				None,
-				&[],
-			)
-			.await?;
+			check_merge_is_allowed(state, &comp_pr, &comp.requested_by, &[])
+				.await?;
 
 			let dependencies_to_update =
 				if let Some(ref dependencies) = comp.dependencies {
@@ -656,8 +674,7 @@ pub async fn update_then_merge(
 				"Attempting to merge {} after companion update",
 				comp_pr.html_url
 			);
-			if let Err(err) =
-				merge(state, &comp_pr, &comp.requested_by, None).await?
+			if let Err(err) = merge(state, &comp_pr, &comp.requested_by).await?
 			{
 				match err {
 					Error::MergeFailureWillBeSolvedLater { .. } => {}

@@ -25,8 +25,6 @@ pub struct CommonSetupOutput {
 	pub repo_full_name: String,
 	pub github_app_id: usize,
 	pub initial_branch: String,
-	pub core_devs_team: &'static str,
-	pub team_leads_team: &'static str,
 }
 pub fn common_setup() -> CommonSetupOutput {
 	let git_daemon_base_path_tracker =
@@ -163,12 +161,6 @@ GcZ0izY/30012ajdHY+/QK5lsMoxTnn0skdS+spLxaS5ZEO4qvPVb8RAoCkWMMal
 		),
 	);
 
-	let core_devs_team = "core-devs";
-	let team_leads_team = "team-leads";
-	for team in &[core_devs_team, team_leads_team] {
-		setup_team(&github_api, &owner.login, team, vec![owner.clone()]);
-	}
-
 	let db_dir = tempfile::tempdir().unwrap();
 
 	CommonSetupOutput {
@@ -185,25 +177,7 @@ GcZ0izY/30012ajdHY+/QK5lsMoxTnn0skdS+spLxaS5ZEO4qvPVb8RAoCkWMMal
 		repo_full_name,
 		private_key,
 		initial_branch: initial_branch.to_string(),
-		core_devs_team,
-		team_leads_team,
 	}
-}
-
-pub fn setup_team(
-	github_api: &Server,
-	org: &str,
-	team: &str,
-	users: Vec<github::User>,
-) {
-	github_api.expect(
-		Expectation::matching(request::method_path(
-			"GET",
-			format!("/orgs/{}/teams/{}/members", org, team),
-		))
-		.times(0..)
-		.respond_with(json_encoded(users)),
-	);
 }
 
 pub fn setup_commit(setup: &CommonSetupOutput, sha: &str) {
@@ -392,19 +366,6 @@ pub fn setup_pull_request(
 			merged: false,
 			maintainer_can_modify: true,
 		})),
-	);
-
-	github_api.expect(
-		Expectation::matching(request::method_path(
-			"GET",
-			format!("{}/reviews", pr_api_path),
-		))
-		.times(0..)
-		.respond_with(json_encoded(vec![github::Review {
-			id: 1,
-			user: Some(owner.clone()),
-			state: Some(github::ReviewState::Approved),
-		}])),
 	);
 
 	github_api.expect(

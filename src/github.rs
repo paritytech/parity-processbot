@@ -122,14 +122,6 @@ pub struct Base {
 	pub repo: BaseRepo,
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Review {
-	pub id: i64,
-	// User might be missing when it has been deleted
-	pub user: Option<User>,
-	pub state: Option<ReviewState>,
-}
-
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub enum UserType {
 	User,
@@ -177,15 +169,6 @@ pub enum StatusState {
 	Success,
 	Error,
 	Failure,
-	#[serde(other)]
-	Unknown,
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum ReviewState {
-	Approved,
-	ChangesRequested,
 	#[serde(other)]
 	Unknown,
 }

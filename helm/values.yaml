@@ -5,8 +5,6 @@ app:
   PROCESSBOT_KEY: from-gitlab-vars
   WEBHOOK_SECRET: from-gitlab-vars
   KUBE_NAMESPACE: from-gitlab-vars
-  CORE_DEVS_TEAM: from-gitlab-vars
-  TEAM_LEADS_TEAM: from-gitlab-vars
   START_FROM_CWD: true
 
 config:

@@ -20,7 +20,6 @@ Before starting to work on this project we recommend reading the
 - [Commands](#commands)
   - [Relation to CI](#commands-relation-to-ci)
 - [Criteria for merge](#criteria-for-merge)
-  - [Approvals](#criteria-for-merge-approvals)
   - [Checks and statuses](#criteria-for-merge-checks-and-statuses)
 - [GitHub App](#github-app)
   - [Configuration](#github-app-configuration)
@@ -51,9 +50,8 @@ description of how that works internally is provided in the
 The following commands should be posted as pull request comments. **Your whole
 comment should only have the command**.
 
-- `bot merge`: [if approved](#criteria-for-merge), merge once checks pass.
-- `bot merge force`: [if approved](#criteria-for-merge), merge immediately
-  while disregarding checks
+- `bot merge`: merge once checks pass
+- `bot merge force`: merge immediately while disregarding checks
   ([not all of them can be disregarded](#criteria-for-merge-checks-and-statuses)).
 - `bot merge cancel`: cancel a pending `bot merge`; does not affect anything
   outside of processbot, only stops the bot from following through with the
@@ -93,45 +91,6 @@ Unstable statuses will have `allow_failure: true` encoded in their descriptions
 which will allow processbot to detect and disregard them.
 
 # Criteria for merge <a name="criteria-for-merge"></a>
-
-## Approvals <a name="criteria-for-merge-approvals"></a>
-
-A Pull Request needs either (meaning, only **one of** the following
-requirements needs to be fulfilled)
-
-- [core-dev](https://github.com/orgs/paritytech/teams/core-devs) member approvals (2 for Substrate, 1 otherwise), or
-- One [substrateteamleads](https://github.com/orgs/paritytech/teams/substrateteamleads) member approval
-
-This criterion strictly matters only for the bot's internal logic irrespective
-of GitHub Repository Settings and will not trump the latter in any case. For
-instance, the rule:
-
-> One substrateteamleads member approval
-
-does not imply that the pull request will be mergeable if the GitHub Settings
-require more approvals than that. The bot's rules work *in addition* to the
-repository's settings while still respecting them. Specifically when it comes
-to the approvals' count, however, the bot might able to help if a
-[team lead](https://github.com/orgs/paritytech/teams/substrateteamleads)
-is requesting the merge.
-
-When the bot is commanded to merge, if the PR is short of 1 approval and the
-command's requester might not be able to fulfill the approval count on their
-own, then the bot will try to pitch in the missing approval if the requester is
-a [team lead](https://github.com/orgs/paritytech/teams/substrateteamleads).
-The reasoning for this feature is as follows:
-
-1. PR authors cannot approve their own merge requests, although
-  [team leads](https://github.com/orgs/paritytech/teams/substrateteamleads)
-  should have the means to bypass that requirement e.g. for trivial or urgent
-  changes.
-
-2. If the
-  [team lead](https://github.com/orgs/paritytech/teams/substrateteamleads)
-  has already approved and it's still
-  short of one, they cannot "approve twice" in order to meet the quota. In that
-  case the bot should contribute one approval in order to help them meet the
-  approval count.
 
 ## Checks and statuses <a name="criteria-for-merge-checks-and-statuses"></a>
 
