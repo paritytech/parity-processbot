@@ -432,15 +432,15 @@ pub fn parse_all_companions(
 	body.lines()
 		.filter_map(|line| {
 			companion_parse(line).and_then(|comp| {
-					// Break cyclical references between dependency and dependents because we're only
-					// interested in the dependency -> dependent relationship, not the other way around.
-					for item in companion_reference_trail {
-						if comp.1 == item.owner && comp.2 == item.repo {
-							return None;
-						}
+				// Break cyclical references between dependency and dependents because we're only
+				// interested in the dependency -> dependent relationship, not the other way around.
+				for item in companion_reference_trail {
+					if comp.1 == item.owner && comp.2 == item.repo {
+						return None;
 					}
-					Some(comp)
-				})
+				}
+				Some(comp)
+			})
 		})
 		.collect()
 }
