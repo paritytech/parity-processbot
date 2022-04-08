@@ -298,7 +298,7 @@ async fn update_pr_branch(
 			let args = {
 				let mut args = vec!["update", "-v"];
 				args.extend(
-					pkgs_in_companion.iter().map(|pkg| ["-p", pkg]).flatten(),
+					pkgs_in_companion.iter().flat_map(|pkg| ["-p", pkg]),
 				);
 				args
 			};
@@ -431,8 +431,7 @@ pub fn parse_all_companions(
 ) -> Vec<IssueDetailsWithRepositoryURL> {
 	body.lines()
 		.filter_map(|line| {
-			companion_parse(line)
-				.map(|comp| {
+			companion_parse(line).and_then(|comp| {
 					// Break cyclical references between dependency and dependents because we're only
 					// interested in the dependency -> dependent relationship, not the other way around.
 					for item in companion_reference_trail {
@@ -442,7 +441,6 @@ pub fn parse_all_companions(
 					}
 					Some(comp)
 				})
-				.flatten()
 		})
 		.collect()
 }

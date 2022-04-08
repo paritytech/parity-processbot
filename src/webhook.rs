@@ -168,15 +168,13 @@ pub async fn webhook_inner(
 			let pr_details = serde_json::from_slice::<
 				DetectUserCommentPullRequest,
 			>(&msg_bytes)
-			.ok()
-			.map(|detected| detected.get_issue_details())
-			.flatten();
+			.ok().and_then(|detected| detected.get_issue_details());
 
 			if let Some(pr_details) = pr_details {
 				Err(Error::Message {
 					msg: format!(
 						WEBHOOK_PARSING_ERROR_TEMPLATE!(),
-						err.to_string(),
+						err,
 						String::from_utf8_lossy(&msg_bytes)
 					),
 				}
@@ -629,8 +627,7 @@ pub async fn handle_dependents_after_merge(
 		dependencies
 	*/
 	let mut alive_dependents = fetched_dependents
-		.clone()
-		.unwrap_or_else(std::vec::Vec::new);
+		.clone().unwrap_or_default();
 
 	// Helper function to avoid duplicate dependents from being registered
 	let mut register_alive_dependent = |dep: MergeRequest| {
@@ -1847,7 +1844,7 @@ pub async fn merge(
 		.unwrap();
 
 		if missing_status_matcher
-			.find(&msg.to_string())
+			.find(msg)
 			.is_some()
 		{
 			// This problem will be solved automatically when all the required statuses are delivered, thus
@@ -1877,7 +1874,7 @@ pub async fn merge(
 					.build()
 					.unwrap();
 
-			match insufficient_approval_quota_matcher.captures(&msg.to_string()) {
+			match insufficient_approval_quota_matcher.captures(msg) {
 				Some(matches) => matches
 					.get(1)
 					.unwrap()

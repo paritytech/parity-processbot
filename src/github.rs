@@ -438,13 +438,11 @@ pub fn parse_issue_details_from_pr_html_url(
 pub fn parse_repository_full_name(full_name: &str) -> Option<(String, String)> {
 	let parts: Vec<&str> = full_name.split('/').collect();
 	parts
-		.get(0)
-		.map(|owner| {
+		.get(0).and_then(|owner| {
 			parts.get(1).map(|repo_name| {
 				Some((owner.to_string(), repo_name.to_string()))
 			})
 		})
-		.flatten()
 		.flatten()
 }
 
