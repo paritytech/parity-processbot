@@ -120,7 +120,7 @@ impl GithubBot {
 							)
 							.await?;
 						let txt_encoded = base64::decode(
-							&lockfile_content.content.replace("\n", ""),
+							&lockfile_content.content.replace('\n', ""),
 						)
 						.map_err(|err| Error::Message {
 							msg: format!(
