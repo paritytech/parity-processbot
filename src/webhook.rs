@@ -1253,12 +1253,6 @@ pub async fn check_merge_is_allowed(
 	requested_by: &str,
 	companion_reference_trail: &[CompanionReferenceTrailItem],
 ) -> Result<()> {
-	let AppState {
-		github_bot: _,
-		config: _,
-		..
-	} = state;
-
 	if !pr.mergeable.unwrap_or(false) {
 		return Err(Error::Message {
 			msg: format!("Github API says {} is not mergeable", pr.html_url),
