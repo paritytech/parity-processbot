@@ -168,7 +168,8 @@ pub async fn webhook_inner(
 			let pr_details = serde_json::from_slice::<
 				DetectUserCommentPullRequest,
 			>(&msg_bytes)
-			.ok().and_then(|detected| detected.get_issue_details());
+			.ok()
+			.and_then(|detected| detected.get_issue_details());
 
 			if let Some(pr_details) = pr_details {
 				Err(Error::Message {
@@ -386,56 +387,76 @@ pub async fn get_latest_statuses_state(
 	commit_sha: &str,
 	html_url: &str,
 ) -> Result<Status> {
-	let status = github_bot.status(owner, repo, commit_sha).await?;
-	log::info!("{} statuses: {:?}", html_url, status);
+	let mut did_check_for_retried_jobs = false;
 
-	// Since Github only considers the latest instance of each status, we should abide by the same
-	// rule. Each instance is uniquely identified by "context".
-	let mut latest_statuses: HashMap<String, (i64, StatusState)> =
-		HashMap::new();
-	for s in status.statuses {
-		if s.description
-			.as_ref()
-			.map(|description| {
-				match serde_json::from_str::<vanity_service::JobInformation>(
-					description,
-				) {
-					Ok(info) => info.build_allow_failure.unwrap_or(false),
-					_ => false,
-				}
-			})
-			.unwrap_or(false)
-		{
-			continue;
+	// Set up a loop so that we can recover from failed jobs which might have been
+	// retried
+	loop {
+		let status = github_bot.status(owner, repo, commit_sha).await?;
+		log::info!("{} statuses: {:?}", html_url, status);
+
+		// Since Github only considers the latest instance of each status, we should
+		// abide by the same rule. Each instance is uniquely identified by "context".
+		let mut latest_statuses: HashMap<String, (i64, StatusState)> =
+			HashMap::new();
+		for s in status.statuses {
+			if s.description
+				.as_ref()
+				.map(|description| {
+					match serde_json::from_str::<vanity_service::JobInformation>(
+						description,
+					) {
+						Ok(info) => info.build_allow_failure.unwrap_or(false),
+						_ => false,
+					}
+				})
+				.unwrap_or(false)
+			{
+				continue;
+			}
+
+			if latest_statuses
+				.get(&s.context)
+				.map(|(prev_id, _)| prev_id < &s.id)
+				.unwrap_or(true)
+			{
+				latest_statuses.insert(s.context, (s.id, s.state));
+			}
 		}
+		log::info!("{} latest_statuses: {:?}", html_url, latest_statuses);
 
-		if latest_statuses
-			.get(&s.context)
-			.map(|(prev_id, _)| prev_id < &s.id)
-			.unwrap_or(true)
-		{
-			latest_statuses.insert(s.context, (s.id, s.state));
-		}
-	}
-	log::info!("{} latest_statuses: {:?}", html_url, latest_statuses);
-
-	Ok(
 		if latest_statuses
 			.values()
 			.all(|(_, state)| *state == StatusState::Success)
 		{
 			log::info!("{} has success status", html_url);
-			Status::Success
+			return Ok(Status::Success);
 		} else if latest_statuses.values().any(|(_, state)| {
 			*state == StatusState::Error || *state == StatusState::Failure
 		}) {
-			log::info!("{} has failed status", html_url);
-			Status::Failure
+			if did_check_for_retried_jobs {
+				log::info!("{} has failed status", html_url);
+				return Ok(Status::Failure);
+			} else {
+				/*
+					Some jobs might be retried automatically, as pointed out in:
+					https://github.com/paritytech/parity-processbot/issues/374#issuecomment-1092874843
+					We introduce a delay when some status is failed so that *hopefully*, in the
+					next pass of this loop, GitLab will already have created a pending status
+					for retried jobs, or otherwise the pipeline will still be failing if the
+					failed job was not retried.
+					FIXME: A better solution would be to fetch the GitLab pipeline for the
+					failed job and check if it's still running.
+				*/
+				log::info!("{} has failed status, but we'll check again in case its jobs have been retried...", html_url);
+				did_check_for_retried_jobs = true;
+				delay_for(Duration::from_secs(1)).await;
+			}
 		} else {
 			log::info!("{} has pending status", html_url);
-			Status::Pending
-		},
-	)
+			return Ok(Status::Pending);
+		}
+	}
 }
 
 pub async fn get_latest_checks_state(
@@ -626,8 +647,7 @@ pub async fn handle_dependents_after_merge(
 		description plus the ones from the database were registered as indirect
 		dependencies
 	*/
-	let mut alive_dependents = fetched_dependents
-		.clone().unwrap_or_default();
+	let mut alive_dependents = fetched_dependents.clone().unwrap_or_default();
 
 	// Helper function to avoid duplicate dependents from being registered
 	let mut register_alive_dependent = |dep: MergeRequest| {
