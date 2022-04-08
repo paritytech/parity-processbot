@@ -52,11 +52,11 @@ comment should only have the command**.
 
 - `bot merge`: merge once checks pass
 - `bot merge force`: merge immediately while disregarding checks
-  ([not all of them can be disregarded](#criteria-for-merge-checks-and-statuses)).
+  ([not all of them can be disregarded](#criteria-for-merge-checks-and-statuses))
 - `bot merge cancel`: cancel a pending `bot merge`; does not affect anything
   outside of processbot, only stops the bot from following through with the
-  merge.
-- `bot rebase`: create a merge commit from origin/master into the PR.
+  merge
+- `bot rebase`: create a merge commit from origin/master into the PR
 
 Note: The commands will only work if you are a member of the organization where
 the GitHub App is installed. Organization membership is fetched from the GitHub
