@@ -26,8 +26,6 @@ async fn simple_merge_succeeds() {
 		github_app_id,
 		repo_name,
 		repo_full_name,
-		core_devs_team,
-		team_leads_team,
 		git_daemon_dir,
 		..
 	} = &common_setup;
@@ -91,8 +89,6 @@ async fn simple_merge_succeeds() {
 		github_app_id: *github_app_id,
 		merge_command_delay: 0,
 		companion_status_settle_delay: 0,
-		core_devs_team: core_devs_team.to_string(),
-		team_leads_team: team_leads_team.to_string(),
 		github_source_prefix: "https://github.com".into(),
 		github_source_suffix: "".into(),
 	};

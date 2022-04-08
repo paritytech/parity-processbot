@@ -81,10 +81,6 @@ spec:
               value: {{ quote .Values.app.START_FROM_CWD }}
             - name: GITHUB_APP_ID
               value: {{ quote .Values.app.GITHUB_APP_ID }}
-            - name: CORE_DEVS_TEAM
-              value: {{ .Values.app.CORE_DEVS_TEAM }}
-            - name: TEAM_LEADS_TEAM
-              value: {{ .Values.app.TEAM_LEADS_TEAM }}
             - name: DB_PATH
               value: {{ .Values.config.storagePath }}/db
             - name: REPOSITORIES_PATH

@@ -2,7 +2,7 @@ use async_recursion::async_recursion;
 use futures::StreamExt;
 use html_escape;
 use hyper::{Body, Request, Response, StatusCode};
-use itertools::Itertools;
+
 use regex::RegexBuilder;
 use ring::hmac;
 use rocksdb::DB;
@@ -15,8 +15,8 @@ use tokio::{sync::Mutex, time::delay_for};
 use crate::{
 	companion::*, config::MainConfig, error::*, github::*,
 	github_bot::GithubBot, rebase::*, utils::parse_bot_comment_from_text,
-	vanity_service, CommentCommand, MergeAllowedOutcome, MergeCancelOutcome,
-	MergeCommentCommand, Result, Status, WEBHOOK_PARSING_ERROR_TEMPLATE,
+	vanity_service, CommentCommand, MergeCancelOutcome, MergeCommentCommand,
+	Result, Status, WEBHOOK_PARSING_ERROR_TEMPLATE,
 };
 
 pub struct AppState {
@@ -386,7 +386,7 @@ pub async fn get_latest_statuses_state(
 	repo: &str,
 	commit_sha: &str,
 	html_url: &str,
-) -> Result<Status> {
+) -> Result<(Status, HashMap<String, (i64, StatusState)>)> {
 	// Set up a loop so that we can recover from failed jobs which might have been
 	// retried
 	let mut did_check_for_retried_jobs = false;
@@ -396,8 +396,7 @@ pub async fn get_latest_statuses_state(
 
 		// Since Github only considers the latest instance of each status, we should
 		// abide by the same rule. Each instance is uniquely identified by "context".
-		let mut latest_statuses: HashMap<String, (i64, StatusState)> =
-			HashMap::new();
+		let mut latest_statuses = HashMap::new();
 		for s in status.statuses {
 			if s.description
 				.as_ref()
@@ -429,13 +428,13 @@ pub async fn get_latest_statuses_state(
 			.all(|(_, state)| *state == StatusState::Success)
 		{
 			log::info!("{} has success status", html_url);
-			return Ok(Status::Success);
+			return Ok((Status::Success, latest_statuses));
 		} else if latest_statuses.values().any(|(_, state)| {
 			*state == StatusState::Error || *state == StatusState::Failure
 		}) {
 			if did_check_for_retried_jobs {
 				log::info!("{} has failed status", html_url);
-				return Ok(Status::Failure);
+				return Ok((Status::Failure, latest_statuses));
 			} else {
 				/*
 					Some jobs might be retried automatically, as pointed out in:
@@ -453,7 +452,7 @@ pub async fn get_latest_statuses_state(
 			}
 		} else {
 			log::info!("{} has pending status", html_url);
-			return Ok(Status::Pending);
+			return Ok((Status::Pending, latest_statuses));
 		}
 	}
 }
@@ -470,10 +469,7 @@ pub async fn get_latest_checks_state(
 
 	// Since Github only considers the latest instance of each check, we should abide by the same
 	// rule. Each instance is uniquely identified by "name".
-	let mut latest_checks: HashMap<
-		String,
-		(i64, CheckRunStatus, Option<CheckRunConclusion>),
-	> = HashMap::new();
+	let mut latest_checks = HashMap::new();
 	for c in checks.check_runs {
 		if latest_checks
 			.get(&c.name)
@@ -483,7 +479,7 @@ pub async fn get_latest_checks_state(
 			latest_checks.insert(c.name, (c.id, c.status, c.conclusion));
 		}
 	}
-	log::info!("{} latest_checks,: {:?}", html_url, latest_checks);
+	log::info!("{} latest_checks: {:?}", html_url, latest_checks);
 
 	Ok(
 		if latest_checks.values().all(|(_, _, conclusion)| {
@@ -542,7 +538,7 @@ pub async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 			return Ok(());
 		}
 
-		check_merge_is_allowed(state, &pr, &mr.requested_by, None, &[]).await?;
+		check_merge_is_allowed(state, &pr, &mr.requested_by, &[]).await?;
 
 		if let Some(dependencies) = &mr.dependencies {
 			for dependency in dependencies {
@@ -1066,12 +1062,12 @@ async fn handle_command(
 				dependencies: None,
 			};
 
-			check_merge_is_allowed(state, pr, requested_by, None, &[]).await?;
+			check_merge_is_allowed(state, pr, requested_by, &[]).await?;
 
 			match cmd {
 				MergeCommentCommand::Normal => {
 					if ready_to_merge(github_bot, pr).await? {
-						match merge(state, pr, requested_by, None).await? {
+						match merge(state, pr, requested_by).await? {
 							// If the merge failure will be solved later, then register the PR in the database so that
 							// it'll eventually resume processing when later statuses arrive
 							Err(Error::MergeFailureWillBeSolvedLater {
@@ -1103,7 +1099,7 @@ async fn handle_command(
 					}
 				}
 				MergeCommentCommand::Force => {
-					match merge(state, pr, requested_by, None).await? {
+					match merge(state, pr, requested_by).await? {
 						// Even if the merge failure can be solved later, it does not matter because `merge force` is
 						// supposed to be immediate. We should give up here and yield the error message.
 						Err(Error::MergeFailureWillBeSolvedLater { msg }) => {
@@ -1251,230 +1247,27 @@ async fn handle_comment(
 	(sha, result)
 }
 
-/// Check if the pull request is mergeable and is able to meet the approval criteria.
-/// Errors related to core-devs and substrateteamleads API requests are not propagated as actual
-/// errors because the merge might succeed regardless of them, thus it does not make sense to fail
-/// this scenario completely if those request fail for some reason.
 pub async fn check_merge_is_allowed(
 	state: &AppState,
 	pr: &PullRequest,
 	requested_by: &str,
-	min_approvals_required: Option<usize>,
 	companion_reference_trail: &[CompanionReferenceTrailItem],
-) -> Result<MergeAllowedOutcome> {
-	let AppState {
-		github_bot, config, ..
-	} = state;
-
-	if let Some(min_approvals_required) = &min_approvals_required {
-		log::info!(
-			"Attempting to reach minimum number of approvals {}",
-			min_approvals_required
-		);
-	} else if pr.mergeable.unwrap_or(false) {
-		log::info!("{} is mergeable", pr.html_url);
-	} else {
-		log::info!("{} is not mergeable", pr.html_url);
-	}
-
-	if !pr.mergeable.unwrap_or(false) && min_approvals_required.is_none() {
+) -> Result<()> {
+	if !pr.mergeable.unwrap_or(false) {
 		return Err(Error::Message {
 			msg: format!("Github API says {} is not mergeable", pr.html_url),
 		});
+	} else {
+		log::info!("{} is mergeable", pr.html_url);
 	}
 
-	check_all_companions_are_mergeable(
+	return check_all_companions_are_mergeable(
 		state,
 		pr,
 		requested_by,
 		companion_reference_trail,
 	)
-	.await?;
-
-	let min_approvals = if config.disable_org_check {
-		0
-	} else {
-		match min_approvals_required {
-			Some(min_approvals_required) => min_approvals_required,
-			None => match pr.base.repo.name.as_str() {
-				// TODO have this be based on the repository's settings from the API
-				// (https://github.com/paritytech/parity-processbot/issues/319)
-				"substrate" => 2,
-				_ => 1,
-			},
-		}
-	};
-
-	// Consider only the latest relevant review submitted per user
-	let latest_reviews = {
-		let reviews = github_bot.reviews(&pr.url).await?;
-		let mut latest_reviews = HashMap::new();
-		for review in reviews {
-			// Do not consider states such as "Commented" as having invalidated a previous
-			// approval. Note: this assumes approvals are not invalidated on comments or
-			// pushes.
-			if review
-				.state
-				.as_ref()
-				.map(|state| {
-					*state == ReviewState::Approved
-						|| *state == ReviewState::ChangesRequested
-				})
-				.unwrap_or(false)
-			{
-				if let Some(user) = review.user.as_ref() {
-					if latest_reviews
-						.get(&user.login)
-						.map(|(prev_id, _)| *prev_id < review.id)
-						.unwrap_or(true)
-					{
-						let user_login = (&user.login).to_owned();
-						latest_reviews.insert(user_login, (review.id, review));
-					}
-				}
-			}
-		}
-		latest_reviews
-	};
-
-	let approved_reviews = latest_reviews
-		.values()
-		.filter_map(|(_, review)| {
-			if review.state == Some(ReviewState::Approved) {
-				Some(review)
-			} else {
-				None
-			}
-		})
-		.collect::<Vec<_>>();
-
-	let mut errors: Vec<String> = Vec::new();
-
-	let team_leads = if config.disable_org_check {
-		vec![]
-	} else {
-		github_bot
-			.team_members(&pr.base.repo.owner.login, &config.team_leads_team)
-			.await
-			.unwrap_or_else(|e| {
-				let msg = format!(
-					"Error getting {}: `{}`",
-					&config.team_leads_team, e
-				);
-				log::error!("{}", msg);
-				errors.push(msg);
-				vec![]
-			})
-	};
-	let team_lead_approvals = approved_reviews
-		.iter()
-		.filter(|review| {
-			team_leads.iter().any(|team_lead| {
-				review
-					.user
-					.as_ref()
-					.map(|user| user.login == team_lead.login)
-					.unwrap_or(false)
-			})
-		})
-		.count();
-
-	let core_devs = if config.disable_org_check {
-		vec![]
-	} else {
-		github_bot
-			.team_members(&pr.base.repo.owner.login, &config.core_devs_team)
-			.await
-			.unwrap_or_else(|e| {
-				let msg = format!(
-					"Error getting {}: `{}`",
-					&config.core_devs_team, e
-				);
-				log::error!("{}", msg);
-				errors.push(msg);
-				vec![]
-			})
-	};
-	let core_dev_approvals = approved_reviews
-		.iter()
-		.filter(|review| {
-			core_devs.iter().any(|core_dev| {
-				review
-					.user
-					.as_ref()
-					.map(|user| user.login == core_dev.login)
-					.unwrap_or(false)
-			})
-		})
-		.count();
-
-	let relevant_approvals_count = if core_dev_approvals > team_lead_approvals {
-		core_dev_approvals
-	} else {
-		team_lead_approvals
-	};
-
-	let relevant_approvals_count =
-		if team_leads.iter().any(|lead| lead.login == requested_by) {
-			log::info!("{} merge requested by a team lead.", pr.html_url);
-			Ok(relevant_approvals_count)
-		} else {
-			let core_approved = core_dev_approvals >= min_approvals;
-			let leads_approved = team_lead_approvals >= 1;
-
-			if core_approved || leads_approved {
-				log::info!("{} has core or team lead approval.", pr.html_url);
-				Ok(relevant_approvals_count)
-			} else {
-				Err(Error::Approval {
-					errors,
-					html_url: (&pr.html_url).to_owned(),
-				})
-			}
-		}?;
-
-	if relevant_approvals_count >= min_approvals {
-		return Ok(MergeAllowedOutcome::Allowed);
-	}
-
-	let has_bot_approved = approved_reviews.iter().any(|review| {
-		review
-			.user
-			.as_ref()
-			.map(|user| {
-				user.type_field
-					.as_ref()
-					.map(|type_field| *type_field == UserType::Bot)
-					.unwrap_or(false)
-			})
-			.unwrap_or(false)
-	});
-
-	// If the bot has already approved, then approving again will not make a
-	// difference.
-	if has_bot_approved
-	// If the bot's approval is not enough to reach the minimum, then don't bother with approving
-		|| relevant_approvals_count + 1 != min_approvals
-	{
-		return Ok(MergeAllowedOutcome::Disallowed(format!(
-			"It's not possible to meet the minimal approval count of {} in {}",
-			min_approvals, pr.html_url
-		)));
-	}
-
-	let role = if team_leads
-		.iter()
-		.any(|team_lead| team_lead.login == requested_by)
-	{
-		"a team lead".to_string()
-	} else {
-		return Ok(MergeAllowedOutcome::Disallowed(format!(
-			"@{} 's approval is not enough to make {} mergeable by processbot's rules",
-			requested_by, pr.html_url
-		)));
-	};
-
-	Ok(MergeAllowedOutcome::GrantApprovalForRole(role))
+	.await;
 }
 
 pub async fn ready_to_merge(
@@ -1489,6 +1282,7 @@ pub async fn ready_to_merge(
 		&pr.html_url,
 	)
 	.await?
+	.0
 	{
 		Status::Success => {
 			match get_latest_checks_state(
@@ -1788,13 +1582,10 @@ pub async fn cleanup_pr(
 	Ok(())
 }
 
-/// This function might recursively call itself when attempting to solve a recoverable merge error.
-#[async_recursion]
 pub async fn merge(
 	state: &AppState,
 	pr: &PullRequest,
 	requested_by: &str,
-	created_approval_id: Option<i64>,
 ) -> Result<Result<()>> {
 	if handle_merged_pr(state, pr, requested_by).await? {
 		return Ok(Ok(()));
@@ -1802,217 +1593,84 @@ pub async fn merge(
 
 	let AppState { github_bot, .. } = state;
 
-	if let Err(err) = async {
-		let err = match github_bot
-			.merge_pull_request(
+	let err = match github_bot
+		.merge_pull_request(
+			&pr.base.repo.owner.login,
+			&pr.base.repo.name,
+			pr.number,
+			&pr.head.sha,
+		)
+		.await
+	{
+		Ok(_) => {
+			log::info!("{} merged successfully.", pr.html_url);
+			// Merge succeeded! Now clean it from the database
+			if let Err(err) = cleanup_pr(
+				state,
+				&pr.head.sha,
 				&pr.base.repo.owner.login,
 				&pr.base.repo.name,
 				pr.number,
-				&pr.head.sha,
+				&PullRequestCleanupReason::AfterMerge,
 			)
 			.await
-		{
-			Ok(_) => {
-				log::info!("{} merged successfully.", pr.html_url);
-				// Merge succeeded! Now clean it from the database
-				if let Err(err) = cleanup_pr(
-					state,
-					&pr.head.sha,
-					&pr.base.repo.owner.login,
-					&pr.base.repo.name,
-					pr.number,
-					&PullRequestCleanupReason::AfterMerge
-				).await {
-					log::error!("Failed to cleanup PR on the database after merge: {}", err);
-				};
-				return Ok(());
-			}
-			Err(err) => err,
-		};
-
-		let msg = match err {
-			Error::Response {
-				ref status,
-				ref body,
-			} if *status == StatusCode::METHOD_NOT_ALLOWED => {
-				match body.get("message") {
-					Some(msg) => match msg.as_str() {
-						Some(msg) => msg,
-						None => {
-							log::error!("Expected \"message\" of Github API merge failure response to be a string");
-							return Err(err);
-						},
-					},
-					None => {
-						log::error!("Expected \"message\" of Github API merge failure response to be available");
-						return Err(err);
-					},
-				}
-			}
-			_ => return Err(err),
-		};
-
-		// Matches the following
-		// - "Required status check ... is {pending,expected}."
-		// - "... required status checks have not succeeded: ... {pending,expected}."
-		let missing_status_matcher = RegexBuilder::new(
-			r"required\s+status\s+.*(pending|expected)",
-		)
-		.case_insensitive(true)
-		.build()
-		.unwrap();
-
-		if missing_status_matcher
-			.find(msg)
-			.is_some()
-		{
-			// This problem will be solved automatically when all the required statuses are delivered, thus
-			// it can be ignored here
-			log::info!(
-				"Ignoring merge failure due to pending required status; message: {}",
-				msg
-			);
-			return Err(Error::MergeFailureWillBeSolvedLater { msg: msg.to_string() });
-		}
-
-		// From this point onwards we'll attempt to recover from "Missing N approvals case"
-
-		// If the bot has already approved once, the missing approval can't be fulfilled by going
-		// further, so exit early.
-		if created_approval_id.is_some() {
-			log::info!("Failed to recover from merge error even after granting the bot approval");
-			return Err(Error::Message { msg: msg.to_string() })
-		}
-
-		let min_approvals_required = {
-			// Matches the following
-			// - "At least N approving reviews are required by reviewers with write access."
-			let insufficient_approval_quota_matcher =
-				RegexBuilder::new(r"([[:digit:]]+).*approving\s+reviews?\s+(is|are)\s+required")
-					.case_insensitive(true)
-					.build()
-					.unwrap();
-
-			match insufficient_approval_quota_matcher.captures(msg) {
-				Some(matches) => matches
-					.get(1)
-					.unwrap()
-					.as_str()
-					.parse::<usize>()
-					.unwrap(),
-				None => return Err(Error::Message { msg: msg.to_string() })
-			}
-		};
-
-		let review = match check_merge_is_allowed(
-			state,
-			pr,
-			requested_by,
-			Some(min_approvals_required),
-			&[]
-		)
-		.await {
-			Ok(MergeAllowedOutcome::Allowed) => None,
-			Ok(MergeAllowedOutcome::GrantApprovalForRole(role)) => {
-				if let Err(err) = github_bot
-					.create_issue_comment(
-						&pr.base.repo.owner.login,
-						&pr.base.repo.name,
-						pr.number,
-						&format!(
-							"Bot will approve on the behalf of @{}, since they are {}, in an attempt to reach the minimum approval count",
-							requested_by,
-							role,
-						),
-					)
-					.await
-				{
-					log::error!("Failed to post comment on bot approval of {} due to {}", pr.html_url, err);
-				}
-
-				match github_bot.approve_merge_request(
-					&pr.base.repo.owner.login,
-					&pr.base.repo.name,
-					pr.number
-				).await {
-					Ok(review) => Some(review.id),
-					Err(err) => {
-						log::error!(
-							"Failed to create a review for approving the merge request {} due to {:?}",
-							pr.html_url,
-							err
-						);
-						return Err(Error::Message { msg: msg.to_string() });
-					}
-				}
-			},
-			Ok(MergeAllowedOutcome::Disallowed(msg)) => {
-				return Err(Error::Message { msg });
-			},
-			Err(err) => {
-				log::info!("Failed to get requested role for approval of {} due to {}", pr.html_url, err);
-				return Err(Error::Message { msg: msg.to_string() });
-			}
-		};
-
-		merge(
-			state,
-			pr,
-			requested_by,
-			review,
-		).await??;
-
-		Ok(())
-	}
-	.await
-	{
-		if let Some(approval_id) = created_approval_id {
-			if let Err(clear_err) = github_bot
-				.clear_merge_request_approval(
-					&pr.base.repo.owner.login,
-					&pr.base.repo.name,
-					pr.number,
-					approval_id,
-				)
-				.await
 			{
 				log::error!(
-					"Failed to cleanup a bot review in {} due to {}",
-					pr.html_url,
-					clear_err
-				)
-			}
+					"Failed to cleanup PR on the database after merge: {}",
+					err
+				);
+			};
+			return Ok(Ok(()));
 		}
-		return Err(err);
+		Err(err) => err,
+	};
+
+	let msg = match err {
+		Error::Response {
+			ref status,
+			ref body,
+		} if *status == StatusCode::METHOD_NOT_ALLOWED => match body.get("message") {
+			Some(msg) => match msg.as_str() {
+				Some(msg) => msg,
+				None => {
+					log::error!("Expected \"message\" of Github API merge failure response to be a string");
+					return Err(err);
+				}
+			},
+			None => {
+				log::error!("Expected \"message\" of Github API merge failure response to be available");
+				return Err(err);
+			}
+		},
+		_ => return Err(err),
+	};
+
+	// Matches the following
+	// - "Required status check ... is {pending,expected}."
+	// - "... required status checks have not succeeded: ... {pending,expected}."
+	let missing_status_matcher =
+		RegexBuilder::new(r"required\s+status\s+.*(pending|expected)")
+			.case_insensitive(true)
+			.build()
+			.unwrap();
+
+	if missing_status_matcher.find(msg).is_some() {
+		// This problem will be solved automatically when all the required statuses are delivered, thus
+		// it can be ignored here
+		log::info!(
+			"Ignoring merge failure due to pending required status; message: {}",
+			msg
+		);
+		return Ok(Err(Error::MergeFailureWillBeSolvedLater {
+			msg: msg.to_string(),
+		}));
 	}
 
-	Ok(Ok(()))
+	Err(Error::Message { msg: msg.into() })
 }
 
-fn get_troubleshoot_msg(state: &AppState) -> String {
-	let AppState { config, .. } = state;
-	format!(
-		"Merge failed. Check out the [criteria for merge](https://github.com/paritytech/parity-processbot#criteria-for-merge). If you're not meeting the approval count, check if the approvers are team members of {} or {}.",
-		&config.team_leads_team,
-		&config.core_devs_team,
-	)
-}
-
-fn display_errors_along_the_way(errors: Vec<String>) -> String {
-	format!(
-		"The following errors **might** have affected the outcome of this attempt:\n{}",
-		errors.iter().map(|e| format!("- {}", e)).join("\n")
-	)
-}
-
-fn format_error(state: &AppState, err: Error) -> String {
+fn format_error(_state: &AppState, err: Error) -> String {
 	match err {
-		Error::Approval { errors, html_url } => format!(
-			"Approval criteria was not satisfied in {}.\n\n{}\n\n{}",
-			html_url,
-			display_errors_along_the_way(errors),
-			get_troubleshoot_msg(state)
-		),
 		Error::Response {
 			ref body,
 			ref status,

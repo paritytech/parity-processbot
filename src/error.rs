@@ -35,12 +35,6 @@ pub enum Error {
 		actual: String,
 	},
 
-	#[snafu(display("Missing approval."))]
-	Approval {
-		errors: Vec<String>,
-		html_url: String,
-	},
-
 	#[snafu(display("{}", msg))]
 	Message {
 		msg: String,
@@ -77,11 +71,6 @@ pub enum Error {
 		source: serde_json::Error,
 	},
 
-	#[snafu(display("Base64: {}", source))]
-	Base64 {
-		source: base64::DecodeError,
-	},
-
 	Jwt {
 		source: jsonwebtoken::errors::Error,
 	},
@@ -109,11 +98,6 @@ pub enum Error {
 	))]
 	MergeFailureWillBeSolvedLater {
 		msg: String,
-	},
-
-	#[snafu(display("Failed to merge companions: {:?}", errors))]
-	CompanionsFailedMerge {
-		errors: Vec<CompanionDetailsWithErrorMessage>,
 	},
 }
 

@@ -14,8 +14,6 @@ pub struct MainConfig {
 	pub github_api_url: String,
 	pub companion_status_settle_delay: u64,
 	pub merge_command_delay: u64,
-	pub core_devs_team: String,
-	pub team_leads_team: String,
 	pub github_source_prefix: String,
 	pub github_source_suffix: String,
 }
@@ -88,11 +86,6 @@ impl MainConfig {
 
 		let companion_status_settle_delay = 4096;
 
-		let core_devs_team =
-			dotenv::var("CORE_DEVS_TEAM").expect("CORE_DEVS_TEAM");
-		let team_leads_team =
-			dotenv::var("TEAM_LEADS_TEAM").expect("TEAM_LEADS_TEAM");
-
 		Self {
 			installation_login,
 			webhook_secret,
@@ -105,8 +98,6 @@ impl MainConfig {
 			github_api_url,
 			merge_command_delay,
 			companion_status_settle_delay,
-			core_devs_team,
-			team_leads_team,
 			repos_path,
 			github_source_prefix,
 			github_source_suffix,

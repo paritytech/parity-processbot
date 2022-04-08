@@ -3,8 +3,6 @@ use crate::{config::MainConfig, github::*, Result};
 pub mod issue;
 pub mod project;
 pub mod pull_request;
-pub mod review;
-pub mod team;
 
 pub struct GithubBot {
 	pub client: crate::http::Client,
@@ -68,36 +66,5 @@ impl GithubBot {
 		);
 		let status = self.client.get_status(url).await?;
 		Ok(status == 204) // Github API returns HTTP 204 (No Content) if the user is a member
-	}
-
-	pub async fn approve_merge_request(
-		&self,
-		owner: &str,
-		repo: &str,
-		pr_number: i64,
-	) -> Result<Review> {
-		let url = &format!(
-			"{}/repos/{}/{}/pulls/{}/reviews",
-			self.github_api_url, owner, repo, pr_number
-		);
-		let body = &serde_json::json!({ "event": "APPROVE" });
-		self.client.post(url, body).await
-	}
-
-	pub async fn clear_merge_request_approval(
-		&self,
-		owner: &str,
-		repo: &str,
-		pr_number: i64,
-		review_id: i64,
-	) -> Result<Review> {
-		let url = &format!(
-			"{}/repos/{}/{}/pulls/{}/reviews/{}/dismissals",
-			self.github_api_url, owner, repo, pr_number, review_id
-		);
-		let body = &serde_json::json!({
-			"message": "Merge failed despite bot approval, therefore the approval will be dismissed."
-		});
-		self.client.put(url, body).await
 	}
 }
