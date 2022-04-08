@@ -1660,7 +1660,7 @@ pub async fn merge(
 			.build()
 			.unwrap();
 
-	if missing_status_matcher.find(&msg.to_string()).is_some() {
+	if missing_status_matcher.find(msg).is_some() {
 		// This problem will be solved automatically when all the required statuses are delivered, thus
 		// it can be ignored here
 		log::info!(
