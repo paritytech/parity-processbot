@@ -16,7 +16,12 @@ pub fn get_request_headers(token: &str) -> Result<HeaderMap> {
 #[derive(Deserialize, PartialEq, Debug)]
 #[serde(rename_all = "snake_case")]
 pub enum GitlabPipelineStatus {
+	Created,
+	WaitingForResource,
+	Preparing,
 	Pending,
+	Running,
+	Scheduled,
 	#[serde(other)]
 	Unknown,
 }
