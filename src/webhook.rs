@@ -491,17 +491,25 @@ pub async fn get_latest_statuses_state(
 					urlencoding::encode(gitlab_project),
 					job_id
 				);
-				let job = http_client.execute(
-					http_client
-						.get(&job_api_url)
-						.headers(gitlab::get_request_headers(&config.gitlab_access_token)?)
-						.build()
-						.map_err(|err| {
-							Error::Message {
-								msg: format!("Failed to build request to fetch {} due to {:?}", job_api_url, err)
-							}
-						})?,
-				).await.context(error::Http)?.json::<gitlab::GitlabJob>()
+				let job = http_client
+					.execute(
+						http_client
+							.get(&job_api_url)
+							.headers(gitlab::get_request_headers(
+								&config.gitlab_access_token,
+							)?)
+							.build()
+							.map_err(|err| Error::Message {
+								msg: format!(
+									"Failed to build request to fetch {} due to {:?}",
+									job_api_url,
+									err
+								),
+							})?,
+					)
+					.await
+					.context(error::Http)?
+					.json::<gitlab::GitlabJob>()
 					.await
 					.context(error::Http)?;
 
