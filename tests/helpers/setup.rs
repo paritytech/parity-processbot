@@ -191,10 +191,7 @@ pub fn setup_commit(setup: &CommonSetupOutput, sha: &str) {
 	github_api.expect(
 		Expectation::matching(request::method_path(
 			"GET",
-			format!(
-				"/repos/{}/{}/commits/{}/status",
-				&owner.login, repo_name, sha
-			),
+			format!("/repos/{}/{}/statuses/{}", &owner.login, repo_name, sha),
 		))
 		.times(0..)
 		.respond_with(json_encoded(vec![github::Status {
