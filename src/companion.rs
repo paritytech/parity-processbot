@@ -668,7 +668,7 @@ pub async fn update_then_merge(
 			(Some(updated_sha), comp_pr)
 		};
 
-		if ready_to_merge(state, &comp_pr, false).await? {
+		if ready_to_merge(state, &comp_pr, true).await? {
 			log::info!(
 				"Attempting to merge {} after companion update",
 				comp_pr.html_url

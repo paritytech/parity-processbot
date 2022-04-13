@@ -617,16 +617,7 @@ pub async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 			});
 		}
 
-		if !ready_to_merge(
-			state, &pr,
-			/*
-				When a new status arrives, it might be failing on GitHub but its job
-				might've been retried on GitLab, therefore it's actually pending.
-			*/
-			true,
-		)
-		.await?
-		{
+		if !ready_to_merge(state, &pr, true).await? {
 			log::info!("{} is not ready", pr.html_url);
 			return Ok(());
 		}
@@ -1162,7 +1153,7 @@ async fn handle_command(
 
 			match cmd {
 				MergeCommentCommand::Normal => {
-					if ready_to_merge(state, pr, false).await? {
+					if ready_to_merge(state, pr, true).await? {
 						match merge(state, pr, requested_by).await? {
 							// If the merge failure will be solved later, then register the PR in the database so that
 							// it'll eventually resume processing when later statuses arrive
