@@ -24,9 +24,9 @@ impl GithubBot {
 		owner: &str,
 		repo: &str,
 		sha: &str,
-	) -> Result<CombinedStatus> {
+	) -> Result<Vec<Status>> {
 		let url = format!(
-			"{}/repos/{}/{}/commits/{}/status",
+			"{}/repos/{}/{}/statuses/{}",
 			self.github_api_url, owner, repo, sha
 		);
 		self.client.get(url).await

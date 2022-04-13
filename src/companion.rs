@@ -513,17 +513,18 @@ pub async fn check_all_companions_are_mergeable(
 			ignore the companion's CI
 		*/
 		let latest_statuses = get_latest_statuses_state(
-			github_bot,
+			state,
 			&companion.base.repo.owner.login,
 			&companion.base.repo.name,
 			&companion.head.sha,
 			&companion.html_url,
+			false,
 		)
 		.await?
 		.1;
 		let reviews_are_passing = latest_statuses
 			.get("Check reviews")
-			.map(|(_, state)| state == &StatusState::Success)
+			.map(|(_, state, _)| state == &StatusState::Success)
 			.unwrap_or(false);
 		if !reviews_are_passing {
 			return Err(Error::Message {
@@ -667,7 +668,7 @@ pub async fn update_then_merge(
 			(Some(updated_sha), comp_pr)
 		};
 
-		if ready_to_merge(&state.github_bot, &comp_pr).await? {
+		if ready_to_merge(state, &comp_pr, false).await? {
 			log::info!(
 				"Attempting to merge {} after companion update",
 				comp_pr.html_url

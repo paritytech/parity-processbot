@@ -16,17 +16,18 @@ pub struct MainConfig {
 	pub merge_command_delay: u64,
 	pub github_source_prefix: String,
 	pub github_source_suffix: String,
+	pub gitlab_access_token: String,
 }
 
 impl MainConfig {
 	pub fn from_env() -> Self {
-		let root_dir = if std::env::var("START_FROM_CWD").is_ok() {
+		dotenv::dotenv().ok();
+
+		let root_dir = if dotenv::var("START_FROM_CWD").is_ok() {
 			std::env::current_dir().expect("START_FROM_CWD was set, but it was not possible to get the current directory")
 		} else {
 			PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR is not set, please run the application through cargo"))
 		};
-
-		dotenv::dotenv().ok();
 
 		let installation_login =
 			dotenv::var("INSTALLATION_LOGIN").expect("INSTALLATION_LOGIN");
@@ -34,7 +35,7 @@ impl MainConfig {
 			dotenv::var("WEBHOOK_SECRET").expect("WEBHOOK_SECRET");
 		let webhook_port = dotenv::var("WEBHOOK_PORT").expect("WEBHOOK_PORT");
 
-		let db_path = dotenv::var("DB_PATH").expect("DB_PATH");
+		let db_path = dotenv::var("DB_PATH").unwrap();
 		let db_path = if db_path.starts_with('/') {
 			PathBuf::from(db_path)
 		} else {
@@ -86,6 +87,8 @@ impl MainConfig {
 
 		let companion_status_settle_delay = 4096;
 
+		let gitlab_access_token = dotenv::var("GITLAB_ACCESS_TOKEN").unwrap();
+
 		Self {
 			installation_login,
 			webhook_secret,
@@ -101,6 +104,7 @@ impl MainConfig {
 			repos_path,
 			github_source_prefix,
 			github_source_suffix,
+			gitlab_access_token,
 		}
 	}
 }

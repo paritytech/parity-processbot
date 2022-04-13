@@ -2,6 +2,7 @@ use async_recursion::async_recursion;
 use futures::StreamExt;
 use html_escape;
 use hyper::{Body, Request, Response, StatusCode};
+use reqwest::Client;
 
 use regex::RegexBuilder;
 use ring::hmac;
@@ -13,8 +14,14 @@ use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::{sync::Mutex, time::delay_for};
 
 use crate::{
-	companion::*, config::MainConfig, error::*, github::*,
-	github_bot::GithubBot, rebase::*, utils::parse_bot_comment_from_text,
+	companion::*,
+	config::MainConfig,
+	error::{self, Error},
+	github::*,
+	github_bot::GithubBot,
+	gitlab,
+	rebase::*,
+	utils::parse_bot_comment_from_text,
 	vanity_service, CommentCommand, MergeCancelOutcome, MergeCommentCommand,
 	Result, Status, WEBHOOK_PARSING_ERROR_TEMPLATE,
 };
@@ -69,12 +76,12 @@ pub async fn webhook(
 		let sig = req
 			.headers()
 			.get("x-hub-signature")
-			.context(Message {
+			.context(error::Message {
 				msg: "Missing x-hub-signature".to_owned(),
 			})?
 			.to_str()
 			.ok()
-			.context(Message {
+			.context(error::Message {
 				msg: "Error parsing x-hub-signature".to_owned(),
 			})?
 			.to_string();
@@ -96,7 +103,7 @@ pub async fn webhook(
 			.status(StatusCode::OK)
 			.body(Body::from(""))
 			.ok()
-			.context(Message {
+			.context(error::Message {
 				msg: "Error building response".to_owned(),
 			})
 	} else if req.uri().path() == "/health" {
@@ -104,7 +111,7 @@ pub async fn webhook(
 			.status(StatusCode::OK)
 			.body(Body::from("OK"))
 			.ok()
-			.context(Message {
+			.context(error::Message {
 				msg: "Healthcheck".to_owned(),
 			})
 	} else {
@@ -112,7 +119,7 @@ pub async fn webhook(
 			.status(StatusCode::NOT_FOUND)
 			.body(Body::from("Not found."))
 			.ok()
-			.context(Message {
+			.context(error::Message {
 				msg: "Error building response".to_owned(),
 			})
 	}
@@ -124,7 +131,7 @@ pub async fn webhook_inner(
 ) -> Result<(MergeCancelOutcome, Result<()>)> {
 	let mut msg_bytes = vec![];
 	while let Some(item) = req.body_mut().next().await {
-		msg_bytes.extend_from_slice(&item.ok().context(Message {
+		msg_bytes.extend_from_slice(&item.ok().context(error::Message {
 			msg: "Error getting bytes from request body".to_owned(),
 		})?);
 	}
@@ -132,18 +139,21 @@ pub async fn webhook_inner(
 	let sig = req
 		.headers()
 		.get("x-hub-signature")
-		.context(Message {
+		.context(error::Message {
 			msg: "Missing x-hub-signature".to_string(),
 		})?
 		.to_str()
 		.ok()
-		.context(Message {
+		.context(error::Message {
 			msg: "Error parsing x-hub-signature".to_owned(),
 		})?
 		.replace("sha1=", "");
-	let sig_bytes = base16::decode(sig.as_bytes()).ok().context(Message {
-		msg: "Error decoding x-hub-signature".to_owned(),
-	})?;
+	let sig_bytes =
+		base16::decode(sig.as_bytes())
+			.ok()
+			.context(error::Message {
+				msg: "Error decoding x-hub-signature".to_owned(),
+			})?;
 
 	let AppState { config, .. } = state;
 
@@ -153,7 +163,7 @@ pub async fn webhook_inner(
 		&sig_bytes,
 	)
 	.ok()
-	.context(Message {
+	.context(error::Message {
 		msg: "Validation signature does not match".to_owned(),
 	})?;
 
@@ -320,7 +330,8 @@ pub async fn handle_payload(
 
 	match state.db.get(sha.as_bytes()) {
 		Ok(Some(bytes)) => {
-			match bincode::deserialize::<MergeRequest>(&bytes).context(Bincode)
+			match bincode::deserialize::<MergeRequest>(&bytes)
+				.context(error::Bincode)
 			{
 				Ok(mr) => {
 					let merge_cancel_outcome = match cleanup_pr(
@@ -381,79 +392,135 @@ pub async fn handle_payload(
 }
 
 pub async fn get_latest_statuses_state(
-	github_bot: &GithubBot,
+	state: &AppState,
 	owner: &str,
 	repo: &str,
 	commit_sha: &str,
 	html_url: &str,
-) -> Result<(Status, HashMap<String, (i64, StatusState)>)> {
-	// Set up a loop so that we can recover from failed jobs which might have been
-	// retried
-	let mut did_check_for_retried_jobs = false;
-	loop {
-		let status = github_bot.status(owner, repo, commit_sha).await?;
-		log::info!("{} statuses: {:?}", html_url, status);
+	should_handle_retried_jobs: bool,
+) -> Result<(Status, HashMap<String, (i64, StatusState, Option<String>)>)> {
+	let AppState {
+		github_bot, config, ..
+	} = state;
 
-		// Since Github only considers the latest instance of each status, we should
-		// abide by the same rule. Each instance is uniquely identified by "context".
-		let mut latest_statuses = HashMap::new();
-		for s in status.statuses {
-			if s.description
-				.as_ref()
-				.map(|description| {
-					match serde_json::from_str::<vanity_service::JobInformation>(
-						description,
-					) {
-						Ok(info) => info.build_allow_failure.unwrap_or(false),
-						_ => false,
-					}
-				})
-				.unwrap_or(false)
-			{
-				continue;
-			}
+	let statuses = github_bot.status(owner, repo, commit_sha).await?;
+	log::info!("{} statuses: {:?}", html_url, statuses);
 
-			if latest_statuses
-				.get(&s.context)
-				.map(|(prev_id, _)| prev_id < &s.id)
-				.unwrap_or(true)
-			{
-				latest_statuses.insert(s.context, (s.id, s.state));
-			}
+	// Since Github only considers the latest instance of each status, we should
+	// abide by the same rule. Each instance is uniquely identified by "context".
+	let mut latest_statuses: HashMap<
+		String,
+		(i64, StatusState, Option<String>),
+	> = HashMap::new();
+	for s in statuses {
+		if s.description
+			.as_ref()
+			.map(|description| {
+				match serde_json::from_str::<vanity_service::JobInformation>(
+					description,
+				) {
+					Ok(info) => info.build_allow_failure.unwrap_or(false),
+					_ => false,
+				}
+			})
+			.unwrap_or(false)
+		{
+			continue;
 		}
-		log::info!("{} latest_statuses: {:?}", html_url, latest_statuses);
 
 		if latest_statuses
-			.values()
-			.all(|(_, state)| *state == StatusState::Success)
+			.get(&s.context)
+			.map(|(prev_id, _, _)| prev_id < &s.id)
+			.unwrap_or(true)
 		{
-			log::info!("{} has success status", html_url);
-			return Ok((Status::Success, latest_statuses));
-		} else if latest_statuses.values().any(|(_, state)| {
-			*state == StatusState::Error || *state == StatusState::Failure
-		}) {
-			if did_check_for_retried_jobs {
-				log::info!("{} has failed status", html_url);
-				return Ok((Status::Failure, latest_statuses));
-			} else {
-				/*
-					Some jobs might be retried automatically, as pointed out in:
-					https://github.com/paritytech/parity-processbot/issues/374#issuecomment-1092874843
-					We introduce a delay when some status is failed so that *hopefully*, in the
-					next pass of this loop, GitLab will already have created a pending status
-					for retried jobs, or otherwise the pipeline will still be failing if the
-					failed job was not retried.
-					FIXME: A better solution would be to fetch the GitLab pipeline for the
-					failed job and check if it's still running.
-				*/
-				log::info!("{} has failed status, but we'll check again in case its jobs have been retried...", html_url);
-				did_check_for_retried_jobs = true;
-				delay_for(Duration::from_secs(1)).await;
-			}
-		} else {
-			log::info!("{} has pending status", html_url);
-			return Ok((Status::Pending, latest_statuses));
+			latest_statuses.insert(s.context, (s.id, s.state, s.target_url));
 		}
+	}
+	log::info!("{} latest_statuses: {:?}", html_url, latest_statuses);
+
+	let gitlab_job_target_url_matcher =
+		RegexBuilder::new(r"^(\w+://[^/]+)/(.*)/builds/([0-9]+)$")
+			.case_insensitive(true)
+			.build()
+			.unwrap();
+	let failed_gitlab_jobs = latest_statuses
+		.values()
+		.filter_map(|(_, _status, target_url)| {
+			target_url.as_ref().and_then(|target_url| {
+				match gitlab_job_target_url_matcher.captures(target_url) {
+					Some(matches) => {
+						let gitlab_instance = matches.get(1).unwrap().as_str();
+						let gitlab_project = matches.get(2).unwrap().as_str();
+						let job_id = matches
+							.get(3)
+							.unwrap()
+							.as_str()
+							.parse::<usize>()
+							.unwrap();
+						Some((gitlab_instance, gitlab_project, job_id))
+					}
+					_ => None,
+				}
+			})
+		})
+		.collect::<Vec<_>>();
+
+	if latest_statuses
+		.values()
+		.all(|(_, state, _)| *state == StatusState::Success)
+	{
+		log::info!("{} has success status", html_url);
+		Ok((Status::Success, latest_statuses))
+	} else if latest_statuses.values().any(|(_, state, _)| {
+		*state == StatusState::Error || *state == StatusState::Failure
+	}) {
+		if should_handle_retried_jobs {
+			let mut failed_jobs_are_pending = false;
+
+			let http_client = Client::new();
+			for (gitlab_instance, gitlab_project, job_id) in failed_gitlab_jobs
+			{
+				let job_api_url = format!(
+					"{}/api/v4/projects/{}/jobs/{}",
+					gitlab_instance,
+					urlencoding::encode(gitlab_project),
+					job_id
+				);
+				let job = http_client.execute(
+					http_client
+						.get(&job_api_url)
+						.headers(gitlab::get_request_headers(&config.gitlab_access_token)?)
+						.build()
+						.map_err(|err| {
+							Error::Message {
+								msg: format!("Failed to build request to fetch {} due to {:?}", job_api_url, err)
+							}
+						})?,
+				).await.context(error::Http)?.json::<gitlab::GitlabJob>()
+					.await
+					.context(error::Http)?;
+
+				log::info!("Fetched job for {}: {:?}", job_api_url, job);
+
+				if job.pipeline.status == gitlab::GitlabPipelineStatus::Pending
+				{
+					log::info!("{} is failing, but its pipeline is pending, therefore we'll consider it is still pending (it might have been retried)", job_api_url);
+					failed_jobs_are_pending = true;
+					break;
+				}
+			}
+
+			if failed_jobs_are_pending {
+				log::info!("{} has pending status", html_url);
+				return Ok((Status::Pending, latest_statuses));
+			}
+		}
+
+		log::info!("{} has failed status", html_url);
+		Ok((Status::Failure, latest_statuses))
+	} else {
+		log::info!("{} has pending status", html_url);
+		Ok((Status::Pending, latest_statuses))
 	}
 }
 
@@ -507,8 +574,8 @@ pub async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 
 	log::info!("Checking for statuses of {}", sha);
 
-	let mr: MergeRequest = match db.get(sha.as_bytes()).context(Db)? {
-		Some(bytes) => bincode::deserialize(&bytes).context(Bincode)?,
+	let mr: MergeRequest = match db.get(sha.as_bytes()).context(error::Db)? {
+		Some(bytes) => bincode::deserialize(&bytes).context(error::Bincode)?,
 		None => return Ok(()),
 	};
 	let pr = github_bot
@@ -533,7 +600,16 @@ pub async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 			});
 		}
 
-		if !ready_to_merge(github_bot, &pr).await? {
+		if !ready_to_merge(
+			state, &pr,
+			/*
+				When a new status arrives, it might be failing on GitHub but its job
+				might've been retried on GitLab, therefore it's actually pending.
+			*/
+			true,
+		)
+		.await?
+		{
 			log::info!("{} is not ready", pr.html_url);
 			return Ok(());
 		}
@@ -674,7 +750,8 @@ pub async fn handle_dependents_after_merge(
 	'db_iteration_loop: loop {
 		let db_iter = db.iterator(rocksdb::IteratorMode::Start);
 		'to_next_item: for (key, value) in db_iter {
-			match bincode::deserialize::<MergeRequest>(&value).context(Bincode)
+			match bincode::deserialize::<MergeRequest>(&value)
+				.context(error::Bincode)
 			{
 				Ok(mut mr) => {
 					if processed_mrs.iter().any(|prev_mr: &MergeRequest| {
@@ -755,9 +832,9 @@ pub async fn handle_dependents_after_merge(
 									.put(
 										&key,
 										bincode::serialize(&mr)
-											.context(Bincode)?,
+											.context(error::Bincode)?,
 									)
-									.context(Db)
+									.context(error::Db)
 								{
 									log::error!(
 										"Failed to update database references after merge of {} in dependent {} due to {:?}",
@@ -904,7 +981,9 @@ pub async fn handle_dependents_after_merge(
 	let mut dependents_to_check = HashMap::new();
 	let db_iter = db.iterator(rocksdb::IteratorMode::Start);
 	for (key, value) in db_iter {
-		match bincode::deserialize::<MergeRequest>(&value).context(Bincode) {
+		match bincode::deserialize::<MergeRequest>(&value)
+			.context(error::Bincode)
+		{
 			Ok(mut dependent_of_dependent) => {
 				let mut should_be_included_in_check = false;
 				let mut record_needs_update = false;
@@ -952,9 +1031,9 @@ pub async fn handle_dependents_after_merge(
 						.put(
 							&key,
 							bincode::serialize(&dependent_of_dependent)
-								.context(Bincode)?,
+								.context(error::Bincode)?,
 						)
-						.context(Db)
+						.context(error::Db)
 					{
 						log::error!(
 							"Failed to update a dependent to {:?} due to {:?}",
@@ -1066,7 +1145,7 @@ async fn handle_command(
 
 			match cmd {
 				MergeCommentCommand::Normal => {
-					if ready_to_merge(github_bot, pr).await? {
+					if ready_to_merge(state, pr, false).await? {
 						match merge(state, pr, requested_by).await? {
 							// If the merge failure will be solved later, then register the PR in the database so that
 							// it'll eventually resume processing when later statuses arrive
@@ -1197,11 +1276,11 @@ async fn handle_comment(
 	} = state;
 
 	let (owner, repo, pr) = match async {
-		let owner = owner_from_html_url(html_url).context(Message {
+		let owner = owner_from_html_url(html_url).context(error::Message {
 			msg: format!("Failed parsing owner in url: {}", html_url),
 		})?;
 
-		let repo = repo_url.rsplit('/').next().context(Message {
+		let repo = repo_url.rsplit('/').next().context(error::Message {
 			msg: format!("Failed parsing repo name in url: {}", repo_url),
 		})?;
 
@@ -1271,15 +1350,19 @@ pub async fn check_merge_is_allowed(
 }
 
 pub async fn ready_to_merge(
-	github_bot: &GithubBot,
+	state: &AppState,
 	pr: &PullRequest,
+	should_handle_retried_jobs: bool,
 ) -> Result<bool> {
+	let AppState { github_bot, .. } = state;
+
 	match get_latest_statuses_state(
-		github_bot,
+		state,
 		&pr.base.repo.owner.login,
 		&pr.base.repo.name,
 		&pr.head.sha,
 		&pr.html_url,
+		should_handle_retried_jobs,
 	)
 	.await?
 	.0
@@ -1315,8 +1398,11 @@ async fn register_merge_request(
 	let AppState { db, .. } = state;
 	let MergeRequest { sha, .. } = mr;
 	log::info!("Registering merge request (sha: {}): {:?}", sha, mr);
-	db.put(sha.as_bytes(), bincode::serialize(mr).context(Bincode)?)
-		.context(Db)
+	db.put(
+		sha.as_bytes(),
+		bincode::serialize(mr).context(error::Bincode)?,
+	)
+	.context(error::Db)
 }
 
 pub enum WaitToMergeMessage<'a> {
@@ -1419,7 +1505,9 @@ pub async fn cleanup_pr(
 
 	let db_iter = db.iterator(rocksdb::IteratorMode::Start);
 	'to_next_db_item: for (key, value) in db_iter {
-		match bincode::deserialize::<MergeRequest>(&value).context(Bincode) {
+		match bincode::deserialize::<MergeRequest>(&value)
+			.context(error::Bincode)
+		{
 			Ok(mr) => {
 				if mr.owner == owner && mr.repo == repo && mr.number == number {
 					log::info!(
@@ -1463,7 +1551,11 @@ pub async fn cleanup_pr(
 	}
 
 	// Sanity check: the key should have actually been deleted
-	if db.get(key_to_guarantee_deleted).context(Db)?.is_some() {
+	if db
+		.get(key_to_guarantee_deleted)
+		.context(error::Db)?
+		.is_some()
+	{
 		return Err(Error::Message {
 			msg: format!(
 				"Key {} was not deleted from the database",
@@ -1567,9 +1659,10 @@ pub async fn cleanup_pr(
 				if was_updated {
 					db.put(
 						dependent.sha.as_bytes(),
-						bincode::serialize(&dependent).context(Bincode)?,
+						bincode::serialize(&dependent)
+							.context(error::Bincode)?,
 					)
-					.context(Db)?;
+					.context(error::Db)?;
 				}
 			}
 		}

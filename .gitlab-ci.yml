@@ -106,6 +106,7 @@ dockerize-processbot:
       --set "app.PROCESSBOT_KEY=${PROCESSBOT_KEY}"
       --set "app.GITHUB_APP_ID=${GITHUB_APP_ID}"
       --set "app.WEBHOOK_SECRET=${WEBHOOK_SECRET}"
+      --set "app.GITLAB_ACCESS_TOKEN=${GITLAB_ACCESS_TOKEN}"
 
 deploy-staging:
   stage:                           deploy
