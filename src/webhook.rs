@@ -480,7 +480,7 @@ pub async fn get_latest_statuses_state(
 		*state == StatusState::Error || *state == StatusState::Failure
 	}) {
 		if should_handle_retried_jobs {
-			let mut failed_jobs_are_pending = false;
+			let mut failed_pending_job = None;
 
 			let http_client = Client::new();
 			for (gitlab_instance, gitlab_project, job_id) in failed_gitlab_jobs
@@ -509,14 +509,18 @@ pub async fn get_latest_statuses_state(
 
 				if job.pipeline.status == gitlab::GitlabPipelineStatus::Pending
 				{
-					log::info!("{} is failing, but its pipeline is pending, therefore we'll consider it is still pending (it might have been retried)", job_api_url);
-					failed_jobs_are_pending = true;
+					log::info!("{} is failing on GitHub, but its pipeline is pending, therefore we'll consider it is still pending (it might have been retried)", job_api_url);
+					failed_pending_job = Some(job_api_url);
 					break;
 				}
 			}
 
-			if failed_jobs_are_pending {
-				log::info!("{} has pending status", html_url);
+			if let Some(failed_pending_job) = failed_pending_job {
+				log::info!(
+					"{} was initially considered to be failing, but now it's considered to be pending due to {}",
+					html_url,
+					failed_pending_job
+				);
 				return Ok((Status::Pending, latest_statuses));
 			}
 		}
