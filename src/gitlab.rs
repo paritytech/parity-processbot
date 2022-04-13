@@ -22,11 +22,19 @@ pub enum GitlabPipelineStatus {
 }
 
 #[derive(Deserialize, Debug)]
-pub struct GitlabPipeline {
+pub struct GitlabJobPipeline {
 	pub status: GitlabPipelineStatus,
+	pub id: i64,
+	pub project_id: i64,
 }
 
 #[derive(Deserialize, Debug)]
 pub struct GitlabJob {
-	pub pipeline: GitlabPipeline,
+	pub pipeline: GitlabJobPipeline,
+	pub name: String,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct GitlabPipelineJob {
+	pub name: String,
 }

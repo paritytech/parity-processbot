@@ -16,6 +16,7 @@ pub struct MainConfig {
 	pub merge_command_delay: u64,
 	pub github_source_prefix: String,
 	pub github_source_suffix: String,
+	pub gitlab_url: String,
 	pub gitlab_access_token: String,
 }
 
@@ -87,6 +88,7 @@ impl MainConfig {
 
 		let companion_status_settle_delay = 4096;
 
+		let gitlab_url = dotenv::var("GITLAB_URL").unwrap();
 		let gitlab_access_token = dotenv::var("GITLAB_ACCESS_TOKEN").unwrap();
 
 		Self {
@@ -104,6 +106,7 @@ impl MainConfig {
 			repos_path,
 			github_source_prefix,
 			github_source_suffix,
+			gitlab_url,
 			gitlab_access_token,
 		}
 	}

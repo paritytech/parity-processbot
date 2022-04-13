@@ -5,6 +5,7 @@ variables:
   GIT_DEPTH:                       3
   CARGO_TARGET_DIR:                "/ci-cache/${CI_PROJECT_NAME}/targets/${CI_COMMIT_REF_NAME}/${CI_JOB_NAME}"
   GITHUB_ORGANIZATION:             "paritytech"
+  GITLAB_URL:                      https://gitlab.parity.io
 
 default:
   image: paritytech/ci-linux:production
@@ -106,6 +107,7 @@ dockerize-processbot:
       --set "app.PROCESSBOT_KEY=${PROCESSBOT_KEY}"
       --set "app.GITHUB_APP_ID=${GITHUB_APP_ID}"
       --set "app.WEBHOOK_SECRET=${WEBHOOK_SECRET}"
+      --set "app.GITLAB_URL=${GITLAB_URL}"
       --set "app.GITLAB_ACCESS_TOKEN=${GITLAB_ACCESS_TOKEN}"
 
 deploy-staging:

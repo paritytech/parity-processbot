@@ -71,6 +71,8 @@ spec:
               value: full
             - name: RUST_LOG
               value: debug
+            - name: GITLAB_URL
+              value: {{ .Values.app.GITLAB_URL }}
             - name: GITLAB_ACCESS_TOKEN
               value: {{ .Values.app.GITLAB_ACCESS_TOKEN }}
             - name: INSTALLATION_LOGIN

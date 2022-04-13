@@ -448,22 +448,24 @@ pub async fn get_latest_statuses_state(
 		.filter_map(|(_, status, target_url)| match *status {
 			StatusState::Failure | StatusState::Error => {
 				target_url.as_ref().and_then(|target_url| {
-					match gitlab_job_target_url_matcher.captures(target_url) {
-						Some(matches) => {
-							let gitlab_instance =
-								matches.get(1).unwrap().as_str();
-							let gitlab_project =
-								matches.get(2).unwrap().as_str();
-							let job_id = matches
-								.get(3)
-								.unwrap()
-								.as_str()
-								.parse::<usize>()
-								.unwrap();
-							Some((gitlab_instance, gitlab_project, job_id))
-						}
-						_ => None,
-					}
+					gitlab_job_target_url_matcher.captures(target_url).and_then(
+						|matches| {
+							let gitlab_url = matches.get(1).unwrap().as_str();
+							if gitlab_url == config.gitlab_url {
+								let gitlab_project =
+									matches.get(2).unwrap().as_str();
+								let job_id = matches
+									.get(3)
+									.unwrap()
+									.as_str()
+									.parse::<usize>()
+									.unwrap();
+								Some((gitlab_url, gitlab_project, job_id))
+							} else {
+								None
+							}
+						},
+					)
 				})
 			}
 			_ => None,
@@ -480,17 +482,18 @@ pub async fn get_latest_statuses_state(
 		*state == StatusState::Error || *state == StatusState::Failure
 	}) {
 		if should_handle_retried_jobs {
-			let mut failed_pending_job = None;
+			let mut failed_pending_jobs = vec![];
 
 			let http_client = Client::new();
-			for (gitlab_instance, gitlab_project, job_id) in failed_gitlab_jobs
-			{
+			for (gitlab_url, gitlab_project, job_id) in failed_gitlab_jobs {
+				// https://docs.gitlab.com/ee/api/jobs.html#get-a-single-job
 				let job_api_url = format!(
 					"{}/api/v4/projects/{}/jobs/{}",
-					gitlab_instance,
+					gitlab_url,
 					urlencoding::encode(gitlab_project),
 					job_id
 				);
+
 				let job = http_client
 					.execute(
 						http_client
@@ -517,17 +520,71 @@ pub async fn get_latest_statuses_state(
 
 				if job.pipeline.status == gitlab::GitlabPipelineStatus::Pending
 				{
-					log::info!("{} is failing on GitHub, but its pipeline is pending, therefore we'll consider it is still pending (it might have been retried)", job_api_url);
-					failed_pending_job = Some(job_api_url);
+					log::info!("{} is failing on GitHub, but its pipeline is pending, therefore we'll check if it's running or pending (it might have been retried)", job_api_url);
+
+					// https://docs.gitlab.com/ee/api/jobs.html#list-pipeline-jobs
+					let pending_pipeline_jobs_api = format!(
+						"{}/api/v4/projects/{}/pipelines/{}/jobs?scope[]=pending&scope[]=running",
+						gitlab_url,
+						job.pipeline.project_id,
+						job.pipeline.id
+					);
+
+					let pending_pipeline_jobs = http_client
+						.execute(
+							http_client
+								.get(&pending_pipeline_jobs_api)
+								.headers(gitlab::get_request_headers(
+									&config.gitlab_access_token,
+								)?)
+								.build()
+								.map_err(|err| Error::Message {
+									msg: format!(
+										"Failed to build request to fetch {} due to {:?}",
+										pending_pipeline_jobs_api,
+										err
+									),
+								})?,
+						)
+						.await
+						.context(error::Http)?
+						.json::<Vec<gitlab::GitlabPipelineJob>>()
+						.await
+						.context(error::Http)?;
+
+					if pending_pipeline_jobs.iter().any(
+						|pending_pipeline_job| {
+							pending_pipeline_job.name == job.name
+						},
+					) {
+						failed_pending_jobs.push(job_api_url);
+					} else {
+						log::info!(
+							"Parent pipeline {} for job {} (name: {}) did not list it as pending, therefore the job is failing",
+							pending_pipeline_jobs_api,
+							job_api_url,
+							job.name
+						);
+						failed_pending_jobs.clear();
+						break;
+					}
+				} else {
+					log::info!(
+						"Parent pipeline (id: {}) for job {} (name: {}) is not pending, therefore the job itself can't be pending",
+						job.pipeline.id,
+						job_api_url,
+						job.name,
+					);
+					failed_pending_jobs.clear();
 					break;
 				}
 			}
 
-			if let Some(failed_pending_job) = failed_pending_job {
+			if !failed_pending_jobs.is_empty() {
 				log::info!(
-					"{} was initially considered to be failing, but now it's considered to be pending due to {}",
+					"{} was initially considered to be failing, but now it's considered to be pending due to the following pending jobs: {:?}",
 					html_url,
-					failed_pending_job
+					failed_pending_jobs
 				);
 				return Ok((Status::Pending, latest_statuses));
 			}
