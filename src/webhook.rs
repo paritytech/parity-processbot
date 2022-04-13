@@ -681,7 +681,7 @@ pub async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 			});
 		}
 
-		if !ready_to_merge(state, &pr, true).await? {
+		if !ready_to_merge(state, &pr).await? {
 			log::info!("{} is not ready", pr.html_url);
 			return Ok(());
 		}
@@ -1217,7 +1217,7 @@ async fn handle_command(
 
 			match cmd {
 				MergeCommentCommand::Normal => {
-					if ready_to_merge(state, pr, true).await? {
+					if ready_to_merge(state, pr).await? {
 						match merge(state, pr, requested_by).await? {
 							// If the merge failure will be solved later, then register the PR in the database so that
 							// it'll eventually resume processing when later statuses arrive
@@ -1424,7 +1424,6 @@ pub async fn check_merge_is_allowed(
 pub async fn ready_to_merge(
 	state: &AppState,
 	pr: &PullRequest,
-	should_handle_retried_jobs: bool,
 ) -> Result<bool> {
 	let AppState { github_bot, .. } = state;
 
@@ -1434,7 +1433,7 @@ pub async fn ready_to_merge(
 		&pr.base.repo.name,
 		&pr.head.sha,
 		&pr.html_url,
-		should_handle_retried_jobs,
+		true,
 	)
 	.await?
 	.0
