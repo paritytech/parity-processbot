@@ -445,23 +445,28 @@ pub async fn get_latest_statuses_state(
 			.unwrap();
 	let failed_gitlab_jobs = latest_statuses
 		.values()
-		.filter_map(|(_, _status, target_url)| {
-			target_url.as_ref().and_then(|target_url| {
-				match gitlab_job_target_url_matcher.captures(target_url) {
-					Some(matches) => {
-						let gitlab_instance = matches.get(1).unwrap().as_str();
-						let gitlab_project = matches.get(2).unwrap().as_str();
-						let job_id = matches
-							.get(3)
-							.unwrap()
-							.as_str()
-							.parse::<usize>()
-							.unwrap();
-						Some((gitlab_instance, gitlab_project, job_id))
+		.filter_map(|(_, status, target_url)| match *status {
+			StatusState::Failure | StatusState::Error => {
+				target_url.as_ref().and_then(|target_url| {
+					match gitlab_job_target_url_matcher.captures(target_url) {
+						Some(matches) => {
+							let gitlab_instance =
+								matches.get(1).unwrap().as_str();
+							let gitlab_project =
+								matches.get(2).unwrap().as_str();
+							let job_id = matches
+								.get(3)
+								.unwrap()
+								.as_str()
+								.parse::<usize>()
+								.unwrap();
+							Some((gitlab_instance, gitlab_project, job_id))
+						}
+						_ => None,
 					}
-					_ => None,
-				}
-			})
+				})
+			}
+			_ => None,
 		})
 		.collect::<Vec<_>>();
 
