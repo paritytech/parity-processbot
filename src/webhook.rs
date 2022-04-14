@@ -527,12 +527,12 @@ pub async fn get_latest_statuses_state(
 					| gitlab::GitlabPipelineStatus::Scheduled => {
 						log::info!("{} is failing on GitHub, but its pipeline is pending, therefore we'll check if it's running or pending (it might have been retried)", job_api_url);
 
-						// https://docs.gitlab.com/ee/api/jobs.html#list-pipeline-jobs
 						let pending_or_successful_jobs = {
 							let mut pending_or_successful_jobs = vec![];
 							// https://docs.gitlab.com/ee/api/#offset-based-pagination
 							let mut page = 1;
 							loop {
+								// https://docs.gitlab.com/ee/api/jobs.html#list-pipeline-jobs
 								let pending_or_successful_jobs_api = format!(
 									"{}/api/v4/projects/{}/pipelines/{}/jobs?scope[]=pending&scope[]=running&scope[]=success&scope[]=created&per_page=100&page={}",
 									gitlab_url,
