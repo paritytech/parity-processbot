@@ -528,34 +528,52 @@ pub async fn get_latest_statuses_state(
 						log::info!("{} is failing on GitHub, but its pipeline is pending, therefore we'll check if it's running or pending (it might have been retried)", job_api_url);
 
 						// https://docs.gitlab.com/ee/api/jobs.html#list-pipeline-jobs
-						let pending_or_successful_jobs_api = format!(
-							"{}/api/v4/projects/{}/pipelines/{}/jobs?scope[]=pending&scope[]=running&scope[]=success",
-							gitlab_url,
-							job.pipeline.project_id,
-							job.pipeline.id
-						);
+						let pending_or_successful_jobs = {
+							let mut pending_or_successful_jobs = vec![];
+							// https://docs.gitlab.com/ee/api/#offset-based-pagination
+							let mut page = 1;
+							loop {
+								let pending_or_successful_jobs_api = format!(
+									"{}/api/v4/projects/{}/pipelines/{}/jobs?scope[]=pending&scope[]=running&scope[]=success&scope[]=created&per_page=100&page={}",
+									gitlab_url,
+									job.pipeline.project_id,
+									job.pipeline.id,
+									page
+								);
 
-						let pending_or_successful_jobs = http_client
-							.execute(
-								http_client
-									.get(&pending_or_successful_jobs_api)
-									.headers(gitlab::get_request_headers(
-										&config.gitlab_access_token,
-									)?)
-									.build()
-									.map_err(|err| Error::Message {
-										msg: format!(
-											"Failed to build request to fetch {} due to {:?}",
-											pending_or_successful_jobs_api,
-											err
-										),
-									})?,
-							)
-							.await
-							.context(error::Http)?
-							.json::<Vec<gitlab::GitlabPipelineJob>>()
-							.await
-							.context(error::Http)?;
+								let page_pending_or_successful_jobs = http_client
+									.execute(
+										http_client
+											.get(&pending_or_successful_jobs_api)
+											.headers(gitlab::get_request_headers(
+												&config.gitlab_access_token,
+											)?)
+											.build()
+											.map_err(|err| Error::Message {
+												msg: format!(
+													"Failed to build request to fetch {} due to {:?}",
+													pending_or_successful_jobs_api,
+													err
+												),
+											})?,
+									)
+									.await
+									.context(error::Http)?
+									.json::<Vec<gitlab::GitlabPipelineJob>>()
+									.await
+									.context(error::Http)?;
+
+								if page_pending_or_successful_jobs.is_empty() {
+									break;
+								}
+
+								pending_or_successful_jobs
+									.extend(page_pending_or_successful_jobs);
+
+								page += 1;
+							}
+							pending_or_successful_jobs
+						};
 
 						if pending_or_successful_jobs.iter().any(
 							|pending_pipeline_job| {
@@ -565,8 +583,9 @@ pub async fn get_latest_statuses_state(
 							recovered_jobs.push(job_api_url);
 						} else {
 							log::info!(
-								"Parent pipeline {} for job {} (name: {}) did not list it as pending or successful, therefore the job is failing",
-								pending_or_successful_jobs_api,
+								"{} 's pipeline (id: {}) for job {} (name: {}) did not list it as pending or successful, therefore the job is considered to be failing",
+								html_url,
+								job.pipeline.id,
 								job_api_url,
 								job.name
 							);
@@ -576,7 +595,8 @@ pub async fn get_latest_statuses_state(
 					}
 					_ => {
 						log::info!(
-							"Parent pipeline (id: {}) for job {} (name: {}) is not pending, therefore the job itself can't be pending",
+							"{} 's pipeline (id: {}) for job {} (name: {}) is not pending, therefore the job itself can't be considered to be pending",
+							html_url,
 							job.pipeline.id,
 							job_api_url,
 							job.name,
