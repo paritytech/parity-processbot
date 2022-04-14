@@ -524,11 +524,11 @@ pub async fn check_all_companions_are_mergeable(
 		.1;
 
 		const CHECK_REVIEWS_STATUS: &str = "Check reviews";
-		let reviews_are_passing = latest_statuses
+		let are_reviews_passing = latest_statuses
 			.get(CHECK_REVIEWS_STATUS)
 			.map(|(_, state, _)| state == &StatusState::Success)
 			.unwrap_or(false);
-		if !reviews_are_passing {
+		if !are_reviews_passing {
 			return Err(Error::Message {
 				msg: format!(
 					"\"{}\" status is not passing for {}",
