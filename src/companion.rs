@@ -522,15 +522,17 @@ pub async fn check_all_companions_are_mergeable(
 		)
 		.await?
 		.1;
+
+		const CHECK_REVIEWS_STATUS: &str = "Check reviews";
 		let reviews_are_passing = latest_statuses
-			.get("Check reviews")
+			.get(CHECK_REVIEWS_STATUS)
 			.map(|(_, state, _)| state == &StatusState::Success)
 			.unwrap_or(false);
 		if !reviews_are_passing {
 			return Err(Error::Message {
 				msg: format!(
-					"pr-custom-review is not passing for {}",
-					&companion.html_url
+					"\"{}\" status is not passing for {}",
+					CHECK_REVIEWS_STATUS, &companion.html_url
 				),
 			});
 		}
