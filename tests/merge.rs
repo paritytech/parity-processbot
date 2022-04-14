@@ -91,6 +91,8 @@ async fn simple_merge_succeeds() {
 		companion_status_settle_delay: 0,
 		github_source_prefix: "https://github.com".into(),
 		github_source_suffix: "".into(),
+		gitlab_url: "".into(),
+		gitlab_access_token: "".into(),
 	};
 	let github_bot = GithubBot::new(&config);
 	let db = DB::open_default(&config.db_path).unwrap();

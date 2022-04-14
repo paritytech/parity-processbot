@@ -191,20 +191,16 @@ pub fn setup_commit(setup: &CommonSetupOutput, sha: &str) {
 	github_api.expect(
 		Expectation::matching(request::method_path(
 			"GET",
-			format!(
-				"/repos/{}/{}/commits/{}/status",
-				&owner.login, repo_name, sha
-			),
+			format!("/repos/{}/{}/statuses/{}", &owner.login, repo_name, sha),
 		))
 		.times(0..)
-		.respond_with(json_encoded(github::CombinedStatus {
-			statuses: vec![github::Status {
-				id: 1,
-				context: "does not matter".to_string(),
-				description: Some("does not matter".to_string()),
-				state: github::StatusState::Success,
-			}],
-		})),
+		.respond_with(json_encoded(vec![github::Status {
+			id: 1,
+			context: "does not matter".to_string(),
+			description: Some("does not matter".to_string()),
+			state: github::StatusState::Success,
+			target_url: None,
+		}])),
 	);
 
 	github_api.expect(

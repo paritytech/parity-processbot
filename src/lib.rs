@@ -14,6 +14,7 @@ pub mod error;
 #[macro_use]
 pub mod github;
 pub mod github_bot;
+pub mod gitlab;
 pub mod http;
 pub mod rebase;
 pub mod server;

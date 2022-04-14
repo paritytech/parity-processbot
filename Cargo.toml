@@ -43,6 +43,7 @@ url = "2.1.1"
 html-escape = "0.2.9"
 cargo-lock = "^7.0.1"
 eventsource = "0.5.0"
+urlencoding = "2.1.0"
 
 [dev-dependencies]
 httptest = "0.15.1"

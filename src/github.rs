@@ -151,16 +151,12 @@ pub struct Repository {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct CombinedStatus {
-	pub statuses: Vec<Status>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Status {
 	pub id: i64,
 	pub context: String,
 	pub state: StatusState,
 	pub description: Option<String>,
+	pub target_url: Option<String>,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
