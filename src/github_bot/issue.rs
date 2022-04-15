@@ -1,22 +1,8 @@
-use crate::{github, Result};
+use crate::Result;
 
 use super::GithubBot;
 
 impl GithubBot {
-	pub async fn issue_events(
-		&self,
-		owner: &str,
-		repo: &str,
-		number: i64,
-	) -> Result<Vec<github::IssueEvent>> {
-		self.client
-			.get_all(format!(
-				"{}/repos/{}/{}/issues/{}/events",
-				self.github_api_url, owner, repo, number
-			))
-			.await
-	}
-
 	pub async fn create_issue_comment(
 		&self,
 		owner: &str,

@@ -1,7 +1,6 @@
 use crate::{config::MainConfig, github::*, Result};
 
 pub mod issue;
-pub mod project;
 pub mod pull_request;
 
 pub struct GithubBot {
