@@ -1494,7 +1494,7 @@ pub async fn ready_to_merge(
 			.0
 			{
 				Status::Success => Ok(true),
-				Status::Failure => Err(Error::ChecksFailed {
+				Status::Failure => Err(Error::StatusesFailed {
 					commit_sha: pr.head.sha.to_owned(),
 				}),
 				_ => Ok(false),

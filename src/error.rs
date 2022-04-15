@@ -29,6 +29,11 @@ pub enum Error {
 		commit_sha: String,
 	},
 
+	#[snafu(display("Statuses failed for {}", commit_sha))]
+	StatusesFailed {
+		commit_sha: String,
+	},
+
 	#[snafu(display("Head SHA changed from {} to {}", expected, actual))]
 	HeadChanged {
 		expected: String,
