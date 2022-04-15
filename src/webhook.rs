@@ -1466,26 +1466,26 @@ pub async fn ready_to_merge(
 ) -> Result<bool> {
 	let AppState { github_bot, .. } = state;
 
-	match get_latest_statuses_state(
-		state,
+	match get_latest_checks_state(
+		github_bot,
 		&pr.base.repo.owner.login,
 		&pr.base.repo.name,
 		&pr.head.sha,
 		&pr.html_url,
-		true,
 	)
 	.await?
-	.0
 	{
 		Status::Success => {
-			match get_latest_checks_state(
-				github_bot,
+			match get_latest_statuses_state(
+				state,
 				&pr.base.repo.owner.login,
 				&pr.base.repo.name,
 				&pr.head.sha,
 				&pr.html_url,
+				true,
 			)
 			.await?
+			.0
 			{
 				Status::Success => Ok(true),
 				Status::Failure => Err(Error::ChecksFailed {
