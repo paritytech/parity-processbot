@@ -403,7 +403,7 @@ pub async fn get_latest_statuses_state(
 		github_bot, config, ..
 	} = state;
 
-	let statuses = github_bot.status(owner, repo, commit_sha).await?;
+	let statuses = github_bot.statuses(owner, repo, commit_sha).await?;
 	log::info!("{} statuses: {:?}", html_url, statuses);
 
 	// Since Github only considers the latest instance of each status, we should
@@ -438,40 +438,6 @@ pub async fn get_latest_statuses_state(
 	}
 	log::info!("{} latest_statuses: {:?}", html_url, latest_statuses);
 
-	let gitlab_job_target_url_matcher =
-		RegexBuilder::new(r"^(\w+://[^/]+)/(.*)/builds/([0-9]+)$")
-			.case_insensitive(true)
-			.build()
-			.unwrap();
-	let failed_gitlab_jobs = latest_statuses
-		.values()
-		.filter_map(|(_, status, target_url)| match *status {
-			StatusState::Failure | StatusState::Error => {
-				target_url.as_ref().and_then(|target_url| {
-					gitlab_job_target_url_matcher.captures(target_url).and_then(
-						|matches| {
-							let gitlab_url = matches.get(1).unwrap().as_str();
-							if gitlab_url == config.gitlab_url {
-								let gitlab_project =
-									matches.get(2).unwrap().as_str();
-								let job_id = matches
-									.get(3)
-									.unwrap()
-									.as_str()
-									.parse::<usize>()
-									.unwrap();
-								Some((gitlab_url, gitlab_project, job_id))
-							} else {
-								None
-							}
-						},
-					)
-				})
-			}
-			_ => None,
-		})
-		.collect::<Vec<_>>();
-
 	if latest_statuses
 		.values()
 		.all(|(_, state, _)| *state == StatusState::Success)
@@ -482,138 +448,196 @@ pub async fn get_latest_statuses_state(
 		*state == StatusState::Error || *state == StatusState::Failure
 	}) {
 		if should_handle_retried_jobs {
-			let mut recovered_jobs = vec![];
+			let mut has_failed_status_from_outside_gitlab = false;
 
-			let http_client = Client::new();
-			for (gitlab_url, gitlab_project, job_id) in failed_gitlab_jobs {
-				// https://docs.gitlab.com/ee/api/jobs.html#get-a-single-job
-				let job_api_url = format!(
-					"{}/api/v4/projects/{}/jobs/{}",
-					gitlab_url,
-					urlencoding::encode(gitlab_project),
-					job_id
+			let gitlab_job_target_url_matcher =
+				RegexBuilder::new(r"^(\w+://[^/]+)/(.*)/builds/([0-9]+)$")
+					.case_insensitive(true)
+					.build()
+					.unwrap();
+			let failed_gitlab_jobs = latest_statuses
+				.values()
+				.filter_map(|(_, status, target_url)| match *status {
+					StatusState::Failure | StatusState::Error => {
+						let gitlab_job_data =
+							target_url.as_ref().and_then(|target_url| {
+								gitlab_job_target_url_matcher
+									.captures(target_url)
+									.and_then(|matches| {
+										let gitlab_url =
+											matches.get(1).unwrap().as_str();
+										if gitlab_url == config.gitlab_url {
+											let gitlab_project = matches
+												.get(2)
+												.unwrap()
+												.as_str();
+											let job_id = matches
+												.get(3)
+												.unwrap()
+												.as_str()
+												.parse::<usize>()
+												.unwrap();
+											Some((
+												gitlab_url,
+												gitlab_project,
+												job_id,
+											))
+										} else {
+											None
+										}
+									})
+							});
+						if gitlab_job_data.is_none() {
+							has_failed_status_from_outside_gitlab = true;
+						}
+						gitlab_job_data
+					}
+					_ => None,
+				})
+				.collect::<Vec<_>>();
+
+			if has_failed_status_from_outside_gitlab {
+				log::info!(
+					"Non-GitLab statuses have failed, therefore we bail out of trying to check if following GitLab jobs have recovered: {:?}",
+					failed_gitlab_jobs
 				);
+			} else if !failed_gitlab_jobs.is_empty() {
+				let mut recovered_jobs = vec![];
 
-				let job = http_client
-					.execute(
-						http_client
-							.get(&job_api_url)
-							.headers(gitlab::get_request_headers(
-								&config.gitlab_access_token,
-							)?)
-							.build()
-							.map_err(|err| Error::Message {
-								msg: format!(
-									"Failed to build request to fetch {} due to {:?}",
-									job_api_url,
-									err
-								),
-							})?,
-					)
-					.await
-					.context(error::Http)?
-					.json::<gitlab::GitlabJob>()
-					.await
-					.context(error::Http)?;
+				let http_client = Client::new();
+				for (gitlab_url, gitlab_project, job_id) in failed_gitlab_jobs {
+					// https://docs.gitlab.com/ee/api/jobs.html#get-a-single-job
+					let job_api_url = format!(
+						"{}/api/v4/projects/{}/jobs/{}",
+						gitlab_url,
+						urlencoding::encode(gitlab_project),
+						job_id
+					);
 
-				log::info!("Fetched job for {}: {:?}", job_api_url, job);
+					let job = http_client
+						.execute(
+							http_client
+								.get(&job_api_url)
+								.headers(gitlab::get_request_headers(
+									&config.gitlab_access_token,
+								)?)
+								.build()
+								.map_err(|err| Error::Message {
+									msg: format!(
+										"Failed to build request to fetch {} due to {:?}",
+										job_api_url,
+										err
+									),
+								})?,
+						)
+						.await
+						.context(error::Http)?
+						.json::<gitlab::GitlabJob>()
+						.await
+						.context(error::Http)?;
 
-				match job.pipeline.status {
-					gitlab::GitlabPipelineStatus::Created
-					| gitlab::GitlabPipelineStatus::WaitingForResource
-					| gitlab::GitlabPipelineStatus::Preparing
-					| gitlab::GitlabPipelineStatus::Pending
-					| gitlab::GitlabPipelineStatus::Running
-					| gitlab::GitlabPipelineStatus::Scheduled => {
-						log::info!("{} is failing on GitHub, but its pipeline is pending, therefore we'll check if it's running or pending (it might have been retried)", job_api_url);
+					log::info!("Fetched job for {}: {:?}", job_api_url, job);
 
-						let pending_or_successful_jobs = {
-							let mut pending_or_successful_jobs = vec![];
-							// https://docs.gitlab.com/ee/api/#offset-based-pagination
-							let mut page = 1;
-							loop {
-								// https://docs.gitlab.com/ee/api/jobs.html#list-pipeline-jobs
-								let pending_or_successful_jobs_api = format!(
-									"{}/api/v4/projects/{}/pipelines/{}/jobs?scope[]=pending&scope[]=running&scope[]=success&scope[]=created&per_page=100&page={}",
-									gitlab_url,
-									job.pipeline.project_id,
-									job.pipeline.id,
-									page
-								);
+					match job.pipeline.status {
+						gitlab::GitlabPipelineStatus::Created
+						| gitlab::GitlabPipelineStatus::WaitingForResource
+						| gitlab::GitlabPipelineStatus::Preparing
+						| gitlab::GitlabPipelineStatus::Pending
+						| gitlab::GitlabPipelineStatus::Running
+						| gitlab::GitlabPipelineStatus::Scheduled => {
+							log::info!("{} is failing on GitHub, but its pipeline is pending, therefore we'll check if it's running or pending (it might have been retried)", job_api_url);
 
-								let page_pending_or_successful_jobs = http_client
-									.execute(
-										http_client
-											.get(&pending_or_successful_jobs_api)
-											.headers(gitlab::get_request_headers(
-												&config.gitlab_access_token,
-											)?)
-											.build()
-											.map_err(|err| Error::Message {
-												msg: format!(
-													"Failed to build request to fetch {} due to {:?}",
-													pending_or_successful_jobs_api,
-													err
-												),
-											})?,
-									)
-									.await
-									.context(error::Http)?
-									.json::<Vec<gitlab::GitlabPipelineJob>>()
-									.await
-									.context(error::Http)?;
+							let pending_or_successful_jobs = {
+								let mut pending_or_successful_jobs = vec![];
+								// https://docs.gitlab.com/ee/api/#offset-based-pagination
+								let mut page = 1;
+								loop {
+									// https://docs.gitlab.com/ee/api/jobs.html#list-pipeline-jobs
+									let pending_or_successful_jobs_api = format!(
+										"{}/api/v4/projects/{}/pipelines/{}/jobs?scope[]=pending&scope[]=running&scope[]=success&scope[]=created&per_page=100&page={}",
+										gitlab_url,
+										job.pipeline.project_id,
+										job.pipeline.id,
+										page
+									);
 
-								if page_pending_or_successful_jobs.is_empty() {
-									break;
+									let page_pending_or_successful_jobs = http_client
+										.execute(
+											http_client
+												.get(&pending_or_successful_jobs_api)
+												.headers(gitlab::get_request_headers(
+													&config.gitlab_access_token,
+												)?)
+												.build()
+												.map_err(|err| Error::Message {
+													msg: format!(
+														"Failed to build request to fetch {} due to {:?}",
+														pending_or_successful_jobs_api,
+														err
+													),
+												})?,
+										)
+										.await
+										.context(error::Http)?
+										.json::<Vec<gitlab::GitlabPipelineJob>>()
+										.await
+										.context(error::Http)?;
+
+									if page_pending_or_successful_jobs
+										.is_empty()
+									{
+										break;
+									}
+
+									pending_or_successful_jobs.extend(
+										page_pending_or_successful_jobs,
+									);
+
+									page += 1;
 								}
-
 								pending_or_successful_jobs
-									.extend(page_pending_or_successful_jobs);
+							};
 
-								page += 1;
+							if pending_or_successful_jobs.iter().any(
+								|pending_pipeline_job| {
+									pending_pipeline_job.name == job.name
+								},
+							) {
+								recovered_jobs.push(job_api_url);
+							} else {
+								log::info!(
+									"{} 's GitLab pipeline (id: {}) for job {} (name: {}) did not list it as pending or successful, therefore the job is considered to be failing",
+									html_url,
+									job.pipeline.id,
+									job_api_url,
+									job.name
+								);
+								recovered_jobs.clear();
+								break;
 							}
-							pending_or_successful_jobs
-						};
-
-						if pending_or_successful_jobs.iter().any(
-							|pending_pipeline_job| {
-								pending_pipeline_job.name == job.name
-							},
-						) {
-							recovered_jobs.push(job_api_url);
-						} else {
+						}
+						_ => {
 							log::info!(
-								"{} 's pipeline (id: {}) for job {} (name: {}) did not list it as pending or successful, therefore the job is considered to be failing",
+								"{} 's GitLab pipeline (id: {}) for job {} (name: {}) is not pending, therefore the job itself can't be considered to be pending",
 								html_url,
 								job.pipeline.id,
 								job_api_url,
-								job.name
+								job.name,
 							);
 							recovered_jobs.clear();
 							break;
 						}
 					}
-					_ => {
-						log::info!(
-							"{} 's pipeline (id: {}) for job {} (name: {}) is not pending, therefore the job itself can't be considered to be pending",
-							html_url,
-							job.pipeline.id,
-							job_api_url,
-							job.name,
-						);
-						recovered_jobs.clear();
-						break;
-					}
 				}
-			}
 
-			if !recovered_jobs.is_empty() {
-				log::info!(
-					"{} was initially considered to be failing, but we consider it has recovered because the following jobs have recovered: {:?}",
-					html_url,
-					recovered_jobs
-				);
-				return Ok((Status::Pending, latest_statuses));
+				if !recovered_jobs.is_empty() {
+					log::info!(
+						"{} was initially considered to be failing, but we consider it has recovered because the following jobs have recovered: {:?}",
+						html_url,
+						recovered_jobs
+					);
+					return Ok((Status::Pending, latest_statuses));
+				}
 			}
 		}
 
@@ -632,13 +656,14 @@ pub async fn get_latest_checks_state(
 	commit_sha: &str,
 	html_url: &str,
 ) -> Result<Status> {
-	let checks = github_bot.check_runs(owner, repo_name, commit_sha).await?;
-	log::info!("{} checks: {:?}", html_url, checks);
+	let check_runs =
+		github_bot.check_runs(owner, repo_name, commit_sha).await?;
+	log::info!("{} check_runs: {:?}", html_url, check_runs);
 
 	// Since Github only considers the latest instance of each check, we should abide by the same
 	// rule. Each instance is uniquely identified by "name".
 	let mut latest_checks = HashMap::new();
-	for c in checks.check_runs {
+	for c in check_runs {
 		if latest_checks
 			.get(&c.name)
 			.map(|(prev_id, _, _)| prev_id < &c.id)
@@ -1447,29 +1472,29 @@ pub async fn ready_to_merge(
 ) -> Result<bool> {
 	let AppState { github_bot, .. } = state;
 
-	match get_latest_statuses_state(
-		state,
+	match get_latest_checks_state(
+		github_bot,
 		&pr.base.repo.owner.login,
 		&pr.base.repo.name,
 		&pr.head.sha,
 		&pr.html_url,
-		true,
 	)
 	.await?
-	.0
 	{
 		Status::Success => {
-			match get_latest_checks_state(
-				github_bot,
+			match get_latest_statuses_state(
+				state,
 				&pr.base.repo.owner.login,
 				&pr.base.repo.name,
 				&pr.head.sha,
 				&pr.html_url,
+				true,
 			)
 			.await?
+			.0
 			{
 				Status::Success => Ok(true),
-				Status::Failure => Err(Error::ChecksFailed {
+				Status::Failure => Err(Error::StatusesFailed {
 					commit_sha: pr.head.sha.to_owned(),
 				}),
 				_ => Ok(false),
