@@ -606,7 +606,7 @@ pub async fn get_latest_statuses_state(
 								recovered_jobs.push(job_api_url);
 							} else {
 								log::info!(
-									"{} 's pipeline (id: {}) for job {} (name: {}) did not list it as pending or successful, therefore the job is considered to be failing",
+									"{} 's GitLab pipeline (id: {}) for job {} (name: {}) did not list it as pending or successful, therefore the job is considered to be failing",
 									html_url,
 									job.pipeline.id,
 									job_api_url,
@@ -618,7 +618,7 @@ pub async fn get_latest_statuses_state(
 						}
 						_ => {
 							log::info!(
-								"{} 's pipeline (id: {}) for job {} (name: {}) is not pending, therefore the job itself can't be considered to be pending",
+								"{} 's GitLab pipeline (id: {}) for job {} (name: {}) is not pending, therefore the job itself can't be considered to be pending",
 								html_url,
 								job.pipeline.id,
 								job_api_url,
