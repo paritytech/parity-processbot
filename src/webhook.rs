@@ -403,7 +403,7 @@ pub async fn get_latest_statuses_state(
 		github_bot, config, ..
 	} = state;
 
-	let statuses = github_bot.status(owner, repo, commit_sha).await?;
+	let statuses = github_bot.statuses(owner, repo, commit_sha).await?;
 	log::info!("{} statuses: {:?}", html_url, statuses);
 
 	// Since Github only considers the latest instance of each status, we should
@@ -651,13 +651,14 @@ pub async fn get_latest_checks_state(
 	commit_sha: &str,
 	html_url: &str,
 ) -> Result<Status> {
-	let checks = github_bot.check_runs(owner, repo_name, commit_sha).await?;
-	log::info!("{} checks: {:?}", html_url, checks);
+	let check_runs =
+		github_bot.check_runs(owner, repo_name, commit_sha).await?;
+	log::info!("{} check_runs: {:?}", html_url, check_runs);
 
 	// Since Github only considers the latest instance of each check, we should abide by the same
 	// rule. Each instance is uniquely identified by "name".
 	let mut latest_checks = HashMap::new();
-	for c in checks.check_runs {
+	for c in check_runs {
 		if latest_checks
 			.get(&c.name)
 			.map(|(prev_id, _, _)| prev_id < &c.id)
