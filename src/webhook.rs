@@ -498,7 +498,7 @@ pub async fn get_latest_statuses_state(
 
 			if has_failed_status_from_outside_gitlab {
 				log::info!(
-					"Non-GitLab statuses have also failed, therefore we bail out of trying to check if following GitLab jobs have recovered: {:?}",
+					"Non-GitLab statuses have failed, therefore we bail out of trying to check if following GitLab jobs have recovered: {:?}",
 					failed_gitlab_jobs
 				);
 			} else if !failed_gitlab_jobs.is_empty() {
