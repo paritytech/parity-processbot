@@ -448,7 +448,7 @@ pub async fn get_latest_statuses_state(
 		*state == StatusState::Error || *state == StatusState::Failure
 	}) {
 		if should_handle_retried_jobs {
-			let mut has_failed_non_gitlab_job = false;
+			let mut has_failed_status_from_outside_gitlab = false;
 
 			let gitlab_job_target_url_matcher =
 				RegexBuilder::new(r"^(\w+://[^/]+)/(.*)/builds/([0-9]+)$")
@@ -488,7 +488,7 @@ pub async fn get_latest_statuses_state(
 									})
 							});
 						if gitlab_job_data.is_none() {
-							has_failed_non_gitlab_job = true;
+							has_failed_status_from_outside_gitlab = true;
 						}
 						gitlab_job_data
 					}
@@ -496,7 +496,12 @@ pub async fn get_latest_statuses_state(
 				})
 				.collect::<Vec<_>>();
 
-			if !has_failed_non_gitlab_job {
+			if has_failed_status_from_outside_gitlab {
+				log::info!(
+					"Non-GitLab statuses have also failed, therefore we bail out of trying to check if following GitLab jobs have recovered: {:?}",
+					failed_gitlab_jobs
+				);
+			} else if !failed_gitlab_jobs.is_empty() {
 				let mut recovered_jobs = vec![];
 
 				let http_client = Client::new();
