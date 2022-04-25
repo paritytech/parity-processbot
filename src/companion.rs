@@ -67,7 +67,7 @@ async fn update_pr_branch(
 	if repo_dir.exists() {
 		log::info!("{} is already cloned; skipping", owner_repo);
 	} else {
-		let token = gh_client.client.auth_key().await?;
+		let token = gh_client.auth_key().await?;
 		let secrets_to_hide = [token.as_str()];
 		let secrets_to_hide = Some(&secrets_to_hide[..]);
 		let owner_repository_domain =
@@ -115,7 +115,7 @@ async fn update_pr_branch(
 
 	let contributor_remote_branch =
 		format!("{}/{}", contributor, contributor_branch);
-	let token = gh_client.client.auth_key().await?;
+	let token = gh_client.auth_key().await?;
 	let secrets_to_hide = [token.as_str()];
 	let secrets_to_hide = Some(&secrets_to_hide[..]);
 	let contributor_repository_domain =
@@ -201,7 +201,7 @@ async fn update_pr_branch(
 	let owner_branch = "master";
 	let owner_remote_branch = format!("{}/{}", owner_remote, owner_branch);
 
-	let token = gh_client.client.auth_key().await?;
+	let token = gh_client.auth_key().await?;
 	let secrets_to_hide = [token.as_str()];
 	let secrets_to_hide = Some(&secrets_to_hide[..]);
 	let owner_repository_domain =

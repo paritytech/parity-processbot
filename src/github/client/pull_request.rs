@@ -15,12 +15,11 @@ impl GithubClient {
 		repo: &str,
 		number: i64,
 	) -> Result<GithubPullRequest> {
-		self.client
-			.get(format!(
-				"{}/repos/{}/{}/pulls/{}",
-				self.github_api_url, owner, repo, number
-			))
-			.await
+		self.get(format!(
+			"{}/repos/{}/{}/pulls/{}",
+			self.github_api_url, owner, repo, number
+		))
+		.await
 	}
 
 	pub async fn pull_request_with_head(
@@ -29,13 +28,12 @@ impl GithubClient {
 		repo: &str,
 		head: &str,
 	) -> Result<Option<GithubPullRequest>> {
-		self.client
-			.get_all(format!(
-				"{}/repos/{}/{}/pulls?head={}",
-				self.github_api_url, owner, repo, head
-			))
-			.await
-			.map(|v| v.first().cloned())
+		self.get_all(format!(
+			"{}/repos/{}/{}/pulls?head={}",
+			self.github_api_url, owner, repo, head
+		))
+		.await
+		.map(|v| v.first().cloned())
 	}
 
 	pub async fn merge_pull_request(
@@ -53,7 +51,7 @@ impl GithubClient {
 			"sha": head_sha,
 			"merge_method": "squash"
 		});
-		self.client.put_response(&url, &params).await.map(|_| ())
+		self.put_response(&url, &params).await.map(|_| ())
 	}
 
 	pub async fn resolve_pr_dependents(

@@ -13,8 +13,7 @@ impl GithubClient {
 			"{}/repos/{}/{}/issues/{}/comments",
 			self.github_api_url, owner, repo, number
 		);
-		self.client
-			.post_response(&url, &serde_json::json!({ "body": comment }))
+		self.post_response(&url, &serde_json::json!({ "body": comment }))
 			.await
 			.map(|_| ())
 	}

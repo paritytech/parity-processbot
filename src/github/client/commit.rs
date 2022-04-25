@@ -17,10 +17,8 @@ impl GithubClient {
 				"{}/repos/{}/{}/statuses/{}?per_page={}&page={}",
 				self.github_api_url, owner, repo, sha, PER_PAGE_MAX, page
 			);
-			let page_statuses = self
-				.client
-				.get::<String, Vec<GithubCommitStatus>>(url)
-				.await?;
+			let page_statuses =
+				self.get::<String, Vec<GithubCommitStatus>>(url).await?;
 
 			let should_break = page_statuses.len() < PER_PAGE_MAX;
 
@@ -52,8 +50,7 @@ impl GithubClient {
 				self.github_api_url, owner, repo, sha, PER_PAGE_MAX, page
 			);
 
-			let page_check_runs =
-				self.client.get::<String, CheckRuns>(url).await?;
+			let page_check_runs = self.get::<String, CheckRuns>(url).await?;
 
 			let should_break = page_check_runs.check_runs.len() < PER_PAGE_MAX;
 

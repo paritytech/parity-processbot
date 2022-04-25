@@ -14,7 +14,6 @@ pub mod github;
 pub mod bot;
 pub mod core;
 pub mod gitlab;
-pub mod http;
 pub mod merge_request;
 pub mod rebase;
 pub mod server;

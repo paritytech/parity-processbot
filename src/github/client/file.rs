@@ -13,6 +13,6 @@ impl GithubClient {
 			"{}/repos/{}/{}/contents/{}?ref={}",
 			self.github_api_url, owner, repo, path, ref_field
 		);
-		self.client.get(url).await
+		self.get(url).await
 	}
 }
