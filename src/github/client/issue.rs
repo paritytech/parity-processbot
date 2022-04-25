@@ -1,8 +1,7 @@
-use crate::Result;
+use super::GithubClient;
+use crate::types::Result;
 
-use super::GithubBot;
-
-impl GithubBot {
+impl GithubClient {
 	pub async fn create_issue_comment(
 		&self,
 		owner: &str,

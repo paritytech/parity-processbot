@@ -1,9 +1,10 @@
 // GKE stands for Google Kubernetes Engine
 
+use std::io::{self, Write};
+
 use env_logger::fmt::Formatter;
 use log::Record;
 use serde::Serialize;
-use std::io::{self, Write};
 
 #[derive(Serialize)]
 #[serde(rename_all = "UPPERCASE")]

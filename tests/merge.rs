@@ -1,13 +1,11 @@
+use std::fs;
+
 use insta::assert_snapshot;
 use parity_processbot::{
-	config::MainConfig,
-	github,
-	github_bot::GithubBot,
-	webhook::{handle_payload, AppState},
-	PlaceholderDeserializationItem,
+	self, bot::handle_github_payload, config::MainConfig, core::AppState,
+	github::*, types::PlaceholderDeserializationItem,
 };
 use rocksdb::DB;
-use std::fs;
 
 mod helpers;
 
@@ -56,7 +54,7 @@ async fn simple_merge_succeeds() {
 	// Setup the commit in the API so that the status checks criterion will pass
 	setup_commit(&common_setup, &pr_head_sha);
 
-	let repo = github::Repository {
+	let repo = GithubRepository {
 		name: repo_name.to_string(),
 		full_name: repo_full_name.clone(),
 		owner: owner.clone(),
@@ -94,22 +92,22 @@ async fn simple_merge_succeeds() {
 		gitlab_url: "".into(),
 		gitlab_access_token: "".into(),
 	};
-	let github_bot = GithubBot::new(&config);
+	let gh_client = GithubClient::new(&config);
 	let db = DB::open_default(&config.db_path).unwrap();
 	let state = AppState {
 		db,
-		github_bot,
+		gh_client,
 		config,
 	};
 
-	let _ = handle_payload(
-		github::Payload::IssueComment {
-			action: github::IssueCommentAction::Created,
-			comment: github::Comment {
+	let _ = handle_github_payload(
+		GithubWebhookPayload::IssueComment {
+			action: GithubIssueCommentAction::Created,
+			comment: GithubComment {
 				body: "bot merge".to_string(),
 				user: Some(owner.clone()),
 			},
-			issue: github::WebhookIssueComment {
+			issue: GithubWebhookIssueComment {
 				number: pr.number,
 				html_url: pr.html_url.clone(),
 				repository_url: repo.html_url.clone(),

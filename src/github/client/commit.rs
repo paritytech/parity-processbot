@@ -1,14 +1,13 @@
-use crate::{github::*, Result};
+use super::GithubClient;
+use crate::{github::*, types::Result};
 
-use super::GithubBot;
-
-impl GithubBot {
+impl GithubClient {
 	pub async fn statuses(
 		&self,
 		owner: &str,
 		repo: &str,
 		sha: &str,
-	) -> Result<Vec<Status>> {
+	) -> Result<Vec<GithubCommitStatus>> {
 		let mut page = 1;
 		const PER_PAGE_MAX: usize = 100;
 
@@ -18,8 +17,10 @@ impl GithubBot {
 				"{}/repos/{}/{}/statuses/{}?per_page={}&page={}",
 				self.github_api_url, owner, repo, sha, PER_PAGE_MAX, page
 			);
-			let page_statuses =
-				self.client.get::<String, Vec<Status>>(url).await?;
+			let page_statuses = self
+				.client
+				.get::<String, Vec<GithubCommitStatus>>(url)
+				.await?;
 
 			let should_break = page_statuses.len() < PER_PAGE_MAX;
 
@@ -40,7 +41,7 @@ impl GithubBot {
 		owner: &str,
 		repo: &str,
 		sha: &str,
-	) -> Result<Vec<CheckRun>> {
+	) -> Result<Vec<GithubCheckRun>> {
 		let mut page = 1;
 		const PER_PAGE_MAX: usize = 100;
 

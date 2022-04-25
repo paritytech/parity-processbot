@@ -1,24 +1,29 @@
+use std::{
+	collections::HashSet,
+	iter::{FromIterator, Iterator},
+	path::Path,
+	time::Duration,
+};
+
 use async_recursion::async_recursion;
 use regex::RegexBuilder;
 use snafu::ResultExt;
-use std::{
-	collections::HashSet, iter::FromIterator, iter::Iterator, path::Path,
-	time::Duration,
-};
 use tokio::time::delay_for;
 
 use crate::{
-	cmd::*,
+	core::{get_commit_statuses, process_dependents_after_merge, AppState},
 	error::*,
 	github::*,
-	webhook::{
-		check_merge_is_allowed, cleanup_pr, get_latest_statuses_state,
-		handle_dependents_after_merge, handle_merged_pr, merge, ready_to_merge,
-		wait_to_merge, AppState, MergeRequest, PullRequestCleanupReason,
-		WaitToMergeMessage,
+	merge_request::{
+		check_merge_is_allowed, cleanup_merge_request,
+		handle_merged_pull_request, is_ready_to_merge, merge_pull_request,
+		queue_merge_request, MergeRequest, MergeRequestCleanupReason,
+		MergeRequestQueuedMessage,
 	},
-	Result, COMPANION_LONG_REGEX, COMPANION_PREFIX_REGEX,
-	COMPANION_SHORT_REGEX, OWNER_AND_REPO_SEQUENCE, PR_HTML_URL_REGEX,
+	shell::*,
+	types::Result,
+	COMPANION_LONG_REGEX, COMPANION_PREFIX_REGEX, COMPANION_SHORT_REGEX,
+	OWNER_AND_REPO_SEQUENCE, PR_HTML_URL_REGEX,
 };
 
 #[derive(Clone)]
@@ -38,7 +43,7 @@ async fn update_pr_branch(
 	number: i64,
 ) -> Result<String> {
 	let AppState {
-		github_bot, config, ..
+		gh_client, config, ..
 	} = state;
 	// Constantly refresh the token in-between operations, preferably right before
 	// using it, for avoiding expiration issues. Some operations such as cloning
@@ -62,7 +67,7 @@ async fn update_pr_branch(
 	if repo_dir.exists() {
 		log::info!("{} is already cloned; skipping", owner_repo);
 	} else {
-		let token = github_bot.client.auth_key().await?;
+		let token = gh_client.client.auth_key().await?;
 		let secrets_to_hide = [token.as_str()];
 		let secrets_to_hide = Some(&secrets_to_hide[..]);
 		let owner_repository_domain =
@@ -110,7 +115,7 @@ async fn update_pr_branch(
 
 	let contributor_remote_branch =
 		format!("{}/{}", contributor, contributor_branch);
-	let token = github_bot.client.auth_key().await?;
+	let token = gh_client.client.auth_key().await?;
 	let secrets_to_hide = [token.as_str()];
 	let secrets_to_hide = Some(&secrets_to_hide[..]);
 	let contributor_repository_domain =
@@ -196,7 +201,7 @@ async fn update_pr_branch(
 	let owner_branch = "master";
 	let owner_remote_branch = format!("{}/{}", owner_remote, owner_branch);
 
-	let token = github_bot.client.auth_key().await?;
+	let token = gh_client.client.auth_key().await?;
 	let secrets_to_hide = [token.as_str()];
 	let secrets_to_hide = Some(&secrets_to_hide[..]);
 	let owner_repository_domain =
@@ -381,11 +386,16 @@ async fn update_pr_branch(
 	Ok(updated_sha)
 }
 
-fn companion_parse(body: &str) -> Option<IssueDetailsWithRepositoryURL> {
-	companion_parse_long(body).or_else(|| companion_parse_short(body))
+fn parse_companion_from_url(
+	body: &str,
+) -> Option<PullRequestDetailsWithHtmlUrl> {
+	parse_companion_from_long_url(body)
+		.or_else(|| parse_companion_from_short_url(body))
 }
 
-fn companion_parse_long(body: &str) -> Option<IssueDetailsWithRepositoryURL> {
+fn parse_companion_from_long_url(
+	body: &str,
+) -> Option<PullRequestDetailsWithHtmlUrl> {
 	let re = RegexBuilder::new(COMPANION_LONG_REGEX!())
 		.case_insensitive(true)
 		.build()
@@ -400,10 +410,17 @@ fn companion_parse_long(body: &str) -> Option<IssueDetailsWithRepositoryURL> {
 		.to_owned()
 		.parse::<i64>()
 		.ok()?;
-	Some((html_url, owner, repo, number))
+	Some(PullRequestDetailsWithHtmlUrl {
+		html_url,
+		owner,
+		repo,
+		number,
+	})
 }
 
-fn companion_parse_short(body: &str) -> Option<IssueDetailsWithRepositoryURL> {
+fn parse_companion_from_short_url(
+	body: &str,
+) -> Option<PullRequestDetailsWithHtmlUrl> {
 	let re = RegexBuilder::new(COMPANION_SHORT_REGEX!())
 		.case_insensitive(true)
 		.build()
@@ -423,20 +440,25 @@ fn companion_parse_short(body: &str) -> Option<IssueDetailsWithRepositoryURL> {
 		repo = repo,
 		number = number
 	);
-	Some((html_url, owner, repo, number))
+	Some(PullRequestDetailsWithHtmlUrl {
+		html_url,
+		owner,
+		repo,
+		number,
+	})
 }
 
 pub fn parse_all_companions(
 	companion_reference_trail: &[CompanionReferenceTrailItem],
 	body: &str,
-) -> Vec<IssueDetailsWithRepositoryURL> {
+) -> Vec<PullRequestDetailsWithHtmlUrl> {
 	body.lines()
 		.filter_map(|line| {
-			companion_parse(line).and_then(|comp| {
+			parse_companion_from_url(line).and_then(|comp| {
 				// Break cyclical references between dependency and dependents because we're only
 				// interested in the dependency -> dependent relationship, not the other way around.
 				for item in companion_reference_trail {
-					if comp.1 == item.owner && comp.2 == item.repo {
+					if comp.owner == item.owner && comp.repo == item.repo {
 						return None;
 					}
 				}
@@ -449,7 +471,7 @@ pub fn parse_all_companions(
 #[async_recursion]
 pub async fn check_all_companions_are_mergeable(
 	state: &AppState,
-	pr: &PullRequest,
+	pr: &GithubPullRequest,
 	requested_by: &str,
 	companion_reference_trail: &[CompanionReferenceTrailItem],
 ) -> Result<()> {
@@ -464,9 +486,15 @@ pub async fn check_all_companions_are_mergeable(
 		_ => return Ok(()),
 	};
 
-	let AppState { github_bot, .. } = state;
-	for (html_url, owner, repo, number) in companions {
-		let companion = github_bot.pull_request(&owner, &repo, number).await?;
+	let AppState { gh_client, .. } = state;
+	for PullRequestDetailsWithHtmlUrl {
+		html_url,
+		owner,
+		repo,
+		number,
+	} in companions
+	{
+		let companion = gh_client.pull_request(&owner, &repo, number).await?;
 
 		if companion.merged {
 			continue;
@@ -478,7 +506,7 @@ pub async fn check_all_companions_are_mergeable(
 			.map(|user| {
 				user.type_field
 					.as_ref()
-					.map(|user_type| user_type == &UserType::User)
+					.map(|user_type| user_type == &GithubUserType::User)
 					.unwrap_or(false)
 			})
 			.unwrap_or(false);
@@ -512,7 +540,7 @@ pub async fn check_all_companions_are_mergeable(
 			FIXME: Get rid of this ugly hack once the Companion Build System doesn't
 			ignore the companion's CI
 		*/
-		let latest_statuses = get_latest_statuses_state(
+		let latest_statuses = get_commit_statuses(
 			state,
 			&companion.base.repo.owner.login,
 			&companion.base.repo.name,
@@ -526,7 +554,7 @@ pub async fn check_all_companions_are_mergeable(
 		const CHECK_REVIEWS_STATUS: &str = "Check reviews";
 		let reviews_are_passing = latest_statuses
 			.get(CHECK_REVIEWS_STATUS)
-			.map(|(_, state, _)| state == &StatusState::Success)
+			.map(|(_, state, _)| state == &GithubCommitStatusState::Success)
 			.unwrap_or(false);
 		if !reviews_are_passing {
 			return Err(Error::Message {
@@ -563,22 +591,24 @@ pub async fn check_all_companions_are_mergeable(
 }
 
 #[async_recursion]
-pub async fn update_then_merge(
+pub async fn update_companion_then_merge(
 	state: &AppState,
 	comp: &MergeRequest,
-	msg: &WaitToMergeMessage,
+	msg: &MergeRequestQueuedMessage,
 	should_register_comp: bool,
 	all_dependencies_are_ready: bool,
 ) -> Result<Option<String>> {
 	let AppState {
-		github_bot, config, ..
+		gh_client, config, ..
 	} = state;
 
 	match async {
-		let comp_pr = github_bot
+		let comp_pr = gh_client
 			.pull_request(&comp.owner, &comp.repo, comp.number)
 			.await?;
-		if handle_merged_pr(state, &comp_pr, &comp.requested_by).await? {
+		if handle_merged_pull_request(state, &comp_pr, &comp.requested_by)
+			.await?
+		{
 			return Ok(None);
 		}
 
@@ -606,8 +636,12 @@ pub async fn update_then_merge(
 			if !all_dependencies_are_ready && !dependencies_to_update.is_empty()
 			{
 				if should_register_comp {
-					wait_to_merge(state, comp, &WaitToMergeMessage::None)
-						.await?;
+					queue_merge_request(
+						state,
+						comp,
+						&MergeRequestQueuedMessage::None,
+					)
+					.await?;
 				}
 				return Ok(None);
 			}
@@ -638,7 +672,7 @@ pub async fn update_then_merge(
 
 			// Fetch it again since we've pushed some commits and therefore some status or check might have
 			// failed already
-			let comp_pr = github_bot
+			let comp_pr = gh_client
 				.pull_request(
 					&comp_pr.base.repo.owner.login,
 					&comp_pr.base.repo.name,
@@ -657,32 +691,33 @@ pub async fn update_then_merge(
 
 			// Cleanup the pre-update SHA in order to prevent late status deliveries from
 			// removing the updated SHA from the database
-			cleanup_pr(
+			cleanup_merge_request(
 				state,
 				&comp.sha,
 				&comp.owner,
 				&comp.repo,
 				comp.number,
-				&PullRequestCleanupReason::AfterSHAUpdate(&updated_sha),
+				&MergeRequestCleanupReason::AfterSHAUpdate(&updated_sha),
 			)
 			.await?;
 
 			(Some(updated_sha), comp_pr)
 		};
 
-		if ready_to_merge(state, &comp_pr).await? {
+		if is_ready_to_merge(state, &comp_pr).await? {
 			log::info!(
 				"Attempting to merge {} after companion update",
 				comp_pr.html_url
 			);
-			if let Err(err) = merge(state, &comp_pr, &comp.requested_by).await?
+			if let Err(err) =
+				merge_pull_request(state, &comp_pr, &comp.requested_by).await?
 			{
 				match err {
 					Error::MergeFailureWillBeSolvedLater { .. } => {}
 					err => return Err(err),
 				};
 			} else {
-				handle_dependents_after_merge(
+				process_dependents_after_merge(
 					state,
 					&comp_pr,
 					&comp.requested_by,
@@ -696,7 +731,7 @@ pub async fn update_then_merge(
 			"Companion updated; waiting for checks on {}",
 			comp_pr.html_url
 		);
-		wait_to_merge(
+		queue_merge_request(
 			state,
 			&MergeRequest {
 				sha: comp_pr.head.sha,
@@ -719,11 +754,11 @@ pub async fn update_then_merge(
 	}
 	.await
 	{
-		Err(err) => Err(err.map_issue((
-			comp.owner.to_owned(),
-			comp.repo.to_owned(),
-			comp.number,
-		))),
+		Err(err) => Err(err.with_pr_details(PullRequestDetails {
+			owner: comp.owner.to_owned(),
+			repo: comp.repo.to_owned(),
+			number: comp.number,
+		})),
 		other => other,
 	}
 }
@@ -739,17 +774,17 @@ mod tests {
 		for companion_marker in COMPANION_MARKERS {
 			// Extra params should not be included in the parsed URL
 			assert_eq!(
-				companion_parse(&format!(
-					"{}: https://github.com/paritytech/polkadot/pull/1234?extra_params=true",
+				parse_companion_from_url(&format!(
+					"{}: https://github.com/org/repo/pull/1234?extra_params=true",
 					companion_marker
 				)),
-				Some((
-					"https://github.com/paritytech/polkadot/pull/1234"
+				Some(PullRequestDetailsWithHtmlUrl {
+					html_url: "https://github.com/org/repo/pull/1234"
 						.to_owned(),
-					"paritytech".to_owned(),
-					"polkadot".to_owned(),
-					1234
-				))
+					owner: "org".to_owned(),
+					repo: "repo".to_owned(),
+					number: 1234
+				})
 			);
 		}
 	}
@@ -760,21 +795,21 @@ mod tests {
 			// Long version should work even if the body has some other content around
 			// the companion text
 			assert_eq!(
-				companion_parse(&format!(
+				parse_companion_from_url(&format!(
 					"
 					Companion line is in the middle
-					{}: https://github.com/paritytech/polkadot/pull/1234
+					{}: https://github.com/org/repo/pull/1234
 					Final line
 					",
 					companion_marker
 				)),
-				Some((
-					"https://github.com/paritytech/polkadot/pull/1234"
+				Some(PullRequestDetailsWithHtmlUrl {
+					html_url: "https://github.com/org/repo/pull/1234"
 						.to_owned(),
-					"paritytech".to_owned(),
-					"polkadot".to_owned(),
-					1234
-				))
+					owner: "org".to_owned(),
+					repo: "repo".to_owned(),
+					number: 1234
+				})
 			);
 		}
 	}
@@ -785,21 +820,21 @@ mod tests {
 			// Short version should work even if the body has some other content around
 			// the companion text
 			assert_eq!(
-				companion_parse(&format!(
+				parse_companion_from_url(&format!(
 					"
 					Companion line is in the middle
-					{}: paritytech/polkadot#1234
+					{}: org/repo#1234
 					Final line
 					",
 					companion_marker
 				)),
-				Some((
-					"https://github.com/paritytech/polkadot/pull/1234"
+				Some(PullRequestDetailsWithHtmlUrl {
+					html_url: "https://github.com/org/repo/pull/1234"
 						.to_owned(),
-					"paritytech".to_owned(),
-					"polkadot".to_owned(),
-					1234
-				))
+					owner: "org".to_owned(),
+					repo: "repo".to_owned(),
+					number: 1234
+				})
 			);
 		}
 	}
@@ -810,10 +845,10 @@ mod tests {
 			// Long version should not be detected if "companion: " and the expression
 			// are not both in the same line
 			assert_eq!(
-				companion_parse(&format!(
+				parse_companion_from_url(&format!(
 					"
 					I want to talk about {}: but NOT reference it
-					I submitted it in https://github.com/paritytech/polkadot/pull/1234
+					I submitted it in https://github.com/org/repo/pull/1234
 					",
 					companion_marker
 				)),
@@ -828,10 +863,10 @@ mod tests {
 			// Short version should not be detected if "companion: " and the expression are not both in
 			// the same line
 			assert_eq!(
-				companion_parse(&format!(
+				parse_companion_from_url(&format!(
 					"
 					I want to talk about {}: but NOT reference it
-					I submitted it in paritytech/polkadot#1234
+					I submitted it in org/repo#1234
 					",
 					companion_marker
 				)),
@@ -842,17 +877,17 @@ mod tests {
 
 	#[test]
 	fn test_companion_parsing_multiple_companions() {
-		let owner = "paritytech";
-		let repo = "polkadot";
+		let owner = "org";
+		let repo = "repo";
 		let pr_number = 1234;
 		let companion_url =
 			format!("https://github.com/{}/{}/pull/{}", owner, repo, pr_number);
-		let expected_companion = &(
-			companion_url.to_owned(),
-			owner.to_owned(),
-			repo.to_owned(),
-			pr_number,
-		);
+		let expected_companion = PullRequestDetailsWithHtmlUrl {
+			html_url: companion_url.to_owned(),
+			owner: owner.into(),
+			repo: repo.into(),
+			number: pr_number,
+		};
 		for companion_marker in COMPANION_MARKERS {
 			assert_eq!(
 				parse_all_companions(
@@ -875,8 +910,8 @@ mod tests {
 
 	#[test]
 	fn test_cyclical_references() {
-		let owner = "paritytech";
-		let repo = "polkadot";
+		let owner = "org";
+		let repo = "repo";
 
 		for companion_marker in COMPANION_MARKERS {
 			let companion_description = format!(
@@ -908,8 +943,8 @@ mod tests {
 
 	#[test]
 	fn test_restricted_regex() {
-		let owner = "paritytech";
-		let repo = "polkadot";
+		let owner = "org";
+		let repo = "repo";
 		let pr_number = 1234;
 		let companion_url = format!("{}/{}#{}", owner, repo, pr_number);
 		for companion_marker in COMPANION_MARKERS {

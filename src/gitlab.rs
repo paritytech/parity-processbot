@@ -1,16 +1,22 @@
-use crate::{error::Error, Result};
 use reqwest::header::HeaderMap;
 use serde::Deserialize;
 
-pub fn get_request_headers(token: &str) -> Result<HeaderMap> {
-	let mut headers = HeaderMap::new();
-	headers.insert(
-		"PRIVATE-TOKEN",
-		token.parse().map_err(|_| Error::Message {
-			msg: "Couldn't parse Gitlab Access Token as request header".into(),
-		})?,
-	);
-	Ok(headers)
+use crate::{config::MainConfig, error::Error, types::Result};
+
+impl MainConfig {
+	pub fn get_gitlab_api_request_headers(&self) -> Result<HeaderMap> {
+		let mut headers = HeaderMap::new();
+		headers.insert(
+			"PRIVATE-TOKEN",
+			self.gitlab_access_token
+				.parse()
+				.map_err(|_| Error::Message {
+					msg: "Couldn't parse Gitlab Access Token as request header"
+						.into(),
+				})?,
+		);
+		Ok(headers)
+	}
 }
 
 #[derive(Deserialize, PartialEq, Debug)]

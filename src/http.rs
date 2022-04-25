@@ -1,17 +1,17 @@
-use std::borrow::Cow;
-use std::time::SystemTime;
-
-use crate::{
-	config::MainConfig,
-	error::{self, Error},
-	github, Result,
-};
+use std::{borrow::Cow, time::SystemTime};
 
 use chrono::{DateTime, Duration, Utc};
 use hyperx::header::TypedHeaders;
 use reqwest::{header, IntoUrl, Method, RequestBuilder, Response};
 use serde::Serialize;
 use snafu::ResultExt;
+
+use crate::{
+	config::MainConfig,
+	error::{self, Error},
+	github,
+	types::Result,
+};
 
 pub struct Client {
 	pub client: reqwest::Client,

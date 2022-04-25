@@ -1,8 +1,7 @@
-use crate::Result;
+use super::GithubClient;
+use crate::types::Result;
 
-use super::GithubBot;
-
-impl GithubBot {
+impl GithubClient {
 	pub async fn org_member(&self, org: &str, username: &str) -> Result<bool> {
 		let url = &format!(
 			"{}/orgs/{}/members/{}",

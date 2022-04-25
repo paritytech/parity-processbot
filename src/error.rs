@@ -1,27 +1,29 @@
 use snafu::Snafu;
 
-// TODO this really should be struct { owner, repo, number }
-pub type IssueDetails = (String, String, i64);
-
-// TODO this really should be struct { repository_url, owner, repo, number }
-pub type IssueDetailsWithRepositoryURL = (String, String, String, i64);
+use crate::core::{AppState, PullRequestMergeCancelOutcome};
 
 #[derive(Debug)]
-pub struct CompanionDetailsWithErrorMessage {
+pub struct PullRequestDetails {
 	pub owner: String,
 	pub repo: String,
 	pub number: i64,
+}
+
+#[derive(PartialEq, Debug, Clone)]
+pub struct PullRequestDetailsWithHtmlUrl {
 	pub html_url: String,
-	pub msg: String,
+	pub owner: String,
+	pub repo: String,
+	pub number: i64,
 }
 
 #[derive(Debug, Snafu)]
 #[snafu(visibility = "pub")]
 pub enum Error {
 	#[snafu(display("WithIssue: {}", source))]
-	WithIssue {
+	WithPullRequestDetails {
 		source: Box<Error>,
-		issue: IssueDetails,
+		details: PullRequestDetails,
 	},
 
 	#[snafu(display("Checks failed for {}", commit_sha))]
@@ -107,20 +109,85 @@ pub enum Error {
 }
 
 impl Error {
-	pub fn map_issue(self, issue: IssueDetails) -> Self {
+	pub fn with_pr_details(self, details: PullRequestDetails) -> Self {
 		match self {
-			Self::WithIssue { .. } => self,
-			_ => Self::WithIssue {
+			Self::WithPullRequestDetails { .. } => self,
+			_ => Self::WithPullRequestDetails {
 				source: Box::new(self),
-				issue,
+				details,
 			},
 		}
 	}
 	pub fn stops_merge_attempt(&self) -> bool {
 		match self {
-			Self::WithIssue { source, .. } => source.stops_merge_attempt(),
+			Self::WithPullRequestDetails { source, .. } => {
+				source.stops_merge_attempt()
+			}
 			Self::MergeFailureWillBeSolvedLater { .. } => false,
 			_ => true,
 		}
+	}
+}
+
+pub async fn handle_error(
+	merge_cancel_outcome: PullRequestMergeCancelOutcome,
+	err: Error,
+	state: &AppState,
+) {
+	log::info!("handle_error: {}", err);
+	match err {
+		Error::MergeFailureWillBeSolvedLater { .. } => (),
+		err => {
+			if let Error::WithPullRequestDetails {
+				source,
+				details:
+					PullRequestDetails {
+						owner,
+						repo,
+						number,
+					},
+				..
+			} = err
+			{
+				match *source {
+					Error::MergeFailureWillBeSolvedLater { .. } => (),
+					err => {
+						let msg = {
+							let description = format_error(state, err);
+							let caption = match merge_cancel_outcome {
+								PullRequestMergeCancelOutcome::ShaNotFound  => "",
+								PullRequestMergeCancelOutcome::WasCancelled => "Merge cancelled due to error.",
+								PullRequestMergeCancelOutcome::WasNotCancelled => "Some error happened, but the merge was not cancelled (likely due to a bug).",
+							};
+							format!("{} Error: {}", caption, description)
+						};
+						if let Err(comment_post_err) = state
+							.gh_client
+							.create_issue_comment(&owner, &repo, number, &msg)
+							.await
+						{
+							log::error!(
+								"Error posting comment: {}",
+								comment_post_err
+							);
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+fn format_error(_state: &AppState, err: Error) -> String {
+	match err {
+		Error::Response {
+			ref body,
+			ref status,
+		} => format!(
+			"Response error (status {}): <pre><code>{}</code></pre>",
+			status,
+			html_escape::encode_safe(&body.to_string())
+		),
+		_ => format!("{}", err),
 	}
 }

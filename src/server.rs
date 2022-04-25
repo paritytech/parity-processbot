@@ -1,19 +1,19 @@
-use crate::webhook::*;
+use std::{net::SocketAddr, sync::Arc, task::Poll};
+
 use anyhow::{Context, Result};
 use async_std::pin::Pin;
-use futures_util::FutureExt;
 use futures_util::{
 	io::{AsyncRead, AsyncWrite},
 	stream::Stream,
+	FutureExt,
 };
 use hyper::{
 	service::{make_service_fn, service_fn},
 	Body, Request, Server,
 };
-use std::net::SocketAddr;
-use std::sync::Arc;
-use std::task::Poll;
 use tokio::sync::Mutex;
+
+use crate::{bot::*, core::AppState};
 
 struct Incoming<'a>(pub async_std::net::Incoming<'a>);
 
@@ -80,7 +80,7 @@ pub async fn init(
 		async move {
 			Ok::<_, hyper::Error>(service_fn(move |req: Request<Body>| {
 				let state = Arc::clone(&state);
-				webhook(req, state)
+				handle_http_request_for_bot(req, state)
 			}))
 		}
 	});

@@ -1,10 +1,14 @@
-use crate::{error::*, Result};
+use std::{
+	ffi::OsStr,
+	fmt::{Debug, Display},
+	path::Path,
+	process::{Output, Stdio},
+};
+
 use snafu::ResultExt;
-use std::ffi::OsStr;
-use std::fmt::{Debug, Display};
-use std::path::Path;
-use std::process::{Output, Stdio};
 use tokio::process::Command;
+
+use crate::{error::*, types::Result};
 
 #[derive(PartialEq)]
 pub struct CommandMessageConfiguration<'a> {

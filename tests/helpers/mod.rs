@@ -1,7 +1,9 @@
-use std::fs::{self, remove_dir_all, remove_file, File};
-use std::io::Read;
-use std::net::TcpListener;
-use std::path::{Path, PathBuf};
+use std::{
+	fs::{self, remove_dir_all, remove_file, File},
+	io::Read,
+	net::TcpListener,
+	path::{Path, PathBuf},
+};
 
 pub mod cmd;
 pub mod constants;

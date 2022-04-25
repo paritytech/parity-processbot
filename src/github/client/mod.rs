@@ -6,12 +6,12 @@ mod issue;
 mod org;
 mod pull_request;
 
-pub struct GithubBot {
+pub struct GithubClient {
 	pub client: crate::http::Client,
 	github_api_url: String,
 }
 
-impl GithubBot {
+impl GithubClient {
 	pub fn new(config: &MainConfig) -> Self {
 		let client = crate::http::Client::new(config);
 

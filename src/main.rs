@@ -1,20 +1,31 @@
+use std::{
+	fs,
+	net::{IpAddr, Ipv4Addr, SocketAddr},
+	path::Path,
+	sync::Arc,
+};
+
 use rocksdb::DB;
-use std::fs;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::path::Path;
-use std::sync::Arc;
 use tokio::sync::Mutex;
 mod logging;
-use parity_processbot::{
-	error::Bincode, webhook::checks_and_status, MergeCancelOutcome,
-};
-use snafu::ResultExt;
 use std::{thread, time::Duration};
 
 use parity_processbot::{
-	config::MainConfig, constants::*, github::Payload, github_bot, server,
-	webhook::*,
+	bot::handle_github_payload,
+	config::MainConfig,
+	constants::*,
+	core::{
+		handle_commit_checks_and_statuses, AppState,
+		PullRequestMergeCancelOutcome,
+	},
+	error::{handle_error, Bincode},
+	github::*,
+	merge_request::{
+		cleanup_merge_request, MergeRequest, MergeRequestCleanupReason,
+	},
+	server,
 };
+use snafu::ResultExt;
 
 fn main() -> anyhow::Result<()> {
 	env_logger::from_env(env_logger::Env::default().default_filter_or("info"))
@@ -58,13 +69,13 @@ fn main() -> anyhow::Result<()> {
 
 	let db = DB::open_default(&config.db_path)?;
 
-	let github_bot = github_bot::GithubBot::new(&config);
+	let gh_client = GithubClient::new(&config);
 
 	let webhook_proxy_url = config.webhook_proxy_url.clone();
 
 	let app_state = Arc::new(Mutex::new(AppState {
 		db,
-		github_bot,
+		gh_client,
 		config,
 	}));
 
@@ -121,19 +132,22 @@ fn main() -> anyhow::Result<()> {
 									);
 
 									if let Err(err) =
-										checks_and_status(state, &mr.sha).await
+										handle_commit_checks_and_statuses(
+											state, &mr.sha,
+										)
+										.await
 									{
-										let _ = cleanup_pr(
+										let _ = cleanup_merge_request(
 											state,
 											&mr.sha,
 											&mr.owner,
 											&mr.repo,
 											mr.number,
-											&PullRequestCleanupReason::Error,
+											&MergeRequestCleanupReason::Error,
 										)
 										.await;
 										handle_error(
-											MergeCancelOutcome::WasCancelled,
+											PullRequestMergeCancelOutcome::WasCancelled,
 											err,
 											state,
 										)
@@ -176,7 +190,7 @@ fn main() -> anyhow::Result<()> {
 
 		#[derive(serde::Deserialize)]
 		struct SmeePayload {
-			body: Payload,
+			body: GithubWebhookPayload,
 		}
 		for event in client {
 			let state = app_state.clone();
@@ -189,7 +203,7 @@ fn main() -> anyhow::Result<()> {
 					log::info!("Acquiring lock");
 					let state = &*state.lock().await;
 					let (merge_cancel_outcome, result) =
-						handle_payload(payload.body, state).await;
+						handle_github_payload(payload.body, state).await;
 					if let Err(err) = result {
 						handle_error(merge_cancel_outcome, err, state).await;
 					}
