@@ -381,11 +381,11 @@ async fn update_pr_branch(
 	Ok(updated_sha)
 }
 
-fn companion_parse(body: &str) -> Option<IssueDetailsWithRepositoryURL> {
+fn companion_parse(body: &str) -> Option<PullRequestDetailsWithHtmlUrl> {
 	companion_parse_long(body).or_else(|| companion_parse_short(body))
 }
 
-fn companion_parse_long(body: &str) -> Option<IssueDetailsWithRepositoryURL> {
+fn companion_parse_long(body: &str) -> Option<PullRequestDetailsWithHtmlUrl> {
 	let re = RegexBuilder::new(COMPANION_LONG_REGEX!())
 		.case_insensitive(true)
 		.build()
@@ -400,10 +400,15 @@ fn companion_parse_long(body: &str) -> Option<IssueDetailsWithRepositoryURL> {
 		.to_owned()
 		.parse::<i64>()
 		.ok()?;
-	Some((html_url, owner, repo, number))
+	Some(PullRequestDetailsWithHtmlUrl {
+		html_url,
+		owner,
+		repo,
+		number,
+	})
 }
 
-fn companion_parse_short(body: &str) -> Option<IssueDetailsWithRepositoryURL> {
+fn companion_parse_short(body: &str) -> Option<PullRequestDetailsWithHtmlUrl> {
 	let re = RegexBuilder::new(COMPANION_SHORT_REGEX!())
 		.case_insensitive(true)
 		.build()
@@ -423,20 +428,25 @@ fn companion_parse_short(body: &str) -> Option<IssueDetailsWithRepositoryURL> {
 		repo = repo,
 		number = number
 	);
-	Some((html_url, owner, repo, number))
+	Some(PullRequestDetailsWithHtmlUrl {
+		html_url,
+		owner,
+		repo,
+		number,
+	})
 }
 
 pub fn parse_all_companions(
 	companion_reference_trail: &[CompanionReferenceTrailItem],
 	body: &str,
-) -> Vec<IssueDetailsWithRepositoryURL> {
+) -> Vec<PullRequestDetailsWithHtmlUrl> {
 	body.lines()
 		.filter_map(|line| {
 			companion_parse(line).and_then(|comp| {
 				// Break cyclical references between dependency and dependents because we're only
 				// interested in the dependency -> dependent relationship, not the other way around.
 				for item in companion_reference_trail {
-					if comp.1 == item.owner && comp.2 == item.repo {
+					if comp.owner == item.owner && comp.repo == item.repo {
 						return None;
 					}
 				}
@@ -465,7 +475,13 @@ pub async fn check_all_companions_are_mergeable(
 	};
 
 	let AppState { github_bot, .. } = state;
-	for (html_url, owner, repo, number) in companions {
+	for PullRequestDetailsWithHtmlUrl {
+		html_url,
+		owner,
+		repo,
+		number,
+	} in companions
+	{
 		let companion = github_bot.pull_request(&owner, &repo, number).await?;
 
 		if companion.merged {
@@ -719,11 +735,11 @@ pub async fn update_then_merge(
 	}
 	.await
 	{
-		Err(err) => Err(err.map_issue((
-			comp.owner.to_owned(),
-			comp.repo.to_owned(),
-			comp.number,
-		))),
+		Err(err) => Err(err.with_pr_details(PullRequestDetails {
+			owner: comp.owner.to_owned(),
+			repo: comp.repo.to_owned(),
+			number: comp.number,
+		})),
 		other => other,
 	}
 }
@@ -740,16 +756,16 @@ mod tests {
 			// Extra params should not be included in the parsed URL
 			assert_eq!(
 				companion_parse(&format!(
-					"{}: https://github.com/paritytech/polkadot/pull/1234?extra_params=true",
+					"{}: https://github.com/org/repo/pull/1234?extra_params=true",
 					companion_marker
 				)),
-				Some((
-					"https://github.com/paritytech/polkadot/pull/1234"
+				Some(PullRequestDetailsWithHtmlUrl {
+					html_url: "https://github.com/org/repo/pull/1234"
 						.to_owned(),
-					"paritytech".to_owned(),
-					"polkadot".to_owned(),
-					1234
-				))
+					owner: "org".to_owned(),
+					repo: "repo".to_owned(),
+					number: 1234
+				})
 			);
 		}
 	}
@@ -763,18 +779,18 @@ mod tests {
 				companion_parse(&format!(
 					"
 					Companion line is in the middle
-					{}: https://github.com/paritytech/polkadot/pull/1234
+					{}: https://github.com/org/repo/pull/1234
 					Final line
 					",
 					companion_marker
 				)),
-				Some((
-					"https://github.com/paritytech/polkadot/pull/1234"
+				Some(PullRequestDetailsWithHtmlUrl {
+					html_url: "https://github.com/org/repo/pull/1234"
 						.to_owned(),
-					"paritytech".to_owned(),
-					"polkadot".to_owned(),
-					1234
-				))
+					owner: "org".to_owned(),
+					repo: "repo".to_owned(),
+					number: 1234
+				})
 			);
 		}
 	}
@@ -788,18 +804,18 @@ mod tests {
 				companion_parse(&format!(
 					"
 					Companion line is in the middle
-					{}: paritytech/polkadot#1234
+					{}: org/repo#1234
 					Final line
 					",
 					companion_marker
 				)),
-				Some((
-					"https://github.com/paritytech/polkadot/pull/1234"
+				Some(PullRequestDetailsWithHtmlUrl {
+					html_url: "https://github.com/org/repo/pull/1234"
 						.to_owned(),
-					"paritytech".to_owned(),
-					"polkadot".to_owned(),
-					1234
-				))
+					owner: "org".to_owned(),
+					repo: "repo".to_owned(),
+					number: 1234
+				})
 			);
 		}
 	}
@@ -813,7 +829,7 @@ mod tests {
 				companion_parse(&format!(
 					"
 					I want to talk about {}: but NOT reference it
-					I submitted it in https://github.com/paritytech/polkadot/pull/1234
+					I submitted it in https://github.com/org/repo/pull/1234
 					",
 					companion_marker
 				)),
@@ -831,7 +847,7 @@ mod tests {
 				companion_parse(&format!(
 					"
 					I want to talk about {}: but NOT reference it
-					I submitted it in paritytech/polkadot#1234
+					I submitted it in org/repo#1234
 					",
 					companion_marker
 				)),
@@ -842,17 +858,17 @@ mod tests {
 
 	#[test]
 	fn test_companion_parsing_multiple_companions() {
-		let owner = "paritytech";
-		let repo = "polkadot";
+		let owner = "org";
+		let repo = "repo";
 		let pr_number = 1234;
 		let companion_url =
 			format!("https://github.com/{}/{}/pull/{}", owner, repo, pr_number);
-		let expected_companion = &(
-			companion_url.to_owned(),
-			owner.to_owned(),
-			repo.to_owned(),
-			pr_number,
-		);
+		let expected_companion = PullRequestDetailsWithHtmlUrl {
+			html_url: companion_url.to_owned(),
+			owner: owner.into(),
+			repo: repo.into(),
+			number: pr_number,
+		};
 		for companion_marker in COMPANION_MARKERS {
 			assert_eq!(
 				parse_all_companions(
@@ -875,8 +891,8 @@ mod tests {
 
 	#[test]
 	fn test_cyclical_references() {
-		let owner = "paritytech";
-		let repo = "polkadot";
+		let owner = "org";
+		let repo = "repo";
 
 		for companion_marker in COMPANION_MARKERS {
 			let companion_description = format!(
@@ -908,8 +924,8 @@ mod tests {
 
 	#[test]
 	fn test_restricted_regex() {
-		let owner = "paritytech";
-		let repo = "polkadot";
+		let owner = "org";
+		let repo = "repo";
 		let pr_number = 1234;
 		let companion_url = format!("{}/{}#{}", owner, repo, pr_number);
 		for companion_marker in COMPANION_MARKERS {

@@ -13,6 +13,7 @@ use std::collections::HashSet;
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::{sync::Mutex, time::delay_for};
 
+use crate::error::PullRequestDetails;
 use crate::{
 	companion::*,
 	config::MainConfig,
@@ -189,7 +190,7 @@ pub async fn webhook_inner(
 						String::from_utf8_lossy(&msg_bytes)
 					),
 				}
-				.map_issue(pr_details))
+				.with_pr_details(pr_details))
 			} else {
 				log::info!("Ignoring payload parsing error",);
 				Ok((MergeCancelOutcome::ShaNotFound, Ok(())))
@@ -239,12 +240,12 @@ pub async fn handle_payload(
 						.await;
 						(
 							result.map_err(|err| match err {
-								Error::WithIssue { .. } => err,
+								Error::WithPullRequestDetails { .. } => err,
 								err => {
 									if let Some(details) =
 										issue.get_issue_details()
 									{
-										err.map_issue(details)
+										err.with_pr_details(details)
 									} else {
 										err
 									}
@@ -366,7 +367,11 @@ pub async fn handle_payload(
 
 					(
 						merge_cancel_outcome,
-						Err(err.map_issue((mr.owner, mr.repo, mr.number))),
+						Err(err.with_pr_details(PullRequestDetails {
+							owner: mr.owner,
+							repo: mr.repo,
+							number: mr.number,
+						})),
 					)
 				}
 				Err(db_err) => {
@@ -797,11 +802,11 @@ pub async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 	.await
 	{
 		Ok(_) | Err(Error::MergeFailureWillBeSolvedLater { .. }) => Ok(()),
-		Err(err) => Err(err.map_issue((
-			pr.base.repo.owner.login,
-			pr.base.repo.name,
-			pr.number,
-		))),
+		Err(err) => Err(err.with_pr_details(PullRequestDetails {
+			owner: pr.base.repo.owner.login,
+			repo: pr.base.repo.name,
+			number: pr.number,
+		})),
 	}
 }
 
@@ -977,11 +982,11 @@ pub async fn handle_dependents_after_merge(
 												pr.html_url
 											),
 										}
-										.map_issue((
-											(&mr.owner).into(),
-											(&mr.repo).into(),
-											mr.number,
-										)),
+										.with_pr_details(PullRequestDetails {
+											owner: (&mr.owner).into(),
+											repo: (&mr.repo).into(),
+											number: mr.number,
+										}),
 										state,
 									)
 									.await;
@@ -1066,11 +1071,11 @@ pub async fn handle_dependents_after_merge(
 				.await;
 				handle_error(
 					MergeCancelOutcome::WasCancelled,
-					err.map_issue((
-						(&dependent.owner).into(),
-						(&dependent.repo).into(),
-						dependent.number,
-					)),
+					err.with_pr_details(PullRequestDetails {
+						owner: (&dependent.owner).into(),
+						repo: (&dependent.repo).into(),
+						number: dependent.number,
+					}),
 					state,
 				)
 				.await;
@@ -1176,11 +1181,11 @@ pub async fn handle_dependents_after_merge(
 									 pr.html_url
 								),
 							}
-							.map_issue((
-								(&dependent_of_dependent.owner).into(),
-								(&dependent_of_dependent.repo).into(),
-								dependent_of_dependent.number,
-							)),
+							.with_pr_details(PullRequestDetails {
+								owner: (&dependent_of_dependent.owner).into(),
+								repo: (&dependent_of_dependent.repo).into(),
+								number: dependent_of_dependent.number,
+							}),
 							state,
 						)
 						.await;
@@ -1432,7 +1437,11 @@ async fn handle_comment(
 	let result = handle_command(state, &cmd, &pr, requested_by)
 		.await
 		.map_err(|err| {
-			err.map_issue((owner.to_owned(), repo.to_owned(), number))
+			err.with_pr_details(PullRequestDetails {
+				owner: owner.into(),
+				repo: repo.into(),
+				number,
+			})
 		});
 
 	let sha = match cmd {
@@ -1901,9 +1910,14 @@ pub async fn handle_error(
 	match err {
 		Error::MergeFailureWillBeSolvedLater { .. } => (),
 		err => {
-			if let Error::WithIssue {
+			if let Error::WithPullRequestDetails {
 				source,
-				issue: (owner, repo, number),
+				details:
+					PullRequestDetails {
+						owner,
+						repo,
+						number,
+					},
 				..
 			} = err
 			{

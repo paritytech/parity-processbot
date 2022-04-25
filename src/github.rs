@@ -7,8 +7,8 @@ use crate::{
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
-pub trait HasIssueDetails {
-	fn get_issue_details(&self) -> Option<IssueDetails>;
+pub trait HasPullRequestDetails {
+	fn get_issue_details(&self) -> Option<PullRequestDetails>;
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -29,7 +29,7 @@ impl PullRequest {
 	pub fn parse_all_companions(
 		&self,
 		companion_reference_trail: &[CompanionReferenceTrailItem],
-	) -> Option<Vec<IssueDetailsWithRepositoryURL>> {
+	) -> Option<Vec<PullRequestDetailsWithHtmlUrl>> {
 		let mut next_trail =
 			Vec::with_capacity(companion_reference_trail.len() + 1);
 		next_trail.extend_from_slice(companion_reference_trail);
@@ -259,8 +259,8 @@ pub struct WebhookIssueComment {
 	pub pull_request: Option<PlaceholderDeserializationItem>,
 }
 
-impl HasIssueDetails for WebhookIssueComment {
-	fn get_issue_details(&self) -> Option<IssueDetails> {
+impl HasPullRequestDetails for WebhookIssueComment {
+	fn get_issue_details(&self) -> Option<PullRequestDetails> {
 		parse_issue_details_from_pr_html_url(&self.html_url)
 	}
 }
@@ -334,8 +334,8 @@ pub struct DetectUserCommentPullRequest {
 	comment: Option<DetectUserCommentPullRequestComment>,
 }
 
-impl HasIssueDetails for DetectUserCommentPullRequest {
-	fn get_issue_details(&self) -> Option<IssueDetails> {
+impl HasPullRequestDetails for DetectUserCommentPullRequest {
+	fn get_issue_details(&self) -> Option<PullRequestDetails> {
 		if let DetectUserCommentPullRequest {
 			action: IssueCommentAction::Created,
 			issue:
@@ -363,7 +363,11 @@ impl HasIssueDetails for DetectUserCommentPullRequest {
 						..
 					}) = repository
 					{
-						Some((login.to_owned(), name.to_owned(), *number))
+						Some(PullRequestDetails {
+							owner: login.into(),
+							repo: name.into(),
+							number: *number,
+						})
 					} else {
 						None
 					}
@@ -373,8 +377,13 @@ impl HasIssueDetails for DetectUserCommentPullRequest {
 							..
 						}) = repository
 						{
-							parse_repository_full_name(full_name)
-								.map(|(owner, name)| (owner, name, *number))
+							parse_repository_full_name(full_name).map(
+								|(owner, repo)| PullRequestDetails {
+									owner,
+									repo,
+									number: *number,
+								},
+							)
 						} else {
 							None
 						}
@@ -385,7 +394,6 @@ impl HasIssueDetails for DetectUserCommentPullRequest {
 						} = pr
 						{
 							parse_issue_details_from_pr_html_url(html_url)
-								.map(|(owner, name, _)| (owner, name, *number))
 						} else {
 							None
 						}
@@ -400,7 +408,7 @@ impl HasIssueDetails for DetectUserCommentPullRequest {
 
 pub fn parse_issue_details_from_pr_html_url(
 	pr_html_url: &str,
-) -> Option<IssueDetails> {
+) -> Option<PullRequestDetails> {
 	let re = Regex::new(PR_HTML_URL_REGEX!()).unwrap();
 	let matches = re.captures(pr_html_url)?;
 	let owner = matches.name("owner")?.as_str().to_owned();
@@ -411,7 +419,11 @@ pub fn parse_issue_details_from_pr_html_url(
 		.to_owned()
 		.parse::<i64>()
 		.ok()?;
-	Some((owner, repo, number))
+	Some(PullRequestDetails {
+		owner,
+		repo,
+		number,
+	})
 }
 
 pub fn parse_repository_full_name(full_name: &str) -> Option<(String, String)> {
