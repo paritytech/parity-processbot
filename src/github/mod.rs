@@ -339,7 +339,7 @@ impl HasPullRequestDetails for DetectUserCommentPullRequest {
 							html_url: Some(html_url),
 						} = pr
 						{
-							parse_pull_request_details_from_url(html_url)
+							parse_issue_details_from_pr_html_url(html_url)
 						} else {
 							None
 						}
