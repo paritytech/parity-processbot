@@ -19,9 +19,9 @@ pub struct PullRequestDetailsWithHtmlUrl {
 #[snafu(visibility = "pub")]
 pub enum Error {
 	#[snafu(display("WithIssue: {}", source))]
-	WithIssue {
+	WithPullRequestDetails {
 		source: Box<Error>,
-		issue: PullRequestDetails,
+		details: PullRequestDetails,
 	},
 
 	#[snafu(display("Checks failed for {}", commit_sha))]
@@ -107,18 +107,20 @@ pub enum Error {
 }
 
 impl Error {
-	pub fn map_issue(self, issue: PullRequestDetails) -> Self {
+	pub fn with_pr_details(self, details: PullRequestDetails) -> Self {
 		match self {
-			Self::WithIssue { .. } => self,
-			_ => Self::WithIssue {
+			Self::WithPullRequestDetails { .. } => self,
+			_ => Self::WithPullRequestDetails {
 				source: Box::new(self),
-				issue,
+				details,
 			},
 		}
 	}
 	pub fn stops_merge_attempt(&self) -> bool {
 		match self {
-			Self::WithIssue { source, .. } => source.stops_merge_attempt(),
+			Self::WithPullRequestDetails { source, .. } => {
+				source.stops_merge_attempt()
+			}
 			Self::MergeFailureWillBeSolvedLater { .. } => false,
 			_ => true,
 		}

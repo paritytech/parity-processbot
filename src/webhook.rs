@@ -190,7 +190,7 @@ pub async fn webhook_inner(
 						String::from_utf8_lossy(&msg_bytes)
 					),
 				}
-				.map_issue(pr_details))
+				.with_pr_details(pr_details))
 			} else {
 				log::info!("Ignoring payload parsing error",);
 				Ok((MergeCancelOutcome::ShaNotFound, Ok(())))
@@ -240,12 +240,12 @@ pub async fn handle_payload(
 						.await;
 						(
 							result.map_err(|err| match err {
-								Error::WithIssue { .. } => err,
+								Error::WithPullRequestDetails { .. } => err,
 								err => {
 									if let Some(details) =
 										issue.get_issue_details()
 									{
-										err.map_issue(details)
+										err.with_pr_details(details)
 									} else {
 										err
 									}
@@ -367,7 +367,7 @@ pub async fn handle_payload(
 
 					(
 						merge_cancel_outcome,
-						Err(err.map_issue(PullRequestDetails {
+						Err(err.with_pr_details(PullRequestDetails {
 							owner: mr.owner,
 							repo: mr.repo,
 							number: mr.number,
@@ -802,7 +802,7 @@ pub async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 	.await
 	{
 		Ok(_) | Err(Error::MergeFailureWillBeSolvedLater { .. }) => Ok(()),
-		Err(err) => Err(err.map_issue(PullRequestDetails {
+		Err(err) => Err(err.with_pr_details(PullRequestDetails {
 			owner: pr.base.repo.owner.login,
 			repo: pr.base.repo.name,
 			number: pr.number,
@@ -982,7 +982,7 @@ pub async fn handle_dependents_after_merge(
 												pr.html_url
 											),
 										}
-										.map_issue(PullRequestDetails {
+										.with_pr_details(PullRequestDetails {
 											owner: (&mr.owner).into(),
 											repo: (&mr.repo).into(),
 											number: mr.number,
@@ -1071,7 +1071,7 @@ pub async fn handle_dependents_after_merge(
 				.await;
 				handle_error(
 					MergeCancelOutcome::WasCancelled,
-					err.map_issue(PullRequestDetails {
+					err.with_pr_details(PullRequestDetails {
 						owner: (&dependent.owner).into(),
 						repo: (&dependent.repo).into(),
 						number: dependent.number,
@@ -1181,7 +1181,7 @@ pub async fn handle_dependents_after_merge(
 									 pr.html_url
 								),
 							}
-							.map_issue(PullRequestDetails {
+							.with_pr_details(PullRequestDetails {
 								owner: (&dependent_of_dependent.owner).into(),
 								repo: (&dependent_of_dependent.repo).into(),
 								number: dependent_of_dependent.number,
@@ -1437,7 +1437,7 @@ async fn handle_comment(
 	let result = handle_command(state, &cmd, &pr, requested_by)
 		.await
 		.map_err(|err| {
-			err.map_issue(PullRequestDetails {
+			err.with_pr_details(PullRequestDetails {
 				owner: owner.into(),
 				repo: repo.into(),
 				number,
@@ -1910,9 +1910,9 @@ pub async fn handle_error(
 	match err {
 		Error::MergeFailureWillBeSolvedLater { .. } => (),
 		err => {
-			if let Error::WithIssue {
+			if let Error::WithPullRequestDetails {
 				source,
-				issue:
+				details:
 					PullRequestDetails {
 						owner,
 						repo,

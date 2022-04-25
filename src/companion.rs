@@ -735,7 +735,7 @@ pub async fn update_then_merge(
 	}
 	.await
 	{
-		Err(err) => Err(err.map_issue(PullRequestDetails {
+		Err(err) => Err(err.with_pr_details(PullRequestDetails {
 			owner: comp.owner.to_owned(),
 			repo: comp.repo.to_owned(),
 			number: comp.number,
