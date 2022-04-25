@@ -1,18 +1,18 @@
 use snafu::Snafu;
 
-// TODO this really should be struct { owner, repo, number }
-pub type IssueDetails = (String, String, i64);
-
-// TODO this really should be struct { repository_url, owner, repo, number }
-pub type IssueDetailsWithRepositoryURL = (String, String, String, i64);
-
 #[derive(Debug)]
-pub struct CompanionDetailsWithErrorMessage {
+pub struct PullRequestDetails {
 	pub owner: String,
 	pub repo: String,
 	pub number: i64,
+}
+
+#[derive(PartialEq, Debug, Clone)]
+pub struct PullRequestDetailsWithHtmlUrl {
 	pub html_url: String,
-	pub msg: String,
+	pub owner: String,
+	pub repo: String,
+	pub number: i64,
 }
 
 #[derive(Debug, Snafu)]
@@ -21,7 +21,7 @@ pub enum Error {
 	#[snafu(display("WithIssue: {}", source))]
 	WithIssue {
 		source: Box<Error>,
-		issue: IssueDetails,
+		issue: PullRequestDetails,
 	},
 
 	#[snafu(display("Checks failed for {}", commit_sha))]
@@ -107,7 +107,7 @@ pub enum Error {
 }
 
 impl Error {
-	pub fn map_issue(self, issue: IssueDetails) -> Self {
+	pub fn map_issue(self, issue: PullRequestDetails) -> Self {
 		match self {
 			Self::WithIssue { .. } => self,
 			_ => Self::WithIssue {

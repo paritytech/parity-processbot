@@ -13,6 +13,7 @@ use std::collections::HashSet;
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::{sync::Mutex, time::delay_for};
 
+use crate::error::PullRequestDetails;
 use crate::{
 	companion::*,
 	config::MainConfig,
@@ -366,7 +367,11 @@ pub async fn handle_payload(
 
 					(
 						merge_cancel_outcome,
-						Err(err.map_issue((mr.owner, mr.repo, mr.number))),
+						Err(err.map_issue(PullRequestDetails {
+							owner: mr.owner,
+							repo: mr.repo,
+							number: mr.number,
+						})),
 					)
 				}
 				Err(db_err) => {
@@ -797,11 +802,11 @@ pub async fn checks_and_status(state: &AppState, sha: &str) -> Result<()> {
 	.await
 	{
 		Ok(_) | Err(Error::MergeFailureWillBeSolvedLater { .. }) => Ok(()),
-		Err(err) => Err(err.map_issue((
-			pr.base.repo.owner.login,
-			pr.base.repo.name,
-			pr.number,
-		))),
+		Err(err) => Err(err.map_issue(PullRequestDetails {
+			owner: pr.base.repo.owner.login,
+			repo: pr.base.repo.name,
+			number: pr.number,
+		})),
 	}
 }
 
@@ -977,11 +982,11 @@ pub async fn handle_dependents_after_merge(
 												pr.html_url
 											),
 										}
-										.map_issue((
-											(&mr.owner).into(),
-											(&mr.repo).into(),
-											mr.number,
-										)),
+										.map_issue(PullRequestDetails {
+											owner: (&mr.owner).into(),
+											repo: (&mr.repo).into(),
+											number: mr.number,
+										}),
 										state,
 									)
 									.await;
@@ -1066,11 +1071,11 @@ pub async fn handle_dependents_after_merge(
 				.await;
 				handle_error(
 					MergeCancelOutcome::WasCancelled,
-					err.map_issue((
-						(&dependent.owner).into(),
-						(&dependent.repo).into(),
-						dependent.number,
-					)),
+					err.map_issue(PullRequestDetails {
+						owner: (&dependent.owner).into(),
+						repo: (&dependent.repo).into(),
+						number: dependent.number,
+					}),
 					state,
 				)
 				.await;
@@ -1176,11 +1181,11 @@ pub async fn handle_dependents_after_merge(
 									 pr.html_url
 								),
 							}
-							.map_issue((
-								(&dependent_of_dependent.owner).into(),
-								(&dependent_of_dependent.repo).into(),
-								dependent_of_dependent.number,
-							)),
+							.map_issue(PullRequestDetails {
+								owner: (&dependent_of_dependent.owner).into(),
+								repo: (&dependent_of_dependent.repo).into(),
+								number: dependent_of_dependent.number,
+							}),
 							state,
 						)
 						.await;
@@ -1432,7 +1437,11 @@ async fn handle_comment(
 	let result = handle_command(state, &cmd, &pr, requested_by)
 		.await
 		.map_err(|err| {
-			err.map_issue((owner.to_owned(), repo.to_owned(), number))
+			err.map_issue(PullRequestDetails {
+				owner: owner.into(),
+				repo: repo.into(),
+				number,
+			})
 		});
 
 	let sha = match cmd {
@@ -1903,7 +1912,12 @@ pub async fn handle_error(
 		err => {
 			if let Error::WithIssue {
 				source,
-				issue: (owner, repo, number),
+				issue:
+					PullRequestDetails {
+						owner,
+						repo,
+						number,
+					},
 				..
 			} = err
 			{
