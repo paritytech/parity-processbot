@@ -8,7 +8,7 @@ use tokio::{sync::Mutex, time::delay_for};
 
 use crate::{
 	core::{
-		handle_commit_checks_and_statuses, process_dependents_after_merge,
+		process_commit_checks_and_statuses, process_dependents_after_merge,
 		AppState, CommentCommand, MergeCommentCommand,
 		PullRequestMergeCancelOutcome,
 	},
@@ -216,7 +216,7 @@ pub async fn handle_github_payload(
 		GithubWebhookPayload::CommitStatus { sha, state: status } => (
 			match status {
 				GithubCommitStatusState::Unknown => Ok(()),
-				_ => handle_commit_checks_and_statuses(state, &sha).await,
+				_ => process_commit_checks_and_statuses(state, &sha).await,
 			},
 			Some(sha),
 		),
@@ -231,7 +231,7 @@ pub async fn handle_github_payload(
 		} => (
 			match status {
 				GithubCheckRunStatus::Completed => {
-					handle_commit_checks_and_statuses(state, &sha).await
+					process_commit_checks_and_statuses(state, &sha).await
 				}
 				_ => Ok(()),
 			},
@@ -246,7 +246,7 @@ pub async fn handle_github_payload(
 			..
 		} => (
 			if conclusion.is_some() {
-				handle_commit_checks_and_statuses(state, &sha).await
+				process_commit_checks_and_statuses(state, &sha).await
 			} else {
 				Ok(())
 			},

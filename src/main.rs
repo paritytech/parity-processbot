@@ -15,7 +15,7 @@ use parity_processbot::{
 	config::MainConfig,
 	constants::*,
 	core::{
-		handle_commit_checks_and_statuses, AppState,
+		process_commit_checks_and_statuses, AppState,
 		PullRequestMergeCancelOutcome,
 	},
 	error::{handle_error, Bincode},
@@ -132,7 +132,7 @@ fn main() -> anyhow::Result<()> {
 									);
 
 									if let Err(err) =
-										handle_commit_checks_and_statuses(
+										process_commit_checks_and_statuses(
 											state, &mr.sha,
 										)
 										.await

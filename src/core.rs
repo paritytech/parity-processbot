@@ -358,7 +358,7 @@ pub async fn get_commit_checks(
 }
 
 #[async_recursion]
-pub async fn handle_commit_checks_and_statuses(
+pub async fn process_commit_checks_and_statuses(
 	state: &AppState,
 	sha: &str,
 ) -> Result<()> {
@@ -878,7 +878,7 @@ pub async fn process_dependents_after_merge(
 	*/
 	for dependent in dependents_to_check.into_values() {
 		if let Err(err) =
-			handle_commit_checks_and_statuses(state, &dependent.sha).await
+			process_commit_checks_and_statuses(state, &dependent.sha).await
 		{
 			let _ = cleanup_merge_request(
 				state,
