@@ -33,7 +33,6 @@ fn verify_github_webhook_signature(
 	hmac::verify(&key, msg, signature)
 }
 
-/// Receive a webhook and state object, acquire lock on state object.
 pub async fn handle_http_request_for_bot(
 	req: Request<Body>,
 	state: Arc<Mutex<AppState>>,
@@ -502,7 +501,7 @@ async fn handle_command(
 	}
 }
 
-/// Parse bot commands in pull request comments. Commands are listed in README.md.
+/// Parse bot commands in pull request comments.
 /// The first member of the returned tuple is the relevant commit SHA to invalidate from the
 /// database in case of errors.
 /// The second member of the returned tuple is the result of handling the parsed command.

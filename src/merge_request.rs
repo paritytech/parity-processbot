@@ -245,8 +245,6 @@ pub enum MergeRequestQueuedMessage<'a> {
 	Default,
 	None,
 }
-/// Create a merge request, add it to the database, and post a comment stating the merge is
-/// pending.
 pub async fn queue_merge_request(
 	state: &AppState,
 	mr: &MergeRequest,

@@ -252,8 +252,6 @@ impl GithubClient {
 		handle_response(response).await
 	}
 
-	/// Get a single entry from a resource in GitHub using
-	/// JWT authenication.
 	async fn jwt_get<T>(&self, url: impl IntoUrl) -> Result<T>
 	where
 		T: serde::de::DeserializeOwned,
@@ -266,7 +264,6 @@ impl GithubClient {
 			.context(error::Http)
 	}
 
-	/// Posts `body` GitHub to `url` using JWT authenication.
 	async fn jwt_post<T>(
 		&self,
 		url: impl IntoUrl,
@@ -283,7 +280,6 @@ impl GithubClient {
 			.context(error::Http)
 	}
 
-	/// Get a single entry from a resource in GitHub.
 	async fn get<'b, I, T>(&self, url: I) -> Result<T>
 	where
 		I: Into<Cow<'b, str>> + Clone,
@@ -298,7 +294,6 @@ impl GithubClient {
 		res
 	}
 
-	/// Get a disembodied entry from a resource in GitHub.
 	pub async fn get_status<'b, I>(&self, url: I) -> Result<u16>
 	where
 		I: Into<Cow<'b, str>> + Clone,
