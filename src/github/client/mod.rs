@@ -42,7 +42,7 @@ macro_rules! impl_methods_with_body {
 					.context(error::Http)
 			}
 
-			pub async fn $method_response_fn<'b, I, B>(
+			async fn $method_response_fn<'b, I, B>(
 				&self,
 				url: I,
 				body: &B,
@@ -254,7 +254,7 @@ impl GithubClient {
 
 	/// Get a single entry from a resource in GitHub using
 	/// JWT authenication.
-	pub async fn jwt_get<T>(&self, url: impl IntoUrl) -> Result<T>
+	async fn jwt_get<T>(&self, url: impl IntoUrl) -> Result<T>
 	where
 		T: serde::de::DeserializeOwned,
 	{
@@ -267,7 +267,7 @@ impl GithubClient {
 	}
 
 	/// Posts `body` GitHub to `url` using JWT authenication.
-	pub async fn jwt_post<T>(
+	async fn jwt_post<T>(
 		&self,
 		url: impl IntoUrl,
 		body: &impl serde::Serialize,
@@ -284,7 +284,7 @@ impl GithubClient {
 	}
 
 	/// Get a single entry from a resource in GitHub.
-	pub async fn get<'b, I, T>(&self, url: I) -> Result<T>
+	async fn get<'b, I, T>(&self, url: I) -> Result<T>
 	where
 		I: Into<Cow<'b, str>> + Clone,
 		T: serde::de::DeserializeOwned + core::fmt::Debug,
@@ -311,7 +311,7 @@ impl GithubClient {
 		Ok(res)
 	}
 
-	pub async fn get_response<'b, I, P>(
+	async fn get_response<'b, I, P>(
 		&self,
 		url: I,
 		params: P,
