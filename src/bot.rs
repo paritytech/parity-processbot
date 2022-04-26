@@ -237,7 +237,7 @@ pub async fn handle_github_payload(
 			},
 			Some(sha),
 		),
-		GithubWebhookPayload::GithubWorkflowJob {
+		GithubWebhookPayload::WorkflowJob {
 			workflow_job:
 				GithubWorkflowJob {
 					head_sha: sha,

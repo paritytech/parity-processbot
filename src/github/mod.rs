@@ -243,7 +243,7 @@ pub enum GithubWebhookPayload {
 	CheckRun {
 		check_run: GithubCheckRun,
 	},
-	GithubWorkflowJob {
+	WorkflowJob {
 		workflow_job: GithubWorkflowJob,
 	},
 }
