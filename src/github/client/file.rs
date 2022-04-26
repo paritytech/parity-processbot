@@ -8,7 +8,7 @@ impl GithubClient {
 		repo: &str,
 		path: &str,
 		ref_field: &str,
-	) -> Result<Contents> {
+	) -> Result<GithubFileContents> {
 		let url = &format!(
 			"{}/repos/{}/{}/contents/{}?ref={}",
 			self.github_api_url, owner, repo, path, ref_field

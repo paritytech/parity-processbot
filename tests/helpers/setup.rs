@@ -125,7 +125,7 @@ GcZ0izY/30012ajdHY+/QK5lsMoxTnn0skdS+spLxaS5ZEO4qvPVb8RAoCkWMMal
 			"/app/installations",
 		))
 		.times(0..)
-		.respond_with(json_encoded(vec![Installation {
+		.respond_with(json_encoded(vec![GithubInstallation {
 			id: I64_PLACEHOLDER_WHICH_DOES_NOT_MATTER,
 			account: GithubUser {
 				login: owner.login.clone(),
@@ -142,7 +142,7 @@ GcZ0izY/30012ajdHY+/QK5lsMoxTnn0skdS+spLxaS5ZEO4qvPVb8RAoCkWMMal
 			),
 		))
 		.times(0..)
-		.respond_with(json_encoded(InstallationToken {
+		.respond_with(json_encoded(GithubInstallationToken {
 			token: "does not matter".to_string(),
 			expires_at: None,
 		})),
@@ -213,7 +213,7 @@ pub fn setup_commit(setup: &CommonSetupOutput, sha: &str) {
 			),
 		))
 		.times(0..)
-		.respond_with(json_encoded(CheckRuns {
+		.respond_with(json_encoded(GithubCheckRuns {
 			check_runs: vec![GithubCheckRun {
 				id: 1,
 				name: "does not matter".to_string(),

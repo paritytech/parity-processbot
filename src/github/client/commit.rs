@@ -50,7 +50,8 @@ impl GithubClient {
 				self.github_api_url, owner, repo, sha, PER_PAGE_MAX, page
 			);
 
-			let page_check_runs = self.get::<String, CheckRuns>(url).await?;
+			let page_check_runs =
+				self.get::<String, GithubCheckRuns>(url).await?;
 
 			let should_break = page_check_runs.check_runs.len() < PER_PAGE_MAX;
 

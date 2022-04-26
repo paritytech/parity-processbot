@@ -150,7 +150,7 @@ impl GithubClient {
 			return Ok(token);
 		}
 
-		let installations: Vec<github::Installation> = self
+		let installations: Vec<github::GithubInstallation> = self
 			.jwt_get(&format!("{}/app/installations", self.github_api_url,))
 			.await?;
 
@@ -168,7 +168,7 @@ impl GithubClient {
 			});
 		};
 
-		let install_token: github::InstallationToken = self
+		let install_token: github::GithubInstallationToken = self
 			.jwt_post(
 				&format!(
 					"{}/app/installations/{}/access_tokens",

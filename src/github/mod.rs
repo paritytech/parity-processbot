@@ -9,7 +9,7 @@ use crate::{
 	OWNER_AND_REPO_SEQUENCE, PR_HTML_URL_REGEX,
 };
 
-pub mod client;
+mod client;
 
 pub trait HasPullRequestDetails {
 	fn get_issue_details(&self) -> Option<PullRequestDetails>;
@@ -48,7 +48,7 @@ impl GithubPullRequest {
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Contents {
+pub struct GithubFileContents {
 	pub content: String,
 }
 
@@ -109,35 +109,15 @@ pub enum GithubCommitStatusState {
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct InstallationRepositories {
-	pub repositories: Vec<GithubRepository>,
-}
-
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Installation {
+pub struct GithubInstallation {
 	pub id: i64,
 	pub account: GithubUser,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct InstallationToken {
+pub struct GithubInstallationToken {
 	pub token: String,
 	pub expires_at: Option<String>,
-}
-
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Release {
-	pub tag_name: String,
-}
-
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Ref {
-	pub object: RefObject,
-}
-
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct RefObject {
-	pub sha: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -149,7 +129,7 @@ pub enum GithubIssueCommentAction {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct CheckRuns {
+pub struct GithubCheckRuns {
 	pub check_runs: Vec<GithubCheckRun>,
 }
 
@@ -217,6 +197,7 @@ pub enum GithubWorkflowJobConclusion {
 	#[serde(other)]
 	Unknown,
 }
+
 #[derive(PartialEq, Deserialize)]
 pub struct GithubWorkflowJob {
 	pub head_sha: String,
@@ -389,4 +370,4 @@ pub fn owner_from_html_url(url: &str) -> Option<&str> {
 	url.split('/').nth(3)
 }
 
-pub use client::*;
+pub use client::GithubClient;
