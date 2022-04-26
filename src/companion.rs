@@ -486,7 +486,9 @@ pub async fn check_all_companions_are_mergeable(
 		_ => return Ok(()),
 	};
 
-	let AppState { gh_client, .. } = state;
+	let AppState {
+		gh_client, config, ..
+	} = state;
 	for PullRequestDetailsWithHtmlUrl {
 		html_url,
 		owner,
@@ -536,33 +538,35 @@ pub async fn check_all_companions_are_mergeable(
 			});
 		}
 
-		/*
-			FIXME: Get rid of this ugly hack once the Companion Build System doesn't
-			ignore the companion's CI
-		*/
-		let latest_statuses = get_commit_statuses(
-			state,
-			&companion.base.repo.owner.login,
-			&companion.base.repo.name,
-			&companion.head.sha,
-			&companion.html_url,
-			false,
-		)
-		.await?
-		.1;
+		if !config.disable_org_checks {
+			/*
+				FIXME: Get rid of this ugly hack once the Companion Build System doesn't
+				ignore the companion's CI
+			*/
+			let latest_statuses = get_commit_statuses(
+				state,
+				&companion.base.repo.owner.login,
+				&companion.base.repo.name,
+				&companion.head.sha,
+				&companion.html_url,
+				false,
+			)
+			.await?
+			.1;
 
-		const CHECK_REVIEWS_STATUS: &str = "Check reviews";
-		let reviews_are_passing = latest_statuses
-			.get(CHECK_REVIEWS_STATUS)
-			.map(|(_, state, _)| state == &GithubCommitStatusState::Success)
-			.unwrap_or(false);
-		if !reviews_are_passing {
-			return Err(Error::Message {
-				msg: format!(
-					"\"{}\" status is not passing for {}",
-					CHECK_REVIEWS_STATUS, &companion.html_url
-				),
-			});
+			const CHECK_REVIEWS_STATUS: &str = "Check reviews";
+			let reviews_are_passing = latest_statuses
+				.get(CHECK_REVIEWS_STATUS)
+				.map(|(_, state, _)| state == &GithubCommitStatusState::Success)
+				.unwrap_or(false);
+			if !reviews_are_passing {
+				return Err(Error::Message {
+					msg: format!(
+						"\"{}\" status is not passing for {}",
+						CHECK_REVIEWS_STATUS, &companion.html_url
+					),
+				});
+			}
 		}
 
 		// Keeping track of the trail of references is necessary to break chains like A -> B -> C -> A

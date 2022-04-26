@@ -82,7 +82,7 @@ async fn simple_merge_succeeds() {
 		repos_path: git_daemon_dir.path().to_path_buf(),
 		private_key: private_key.clone(),
 		webhook_proxy_url: None,
-		disable_org_check: false,
+		disable_org_checks: false,
 		github_api_url: github_api_url.clone(),
 		github_app_id: *github_app_id,
 		merge_command_delay: 0,

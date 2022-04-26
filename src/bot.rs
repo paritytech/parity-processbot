@@ -382,7 +382,7 @@ async fn handle_pull_request_comment(
 			msg: format!("Failed parsing repo name in url: {}", repo_url),
 		})?;
 
-		if !config.disable_org_check {
+		if !config.disable_org_checks {
 			gh_client.org_member(owner, requested_by).await?;
 		}
 
