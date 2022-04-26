@@ -10,12 +10,14 @@ use crate::{
 	companion::update_companion_then_merge,
 	config::MainConfig,
 	error::{self, handle_error, Error, PullRequestDetails},
+	git_ops::rebase,
 	github::*,
 	gitlab::*,
 	merge_request::{
 		check_merge_is_allowed, cleanup_merge_request,
-		handle_merged_pull_request, is_ready_to_merge, MergeRequest,
-		MergeRequestCleanupReason, MergeRequestQueuedMessage,
+		handle_merged_pull_request, is_ready_to_merge, merge_pull_request,
+		queue_merge_request, MergeRequest, MergeRequestCleanupReason,
+		MergeRequestQueuedMessage,
 	},
 	types::Result,
 	vanity_service,
@@ -899,4 +901,152 @@ pub async fn process_dependents_after_merge(
 	}
 
 	Ok(())
+}
+
+pub async fn handle_command(
+	state: &AppState,
+	cmd: &CommentCommand,
+	pr: &GithubPullRequest,
+	requested_by: &str,
+) -> Result<()> {
+	let AppState { gh_client, .. } = state;
+
+	match cmd {
+		// This command marks the start of the chain of merges. The PR where the
+		// command was received will act as the starting point for resolving further
+		// dependencies.
+		CommentCommand::Merge(cmd) => {
+			let mr = MergeRequest {
+				sha: (&pr.head.sha).into(),
+				owner: (&pr.base.repo.owner.login).into(),
+				repo: (&pr.base.repo.name).into(),
+				number: pr.number,
+				html_url: (&pr.html_url).into(),
+				requested_by: requested_by.into(),
+				// Set "was_updated" from the start so that this branch will not be updated
+				// It's important for it not to be updated because the command issuer has
+				// trusted the current commit, but not the ones coming after it (some
+				// malicious actor might want to sneak in changes after the command starts).
+				was_updated: true,
+				// This is the starting point of the merge chain, hence why always no
+				// dependencies are registered for it upfront
+				dependencies: None,
+			};
+
+			check_merge_is_allowed(state, pr, requested_by, &[]).await?;
+
+			match cmd {
+				MergeCommentCommand::Normal => {
+					if is_ready_to_merge(state, pr).await? {
+						match merge_pull_request(state, pr, requested_by)
+							.await?
+						{
+							// If the merge failure will be solved later, then register the PR in the database so that
+							// it'll eventually resume processing when later statuses arrive
+							Err(Error::MergeFailureWillBeSolvedLater {
+								msg,
+							}) => {
+								let msg = format!(
+									"This PR cannot be merged **at the moment** due to: {}\n\nprocessbot expects that the problem will be solved automatically later and so the auto-merge process will be started. You can simply wait for now.\n\n",
+									msg
+								);
+								queue_merge_request(
+									state,
+									&mr,
+									&MergeRequestQueuedMessage::Custom(&msg),
+								)
+								.await?;
+								return Err(
+									Error::MergeFailureWillBeSolvedLater {
+										msg,
+									},
+								);
+							}
+							Err(e) => return Err(e),
+							_ => (),
+						}
+					} else {
+						queue_merge_request(
+							state,
+							&mr,
+							&MergeRequestQueuedMessage::Default,
+						)
+						.await?;
+						return Ok(());
+					}
+				}
+				MergeCommentCommand::Force => {
+					match merge_pull_request(state, pr, requested_by).await? {
+						// Even if the merge failure can be solved later, it does not matter because `merge force` is
+						// supposed to be immediate. We should give up here and yield the error message.
+						Err(Error::MergeFailureWillBeSolvedLater { msg }) => {
+							return Err(Error::Message { msg })
+						}
+						Err(e) => return Err(e),
+						_ => (),
+					}
+				}
+			}
+
+			process_dependents_after_merge(state, pr, requested_by).await
+		}
+		CommentCommand::CancelMerge => {
+			log::info!("Deleting merge request for {}", pr.html_url);
+
+			cleanup_merge_request(
+				state,
+				&pr.head.sha,
+				&pr.base.repo.owner.login,
+				&pr.base.repo.name,
+				pr.number,
+				&MergeRequestCleanupReason::Cancelled,
+			)
+			.await?;
+
+			if let Err(err) = gh_client
+				.create_issue_comment(
+					&pr.base.repo.owner.login,
+					&pr.base.repo.name,
+					pr.number,
+					"Merge cancelled.",
+				)
+				.await
+			{
+				log::error!(
+					"Failed to post comment on {} due to {}",
+					pr.html_url,
+					err
+				);
+			}
+
+			Ok(())
+		}
+		CommentCommand::Rebase => {
+			if let Err(err) = gh_client
+				.create_issue_comment(
+					&pr.base.repo.owner.login,
+					&pr.base.repo.name,
+					pr.number,
+					"Rebasing",
+				)
+				.await
+			{
+				log::error!(
+					"Failed to post comment on {} due to {}",
+					pr.html_url,
+					err
+				);
+			}
+
+			rebase(
+				gh_client,
+				&pr.base.repo.owner.login,
+				&pr.base.repo.name,
+				&pr.head.repo.owner.login,
+				&pr.head.repo.name,
+				&pr.head.ref_field,
+			)
+			.await
+		}
+	}
 }
