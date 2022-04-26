@@ -22,20 +22,6 @@ impl GithubClient {
 		.await
 	}
 
-	pub async fn pull_request_with_head(
-		&self,
-		owner: &str,
-		repo: &str,
-		head: &str,
-	) -> Result<Option<GithubPullRequest>> {
-		self.get_all(format!(
-			"{}/repos/{}/{}/pulls?head={}",
-			self.github_api_url, owner, repo, head
-		))
-		.await
-		.map(|v| v.first().cloned())
-	}
-
 	pub async fn merge_pull_request(
 		&self,
 		owner: &str,
