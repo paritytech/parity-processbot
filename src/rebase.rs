@@ -58,7 +58,7 @@ async fn rebase_inner(
 	head_repo: &str,
 	branch: &str,
 ) -> Result<()> {
-	let token = gh_client.auth_key().await?;
+	let token = gh_client.auth_token().await?;
 	// clone in case the local clone doesn't exist
 	log::info!("Cloning repo.");
 	Command::new("git")

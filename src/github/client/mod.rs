@@ -117,8 +117,9 @@ impl GithubClient {
 		delete: delete_response
 	}
 
-	pub async fn auth_key(&self) -> Result<String> {
-		log::debug!("auth_key");
+	pub async fn auth_token(&self) -> Result<String> {
+		log::debug!("auth_token");
+
 		lazy_static::lazy_static! {
 			static ref TOKEN_CACHE: parking_lot::Mutex<Option<(DateTime<Utc>, String)>> = {
 				parking_lot::Mutex::new(None)
@@ -182,7 +183,7 @@ impl GithubClient {
 
 	async fn execute(&self, builder: RequestBuilder) -> Result<Response> {
 		let request = builder
-			.bearer_auth(&self.auth_key().await?)
+			.bearer_auth(&self.auth_token().await?)
 			.header(
 				header::ACCEPT,
 				"application/vnd.github.starfox-preview+json",
