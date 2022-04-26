@@ -12,7 +12,7 @@ use crate::{
 mod client;
 
 pub trait HasPullRequestDetails {
-	fn get_issue_details(&self) -> Option<PullRequestDetails>;
+	fn get_pull_request_details(&self) -> Option<PullRequestDetails>;
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -186,7 +186,7 @@ pub struct GithubWebhookIssueComment {
 	pub pull_request: Option<PlaceholderDeserializationItem>,
 }
 impl HasPullRequestDetails for GithubWebhookIssueComment {
-	fn get_issue_details(&self) -> Option<PullRequestDetails> {
+	fn get_pull_request_details(&self) -> Option<PullRequestDetails> {
 		parse_pull_request_details_from_url(&self.html_url)
 	}
 }
@@ -262,7 +262,7 @@ pub struct DetectUserCommentPullRequest {
 }
 
 impl HasPullRequestDetails for DetectUserCommentPullRequest {
-	fn get_issue_details(&self) -> Option<PullRequestDetails> {
+	fn get_pull_request_details(&self) -> Option<PullRequestDetails> {
 		if let DetectUserCommentPullRequest {
 			action: GithubIssueCommentAction::Created,
 			issue:

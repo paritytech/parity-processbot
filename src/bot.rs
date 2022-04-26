@@ -128,7 +128,7 @@ pub async fn process_webhook_request(
 				DetectUserCommentPullRequest,
 			>(&msg_bytes)
 			.ok()
-			.and_then(|detected| detected.get_issue_details());
+			.and_then(|detected| detected.get_pull_request_details());
 
 			if let Some(pr_details) = pr_details {
 				Err(Error::Message {
@@ -138,7 +138,7 @@ pub async fn process_webhook_request(
 						String::from_utf8_lossy(&msg_bytes)
 					),
 				}
-				.with_pr_details(pr_details))
+				.with_pull_request_details(pr_details))
 			} else {
 				log::info!("Ignoring payload parsing error",);
 				Ok((PullRequestMergeCancelOutcome::ShaNotFound, Ok(())))
@@ -192,9 +192,9 @@ pub async fn handle_github_payload(
 								Error::WithPullRequestDetails { .. } => err,
 								err => {
 									if let Some(details) =
-										issue.get_issue_details()
+										issue.get_pull_request_details()
 									{
-										err.with_pr_details(details)
+										err.with_pull_request_details(details)
 									} else {
 										err
 									}
@@ -320,11 +320,13 @@ pub async fn handle_github_payload(
 
 					(
 						merge_cancel_outcome,
-						Err(err.with_pr_details(PullRequestDetails {
-							owner: mr.owner,
-							repo: mr.repo,
-							number: mr.number,
-						})),
+						Err(err.with_pull_request_details(
+							PullRequestDetails {
+								owner: mr.owner,
+								repo: mr.repo,
+								number: mr.number,
+							},
+						)),
 					)
 				}
 				Err(db_err) => {
@@ -411,7 +413,7 @@ async fn handle_pull_request_comment(
 	let result = handle_command(state, &cmd, &pr, requested_by)
 		.await
 		.map_err(|err| {
-			err.with_pr_details(PullRequestDetails {
+			err.with_pull_request_details(PullRequestDetails {
 				owner: owner.into(),
 				repo: repo.into(),
 				number,

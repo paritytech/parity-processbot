@@ -465,7 +465,7 @@ pub async fn process_commit_checks_and_statuses(
 	.await
 	{
 		Ok(_) | Err(Error::MergeFailureWillBeSolvedLater { .. }) => Ok(()),
-		Err(err) => Err(err.with_pr_details(PullRequestDetails {
+		Err(err) => Err(err.with_pull_request_details(PullRequestDetails {
 			owner: pr.base.repo.owner.login,
 			repo: pr.base.repo.name,
 			number: pr.number,
@@ -645,7 +645,7 @@ pub async fn process_dependents_after_merge(
 												pr.html_url
 											),
 										}
-										.with_pr_details(PullRequestDetails {
+										.with_pull_request_details(PullRequestDetails {
 											owner: (&mr.owner).into(),
 											repo: (&mr.repo).into(),
 											number: mr.number,
@@ -734,7 +734,7 @@ pub async fn process_dependents_after_merge(
 				.await;
 				handle_error(
 					PullRequestMergeCancelOutcome::WasCancelled,
-					err.with_pr_details(PullRequestDetails {
+					err.with_pull_request_details(PullRequestDetails {
 						owner: (&dependent.owner).into(),
 						repo: (&dependent.repo).into(),
 						number: dependent.number,
@@ -844,7 +844,7 @@ pub async fn process_dependents_after_merge(
 									 pr.html_url
 								),
 							}
-							.with_pr_details(PullRequestDetails {
+							.with_pull_request_details(PullRequestDetails {
 								owner: (&dependent_of_dependent.owner).into(),
 								repo: (&dependent_of_dependent.repo).into(),
 								number: dependent_of_dependent.number,

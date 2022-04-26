@@ -109,7 +109,10 @@ pub enum Error {
 }
 
 impl Error {
-	pub fn with_pr_details(self, details: PullRequestDetails) -> Self {
+	pub fn with_pull_request_details(
+		self,
+		details: PullRequestDetails,
+	) -> Self {
 		match self {
 			Self::WithPullRequestDetails { .. } => self,
 			_ => Self::WithPullRequestDetails {
