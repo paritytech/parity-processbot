@@ -505,12 +505,7 @@ pub async fn check_all_companions_are_mergeable(
 		let has_user_owner = companion
 			.user
 			.as_ref()
-			.map(|user| {
-				user.type_field
-					.as_ref()
-					.map(|user_type| user_type == &GithubUserType::User)
-					.unwrap_or(false)
-			})
+			.map(|user| user.type_field == GithubUserType::User)
 			.unwrap_or(false);
 		if !has_user_owner {
 			return Err(Error::Message {

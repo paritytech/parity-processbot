@@ -103,15 +103,18 @@ async fn simple_merge_succeeds() {
 	let _ = handle_github_payload(
 		GithubWebhookPayload::IssueComment {
 			action: GithubIssueCommentAction::Created,
-			comment: GithubComment {
+			comment: GithubIssueComment {
 				body: "bot merge".to_string(),
-				user: Some(owner.clone()),
+				user: owner.clone(),
 			},
-			issue: GithubWebhookIssueComment {
+			issue: GithubIssue {
 				number: pr.number,
 				html_url: pr.html_url.clone(),
-				repository_url: repo.html_url.clone(),
 				pull_request: Some(PlaceholderDeserializationItem {}),
+			},
+			repository: GithubIssueRepository {
+				name: repo.name,
+				owner: owner.clone(),
 			},
 		},
 		&state,

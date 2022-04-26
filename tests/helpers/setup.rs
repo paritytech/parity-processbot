@@ -66,7 +66,7 @@ pub fn common_setup() -> CommonSetupOutput {
 	// "owner" is the placeholder user which will act as the requester for the bot's commands
 	let owner = GithubUser {
 		login: "owner".to_string(),
-		type_field: Some(GithubUserType::User),
+		type_field: GithubUserType::User,
 	};
 	let private_key = "
 -----BEGIN PRIVATE KEY-----
@@ -129,7 +129,7 @@ GcZ0izY/30012ajdHY+/QK5lsMoxTnn0skdS+spLxaS5ZEO4qvPVb8RAoCkWMMal
 			id: I64_PLACEHOLDER_WHICH_DOES_NOT_MATTER,
 			account: GithubUser {
 				login: owner.login.clone(),
-				type_field: Some(GithubUserType::Bot),
+				type_field: GithubUserType::Bot,
 			},
 		}])),
 	);

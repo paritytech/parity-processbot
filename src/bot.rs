@@ -160,54 +160,40 @@ pub async fn handle_github_payload(
 			action: GithubIssueCommentAction::Created,
 			comment,
 			issue,
-		} => match comment {
-			GithubComment {
-				ref body,
-				user:
-					Some(GithubUser {
-						ref login,
-						ref type_field,
+			repository,
+		} => {
+			if issue.pull_request.is_none()
+				|| comment.user.type_field == GithubUserType::Bot
+			{
+				(Ok(()), None)
+			} else {
+				let (sha, result) = handle_pull_request_comment(
+					state,
+					&comment.body,
+					&comment.user.login,
+					issue.number,
+					&issue.html_url,
+					repository,
+				)
+				.await;
+
+				(
+					result.map_err(|err| match err {
+						Error::WithPullRequestDetails { .. } => err,
+						err => {
+							if let Some(details) =
+								issue.get_pull_request_details()
+							{
+								err.with_pull_request_details(details)
+							} else {
+								err
+							}
+						}
 					}),
-				..
-			} => match type_field {
-				Some(GithubUserType::Bot) => (Ok(()), None),
-				_ => match &issue {
-					GithubWebhookIssueComment {
-						number,
-						html_url,
-						repository_url,
-						pull_request: Some(_),
-					} => {
-						let (sha, result) = handle_pull_request_comment(
-							body,
-							login,
-							*number,
-							html_url,
-							repository_url,
-							state,
-						)
-						.await;
-						(
-							result.map_err(|err| match err {
-								Error::WithPullRequestDetails { .. } => err,
-								err => {
-									if let Some(details) =
-										issue.get_pull_request_details()
-									{
-										err.with_pull_request_details(details)
-									} else {
-										err
-									}
-								}
-							}),
-							sha,
-						)
-					}
-					_ => (Ok(()), None),
-				},
-			},
-			_ => (Ok(()), None),
-		},
+					sha,
+				)
+			}
+		}
 		GithubWebhookPayload::CommitStatus { sha, state: status } => (
 			match status {
 				GithubCommitStatusState::Unknown => Ok(()),
@@ -356,57 +342,54 @@ pub async fn handle_github_payload(
 /// database in case of errors.
 /// The second member of the returned tuple is the result of handling the parsed command.
 async fn handle_pull_request_comment(
+	state: &AppState,
 	body: &str,
 	requested_by: &str,
 	number: i64,
 	html_url: &str,
-	repo_url: &str,
-	state: &AppState,
+	repo: GithubIssueRepository,
 ) -> (Option<String>, Result<()>) {
 	let cmd = match parse_bot_comment_from_text(body) {
 		Some(cmd) => cmd,
 		None => return (None, Ok(())),
 	};
+
 	log::info!("{:?} requested by {} in {}", cmd, requested_by, html_url);
 
 	let AppState {
 		gh_client, config, ..
 	} = state;
 
-	let (owner, repo, pr) = match async {
-		let owner = owner_from_html_url(html_url).context(error::Message {
-			msg: format!("Failed parsing owner in url: {}", html_url),
-		})?;
-
-		let repo = repo_url.rsplit('/').next().context(error::Message {
-			msg: format!("Failed parsing repo name in url: {}", repo_url),
-		})?;
-
-		if !config.disable_org_checks {
-			gh_client.org_member(owner, requested_by).await?;
+	if !config.disable_org_checks {
+		if let Err(err) =
+			gh_client.org_member(&repo.owner.login, requested_by).await
+		{
+			return (None, Err(err));
 		}
-
-		if let CommentCommand::Merge(_) = cmd {
-			// We've noticed the bot failing for no human-discernable reason when, for instance, it
-			// complained that the pull request was not mergeable when, in fact, it seemed to be, if one
-			// were to guess what the state of the Github API was at the time the response was received with
-			// "second" precision. For the lack of insight onto the Github Servers, it's assumed that those
-			// failures happened because the Github API did not update fast enough and therefore the state
-			// was invalid when the request happened, but it got cleared shortly after (possibly
-			// microseconds after, hence why it is not discernable at "second" resolution).
-			// As a workaround we'll wait for long enough so that Github hopefully has time to update the
-			// API and make our merges succeed. A proper workaround would also entail retrying every X
-			// seconds for recoverable errors such as "required statuses are missing or pending".
-			delay_for(Duration::from_millis(config.merge_command_delay)).await;
-		};
-
-		let pr = gh_client.pull_request(owner, repo, number).await?;
-
-		Ok((owner, repo, pr))
 	}
-	.await
+
+	if let CommentCommand::Merge(_) = cmd {
+		// We've noticed the bot failing for no human-discernable reason when, for
+		// instance, it complained that the pull request was not mergeable when, in
+		// fact, it seemed to be, if one were to guess what the state of the Github
+		// API was at the time the response was received with "second" precision. For
+		// the lack of insight onto the Github Servers, it's assumed that those
+		// failures happened because the Github API did not update fast enough and
+		// therefore the state was invalid when the request happened, but it got
+		// cleared shortly after (possibly microseconds after, hence why it is not
+		// discernable at "second" resolution). As a workaround we'll wait for long
+		// enough so that Github hopefully has time to update the API and make our
+		// merges succeed. A proper workaround would also entail retrying every X
+		// seconds for recoverable errors such as "required statuses are missing or
+		// pending".
+		delay_for(Duration::from_millis(config.merge_command_delay)).await;
+	};
+
+	let pr = match gh_client
+		.pull_request(&repo.owner.login, &repo.name, number)
+		.await
 	{
-		Ok(value) => value,
+		Ok(pr) => pr,
 		Err(err) => return (None, Err(err)),
 	};
 
@@ -414,8 +397,8 @@ async fn handle_pull_request_comment(
 		.await
 		.map_err(|err| {
 			err.with_pull_request_details(PullRequestDetails {
-				owner: owner.into(),
-				repo: repo.into(),
+				owner: (&pr.base.repo.owner.login).into(),
+				repo: (&pr.base.repo.name).into(),
 				number,
 			})
 		});
