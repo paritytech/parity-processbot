@@ -1,8 +1,7 @@
 use std::{borrow::Cow, time::SystemTime};
 
 use chrono::{DateTime, Duration, Utc};
-use hyperx::header::TypedHeaders;
-use reqwest::{header, IntoUrl, Method, RequestBuilder, Response};
+use reqwest::{header, IntoUrl, RequestBuilder, Response};
 use serde::Serialize;
 use snafu::ResultExt;
 
@@ -116,14 +115,6 @@ impl GithubClient {
 		put: put_response,
 		patch: patch_response,
 		delete: delete_response
-	}
-
-	pub async fn request(
-		&self,
-		method: Method,
-		url: impl IntoUrl,
-	) -> RequestBuilder {
-		self.client.request(method, url)
 	}
 
 	pub async fn auth_key(&self) -> Result<String> {
@@ -347,45 +338,5 @@ impl GithubClient {
 			}
 			return res;
 		}
-	}
-
-	// Originally adapted from:
-	// https://github.com/XAMPPRocky/gh-auditor/blob/ca67641c0a29d64fc5c6b4244b45ae601604f3c1/src/lib.rs#L232-L267
-	/// Gets a all entries across all pages from a resource in GitHub.
-	pub async fn get_all<'b, I, T>(&self, url: I) -> Result<Vec<T>>
-	where
-		I: Into<Cow<'b, str>>,
-		T: serde::de::DeserializeOwned + core::fmt::Debug,
-	{
-		log::debug!("get_all");
-		let mut entities = Vec::new();
-		let mut next = Some(url.into());
-
-		while let Some(url) = next {
-			log::debug!("getting next");
-			let response =
-				self.get_response(url, serde_json::json!({})).await?;
-
-			next = response
-				.headers()
-				.decode::<hyperx::header::Link>()
-				.ok()
-				.iter()
-				.flat_map(|v| v.values())
-				.find(|link| {
-					link.rel().map_or(false, |rel| {
-						rel.contains(&hyperx::header::RelationType::Next)
-					})
-				})
-				.map(|l| l.link())
-				.map(str::to_owned)
-				.map(Cow::Owned);
-
-			let mut body =
-				response.json::<Vec<T>>().await.context(error::Http)?;
-			entities.append(&mut body);
-		}
-
-		Ok(entities)
 	}
 }
