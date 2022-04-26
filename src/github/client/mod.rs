@@ -1,20 +1,25 @@
-use std::borrow::Cow;
-use std::time::SystemTime;
+use std::{borrow::Cow, time::SystemTime};
+
+use chrono::{DateTime, Duration, Utc};
+use reqwest::{header, IntoUrl, RequestBuilder, Response};
+use serde::Serialize;
+use snafu::ResultExt;
+
+mod commit;
+mod file;
+mod issue;
+mod org;
+mod pull_request;
 
 use crate::{
 	config::MainConfig,
 	error::{self, Error},
-	github, Result,
+	github,
+	types::Result,
 };
 
-use chrono::{DateTime, Duration, Utc};
-use hyperx::header::TypedHeaders;
-use reqwest::{header, IntoUrl, Method, RequestBuilder, Response};
-use serde::Serialize;
-use snafu::ResultExt;
-
-pub struct Client {
-	pub client: reqwest::Client,
+pub struct GithubClient {
+	client: reqwest::Client,
 	private_key: Vec<u8>,
 	installation_login: String,
 	github_app_id: usize,
@@ -37,7 +42,7 @@ macro_rules! impl_methods_with_body {
 					.context(error::Http)
 			}
 
-			pub async fn $method_response_fn<'b, I, B>(
+			async fn $method_response_fn<'b, I, B>(
 				&self,
 				url: I,
 				body: &B,
@@ -94,7 +99,7 @@ async fn handle_response(response: Response) -> Result<Response> {
 	}
 }
 
-impl Client {
+impl GithubClient {
 	pub fn new(config: &MainConfig) -> Self {
 		Self {
 			private_key: config.private_key.clone(),
@@ -112,16 +117,9 @@ impl Client {
 		delete: delete_response
 	}
 
-	pub async fn request(
-		&self,
-		method: Method,
-		url: impl IntoUrl,
-	) -> RequestBuilder {
-		self.client.request(method, url)
-	}
+	pub async fn auth_token(&self) -> Result<String> {
+		log::debug!("auth_token");
 
-	pub async fn auth_key(&self) -> Result<String> {
-		log::debug!("auth_key");
 		lazy_static::lazy_static! {
 			static ref TOKEN_CACHE: parking_lot::Mutex<Option<(DateTime<Utc>, String)>> = {
 				parking_lot::Mutex::new(None)
@@ -144,7 +142,7 @@ impl Client {
 			return Ok(token);
 		}
 
-		let installations: Vec<github::Installation> = self
+		let installations: Vec<github::GithubInstallation> = self
 			.jwt_get(&format!("{}/app/installations", self.github_api_url,))
 			.await?;
 
@@ -162,7 +160,7 @@ impl Client {
 			});
 		};
 
-		let install_token: github::InstallationToken = self
+		let install_token: github::GithubInstallationToken = self
 			.jwt_post(
 				&format!(
 					"{}/app/installations/{}/access_tokens",
@@ -185,7 +183,7 @@ impl Client {
 
 	async fn execute(&self, builder: RequestBuilder) -> Result<Response> {
 		let request = builder
-			.bearer_auth(&self.auth_key().await?)
+			.bearer_auth(&self.auth_token().await?)
 			.header(
 				header::ACCEPT,
 				"application/vnd.github.starfox-preview+json",
@@ -254,9 +252,7 @@ impl Client {
 		handle_response(response).await
 	}
 
-	/// Get a single entry from a resource in GitHub using
-	/// JWT authenication.
-	pub async fn jwt_get<T>(&self, url: impl IntoUrl) -> Result<T>
+	async fn jwt_get<T>(&self, url: impl IntoUrl) -> Result<T>
 	where
 		T: serde::de::DeserializeOwned,
 	{
@@ -268,8 +264,7 @@ impl Client {
 			.context(error::Http)
 	}
 
-	/// Posts `body` GitHub to `url` using JWT authenication.
-	pub async fn jwt_post<T>(
+	async fn jwt_post<T>(
 		&self,
 		url: impl IntoUrl,
 		body: &impl serde::Serialize,
@@ -285,8 +280,7 @@ impl Client {
 			.context(error::Http)
 	}
 
-	/// Get a single entry from a resource in GitHub.
-	pub async fn get<'b, I, T>(&self, url: I) -> Result<T>
+	async fn get<'b, I, T>(&self, url: I) -> Result<T>
 	where
 		I: Into<Cow<'b, str>> + Clone,
 		T: serde::de::DeserializeOwned + core::fmt::Debug,
@@ -300,7 +294,6 @@ impl Client {
 		res
 	}
 
-	/// Get a disembodied entry from a resource in GitHub.
 	pub async fn get_status<'b, I>(&self, url: I) -> Result<u16>
 	where
 		I: Into<Cow<'b, str>> + Clone,
@@ -313,7 +306,7 @@ impl Client {
 		Ok(res)
 	}
 
-	pub async fn get_response<'b, I, P>(
+	async fn get_response<'b, I, P>(
 		&self,
 		url: I,
 		params: P,
@@ -341,45 +334,5 @@ impl Client {
 			}
 			return res;
 		}
-	}
-
-	// Originally adapted from:
-	// https://github.com/XAMPPRocky/gh-auditor/blob/ca67641c0a29d64fc5c6b4244b45ae601604f3c1/src/lib.rs#L232-L267
-	/// Gets a all entries across all pages from a resource in GitHub.
-	pub async fn get_all<'b, I, T>(&self, url: I) -> Result<Vec<T>>
-	where
-		I: Into<Cow<'b, str>>,
-		T: serde::de::DeserializeOwned + core::fmt::Debug,
-	{
-		log::debug!("get_all");
-		let mut entities = Vec::new();
-		let mut next = Some(url.into());
-
-		while let Some(url) = next {
-			log::debug!("getting next");
-			let response =
-				self.get_response(url, serde_json::json!({})).await?;
-
-			next = response
-				.headers()
-				.decode::<hyperx::header::Link>()
-				.ok()
-				.iter()
-				.flat_map(|v| v.values())
-				.find(|link| {
-					link.rel().map_or(false, |rel| {
-						rel.contains(&hyperx::header::RelationType::Next)
-					})
-				})
-				.map(|l| l.link())
-				.map(str::to_owned)
-				.map(Cow::Owned);
-
-			let mut body =
-				response.json::<Vec<T>>().await.context(error::Http)?;
-			entities.append(&mut body);
-		}
-
-		Ok(entities)
 	}
 }

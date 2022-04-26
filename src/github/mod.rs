@@ -1,31 +1,35 @@
-use crate::{
-	companion::{parse_all_companions, CompanionReferenceTrailItem},
-	error::*,
-	utils::parse_bot_comment_from_text,
-	PlaceholderDeserializationItem, OWNER_AND_REPO_SEQUENCE, PR_HTML_URL_REGEX,
-};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
+use crate::{
+	bot::parse_bot_comment_from_text,
+	companion::{parse_all_companions, CompanionReferenceTrailItem},
+	error::*,
+	types::PlaceholderDeserializationItem,
+	OWNER_AND_REPO_SEQUENCE, PR_HTML_URL_REGEX,
+};
+
+mod client;
+
 pub trait HasPullRequestDetails {
-	fn get_issue_details(&self) -> Option<PullRequestDetails>;
+	fn get_pull_request_details(&self) -> Option<PullRequestDetails>;
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct PullRequest {
+pub struct GithubPullRequest {
 	pub url: String,
 	pub html_url: String,
 	pub number: i64,
-	pub user: Option<User>,
+	pub user: Option<GithubUser>,
 	pub body: Option<String>,
-	pub head: Head,
-	pub base: Base,
+	pub head: GithubPullRequestHead,
+	pub base: GithubPullRequestBase,
 	pub mergeable: Option<bool>,
 	pub merged: bool,
 	pub maintainer_can_modify: bool,
 }
 
-impl PullRequest {
+impl GithubPullRequest {
 	pub fn parse_all_companions(
 		&self,
 		companion_reference_trail: &[CompanionReferenceTrailItem],
@@ -44,86 +48,26 @@ impl PullRequest {
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Issue {
-	pub number: i64,
-	pub html_url: String,
-	// User might be missing when it has been deleted
-	pub user: Option<User>,
-	pub body: Option<String>,
-	pub pull_request: Option<PlaceholderDeserializationItem>,
-	pub repository: Option<Repository>,
-	pub repository_url: Option<String>,
-}
-
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Contents {
+pub struct GithubFileContents {
 	pub content: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Event {
-	AddedToProject,
-	RemovedFromProject,
-	#[serde(other)]
-	Unknown,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct IssueEvent {
-	pub project_card: Option<ProjectCard>,
-	pub event: Option<Event>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Comment {
+pub struct GithubComment {
 	pub body: String,
 	// User might be missing when it has been deleted
-	pub user: Option<User>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ProjectCard {
-	pub id: Option<i64>,
-	pub project_id: Option<i64>,
-	pub project_url: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Project {
-	pub id: Option<i64>,
-	pub name: String,
-	pub columns_url: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum ProjectCardContentType {
-	Issue,
-	PullRequest,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ProjectColumn {
-	pub name: Option<String>,
+	pub user: Option<GithubUser>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Head {
-	pub sha: String,
-	pub repo: HeadRepo,
+pub struct GithubPullRequestBase {
 	#[serde(rename = "ref")]
 	pub ref_field: String,
-}
-
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Base {
-	#[serde(rename = "ref")]
-	pub ref_field: String,
-	pub repo: BaseRepo,
+	pub repo: GithubPullRequestBaseRepository,
 }
 
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
-pub enum UserType {
+pub enum GithubUserType {
 	User,
 	Bot,
 	#[serde(other)]
@@ -131,37 +75,32 @@ pub enum UserType {
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct User {
+pub struct GithubUser {
 	pub login: String,
 	#[serde(rename = "type")]
-	pub type_field: Option<UserType>,
+	pub type_field: Option<GithubUserType>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Label {
-	pub name: String,
-}
-
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Repository {
+pub struct GithubRepository {
 	pub name: String,
 	pub full_name: String,
-	pub owner: User,
+	pub owner: GithubUser,
 	pub html_url: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Status {
+pub struct GithubCommitStatus {
 	pub id: i64,
 	pub context: String,
-	pub state: StatusState,
+	pub state: GithubCommitStatusState,
 	pub description: Option<String>,
 	pub target_url: Option<String>,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum StatusState {
+pub enum GithubCommitStatusState {
 	Success,
 	Error,
 	Failure,
@@ -170,65 +109,53 @@ pub enum StatusState {
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct InstallationRepositories {
-	pub repositories: Vec<Repository>,
-}
-
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Installation {
+pub struct GithubInstallation {
 	pub id: i64,
-	pub account: User,
+	pub account: GithubUser,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct InstallationToken {
+pub struct GithubInstallationToken {
 	pub token: String,
 	pub expires_at: Option<String>,
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Release {
-	pub tag_name: String,
-}
-
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Ref {
-	pub object: RefObject,
-}
-
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct RefObject {
-	pub sha: String,
-}
-
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum IssueCommentAction {
+pub enum GithubIssueCommentAction {
 	Created,
 	#[serde(other)]
 	Unknown,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct CheckRuns {
-	pub check_runs: Vec<CheckRun>,
+pub struct GithubCheckRuns {
+	pub check_runs: Vec<GithubCheckRun>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct HeadRepo {
+pub struct GithubPullRequestHeadRepository {
 	pub name: String,
-	pub owner: User,
+	pub owner: GithubUser,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct BaseRepo {
+pub struct GithubPullRequestHead {
+	pub sha: String,
+	pub repo: GithubPullRequestHeadRepository,
+	#[serde(rename = "ref")]
+	pub ref_field: String,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GithubPullRequestBaseRepository {
 	pub name: String,
-	pub owner: User,
+	pub owner: GithubUser,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum CheckRunConclusion {
+pub enum GithubCheckRunConclusion {
 	Success,
 	#[serde(other)]
 	Unknown,
@@ -236,54 +163,54 @@ pub enum CheckRunConclusion {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum CheckRunStatus {
+pub enum GithubCheckRunStatus {
 	Completed,
 	#[serde(other)]
 	Unknown,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct CheckRun {
+pub struct GithubCheckRun {
 	pub id: i64,
 	pub name: String,
-	pub status: CheckRunStatus,
-	pub conclusion: Option<CheckRunConclusion>,
+	pub status: GithubCheckRunStatus,
+	pub conclusion: Option<GithubCheckRunConclusion>,
 	pub head_sha: String,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct WebhookIssueComment {
+pub struct GithubWebhookIssueComment {
 	pub number: i64,
 	pub html_url: String,
 	pub repository_url: String,
 	pub pull_request: Option<PlaceholderDeserializationItem>,
 }
-
-impl HasPullRequestDetails for WebhookIssueComment {
-	fn get_issue_details(&self) -> Option<PullRequestDetails> {
-		parse_issue_details_from_pr_html_url(&self.html_url)
+impl HasPullRequestDetails for GithubWebhookIssueComment {
+	fn get_pull_request_details(&self) -> Option<PullRequestDetails> {
+		parse_pull_request_details_from_url(&self.html_url)
 	}
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum WorkflowJobConclusion {
+pub enum GithubWorkflowJobConclusion {
 	#[serde(other)]
 	Unknown,
 }
+
 #[derive(PartialEq, Deserialize)]
-pub struct WorkflowJob {
+pub struct GithubWorkflowJob {
 	pub head_sha: String,
-	pub conclusion: Option<WorkflowJobConclusion>,
+	pub conclusion: Option<GithubWorkflowJobConclusion>,
 }
 
 #[derive(PartialEq, Deserialize)]
 #[serde(untagged)]
-pub enum Payload {
+pub enum GithubWebhookPayload {
 	IssueComment {
-		action: IssueCommentAction,
-		issue: WebhookIssueComment,
-		comment: Comment,
+		action: GithubIssueCommentAction,
+		issue: GithubWebhookIssueComment,
+		comment: GithubComment,
 	},
 	CommitStatus {
 		// FIXME: This payload also has a field `repository` for the repository where the status
@@ -292,13 +219,13 @@ pub enum Payload {
 		// there's no way to disambiguate between two different PRs in two different repositories with
 		// the same head SHA.
 		sha: String,
-		state: StatusState,
+		state: GithubCommitStatusState,
 	},
 	CheckRun {
-		check_run: CheckRun,
+		check_run: GithubCheckRun,
 	},
 	WorkflowJob {
-		workflow_job: WorkflowJob,
+		workflow_job: GithubWorkflowJob,
 	},
 }
 
@@ -311,7 +238,7 @@ struct DetectUserCommentPullRequestPullRequest {
 struct DetectUserCommentPullRequestRepository {
 	pub name: Option<String>,
 	pub full_name: Option<String>,
-	pub owner: Option<User>,
+	pub owner: Option<GithubUser>,
 }
 
 #[derive(Deserialize)]
@@ -327,17 +254,17 @@ struct DetectUserCommentPullRequestComment {
 
 #[derive(Deserialize)]
 pub struct DetectUserCommentPullRequest {
-	action: IssueCommentAction,
+	action: GithubIssueCommentAction,
 	issue: Option<DetectUserCommentPullRequestIssue>,
 	repository: Option<DetectUserCommentPullRequestRepository>,
-	sender: Option<User>,
+	sender: Option<GithubUser>,
 	comment: Option<DetectUserCommentPullRequestComment>,
 }
 
 impl HasPullRequestDetails for DetectUserCommentPullRequest {
-	fn get_issue_details(&self) -> Option<PullRequestDetails> {
+	fn get_pull_request_details(&self) -> Option<PullRequestDetails> {
 		if let DetectUserCommentPullRequest {
-			action: IssueCommentAction::Created,
+			action: GithubIssueCommentAction::Created,
 			issue:
 				Some(DetectUserCommentPullRequestIssue {
 					number,
@@ -350,8 +277,8 @@ impl HasPullRequestDetails for DetectUserCommentPullRequest {
 		} = self
 		{
 			match self.sender {
-				Some(User {
-					type_field: Some(UserType::Bot),
+				Some(GithubUser {
+					type_field: Some(GithubUserType::Bot),
 					..
 				}) => None,
 				_ => {
@@ -359,7 +286,7 @@ impl HasPullRequestDetails for DetectUserCommentPullRequest {
 
 					if let Some(DetectUserCommentPullRequestRepository {
 						name: Some(name),
-						owner: Some(User { login, .. }),
+						owner: Some(GithubUser { login, .. }),
 						..
 					}) = repository
 					{
@@ -393,7 +320,7 @@ impl HasPullRequestDetails for DetectUserCommentPullRequest {
 							html_url: Some(html_url),
 						} = pr
 						{
-							parse_issue_details_from_pr_html_url(html_url)
+							parse_pull_request_details_from_url(html_url)
 						} else {
 							None
 						}
@@ -406,7 +333,7 @@ impl HasPullRequestDetails for DetectUserCommentPullRequest {
 	}
 }
 
-pub fn parse_issue_details_from_pr_html_url(
+fn parse_pull_request_details_from_url(
 	pr_html_url: &str,
 ) -> Option<PullRequestDetails> {
 	let re = Regex::new(PR_HTML_URL_REGEX!()).unwrap();
@@ -426,7 +353,8 @@ pub fn parse_issue_details_from_pr_html_url(
 	})
 }
 
-pub fn parse_repository_full_name(full_name: &str) -> Option<(String, String)> {
+/// full_name is org/repo
+fn parse_repository_full_name(full_name: &str) -> Option<(String, String)> {
 	let parts: Vec<&str> = full_name.split('/').collect();
 	parts
 		.get(0)
@@ -441,3 +369,5 @@ pub fn parse_repository_full_name(full_name: &str) -> Option<(String, String)> {
 pub fn owner_from_html_url(url: &str) -> Option<&str> {
 	url.split('/').nth(3)
 }
+
+pub use client::GithubClient;

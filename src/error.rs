@@ -1,5 +1,7 @@
 use snafu::Snafu;
 
+use crate::core::{AppState, PullRequestMergeCancelOutcome};
+
 #[derive(Debug)]
 pub struct PullRequestDetails {
 	pub owner: String,
@@ -107,7 +109,10 @@ pub enum Error {
 }
 
 impl Error {
-	pub fn with_pr_details(self, details: PullRequestDetails) -> Self {
+	pub fn with_pull_request_details(
+		self,
+		details: PullRequestDetails,
+	) -> Self {
 		match self {
 			Self::WithPullRequestDetails { .. } => self,
 			_ => Self::WithPullRequestDetails {
@@ -124,5 +129,68 @@ impl Error {
 			Self::MergeFailureWillBeSolvedLater { .. } => false,
 			_ => true,
 		}
+	}
+}
+
+pub async fn handle_error(
+	merge_cancel_outcome: PullRequestMergeCancelOutcome,
+	err: Error,
+	state: &AppState,
+) {
+	log::info!("handle_error: {}", err);
+	match err {
+		Error::MergeFailureWillBeSolvedLater { .. } => (),
+		err => {
+			if let Error::WithPullRequestDetails {
+				source,
+				details:
+					PullRequestDetails {
+						owner,
+						repo,
+						number,
+					},
+				..
+			} = err
+			{
+				match *source {
+					Error::MergeFailureWillBeSolvedLater { .. } => (),
+					err => {
+						let msg = {
+							let description = format_error(state, err);
+							let caption = match merge_cancel_outcome {
+								PullRequestMergeCancelOutcome::ShaNotFound  => "",
+								PullRequestMergeCancelOutcome::WasCancelled => "Merge cancelled due to error.",
+								PullRequestMergeCancelOutcome::WasNotCancelled => "Some error happened, but the merge was not cancelled (likely due to a bug).",
+							};
+							format!("{} Error: {}", caption, description)
+						};
+						if let Err(comment_post_err) = state
+							.gh_client
+							.create_issue_comment(&owner, &repo, number, &msg)
+							.await
+						{
+							log::error!(
+								"Error posting comment: {}",
+								comment_post_err
+							);
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+fn format_error(_state: &AppState, err: Error) -> String {
+	match err {
+		Error::Response {
+			ref body,
+			ref status,
+		} => format!(
+			"Response error (status {}): <pre><code>{}</code></pre>",
+			status,
+			html_escape::encode_safe(&body.to_string())
+		),
+		_ => format!("{}", err),
 	}
 }

@@ -1,42 +1,25 @@
+use super::GithubClient;
 use crate::{
 	companion::CompanionReferenceTrailItem,
+	config::MainConfig,
 	error::Error,
 	github::*,
-	github_bot::MainConfig,
-	webhook::{Dependency, MergeRequest},
-	Result,
+	merge_request::{MergeRequest, MergeRequestDependency},
+	types::Result,
 };
 
-use super::GithubBot;
-
-impl GithubBot {
+impl GithubClient {
 	pub async fn pull_request(
 		&self,
 		owner: &str,
 		repo: &str,
 		number: i64,
-	) -> Result<PullRequest> {
-		self.client
-			.get(format!(
-				"{}/repos/{}/{}/pulls/{}",
-				self.github_api_url, owner, repo, number
-			))
-			.await
-	}
-
-	pub async fn pull_request_with_head(
-		&self,
-		owner: &str,
-		repo: &str,
-		head: &str,
-	) -> Result<Option<PullRequest>> {
-		self.client
-			.get_all(format!(
-				"{}/repos/{}/{}/pulls?head={}",
-				self.github_api_url, owner, repo, head
-			))
-			.await
-			.map(|v| v.first().cloned())
+	) -> Result<GithubPullRequest> {
+		self.get(format!(
+			"{}/repos/{}/{}/pulls/{}",
+			self.github_api_url, owner, repo, number
+		))
+		.await
 	}
 
 	pub async fn merge_pull_request(
@@ -54,13 +37,13 @@ impl GithubBot {
 			"sha": head_sha,
 			"merge_method": "squash"
 		});
-		self.client.put_response(&url, &params).await.map(|_| ())
+		self.put_response(&url, &params).await.map(|_| ())
 	}
 
 	pub async fn resolve_pr_dependents(
 		&self,
 		config: &MainConfig,
-		pr: &PullRequest,
+		pr: &GithubPullRequest,
 		requested_by: &str,
 		companion_reference_trail: &[CompanionReferenceTrailItem],
 	) -> Result<Option<Vec<MergeRequest>>, Error> {
@@ -70,7 +53,7 @@ impl GithubBot {
 				None => return Ok(None),
 			};
 
-		let parent_dependency = Dependency {
+		let parent_dependency = MergeRequestDependency {
 			sha: (&pr.head.sha).into(),
 			owner: (&pr.base.repo.owner.login).into(),
 			repo: (&pr.base.repo.name).into(),
@@ -167,7 +150,7 @@ impl GithubBot {
 											other_comp.number,
 										)
 										.await?;
-									dependencies.push(Dependency {
+									dependencies.push(MergeRequestDependency {
 										owner: other_comp_pr.base.repo.owner.login,
 										repo: other_comp_pr.base.repo.name,
 										sha: other_comp_pr.head.sha,

@@ -1,10 +1,10 @@
 use snafu::ResultExt;
 use tokio::process::Command;
 
-use crate::{error::*, github_bot::GithubBot, Result};
+use crate::{error::*, github::GithubClient, types::Result};
 
 pub async fn rebase(
-	github_bot: &GithubBot,
+	gh_client: &GithubClient,
 	base_owner: &str,
 	base_repo: &str,
 	head_owner: &str,
@@ -12,7 +12,7 @@ pub async fn rebase(
 	branch: &str,
 ) -> Result<()> {
 	let res = rebase_inner(
-		github_bot, base_owner, base_repo, head_owner, head_repo, branch,
+		gh_client, base_owner, base_repo, head_owner, head_repo, branch,
 	)
 	.await;
 	// checkout origin master
@@ -51,14 +51,14 @@ pub async fn rebase(
 }
 
 async fn rebase_inner(
-	github_bot: &GithubBot,
+	gh_client: &GithubClient,
 	base_owner: &str,
 	base_repo: &str,
 	head_owner: &str,
 	head_repo: &str,
 	branch: &str,
 ) -> Result<()> {
-	let token = github_bot.client.auth_key().await?;
+	let token = gh_client.auth_token().await?;
 	// clone in case the local clone doesn't exist
 	log::info!("Cloning repo.");
 	Command::new("git")

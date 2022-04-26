@@ -1,12 +1,13 @@
-use httptest::{matchers::*, responders::*, Expectation, Server};
-use parity_processbot::{self, github};
-use serde_json::json;
 use std::{
 	env, fs,
 	io::Write,
 	path::PathBuf,
 	process::{self, Command, Stdio},
 };
+
+use httptest::{matchers::*, responders::*, Expectation, Server};
+use parity_processbot::{self, github::*};
+use serde_json::json;
 use tempfile::TempDir;
 
 use super::{cmd::*, constants::*, *};
@@ -19,7 +20,7 @@ pub struct CommonSetupOutput {
 	pub private_key: Vec<u8>,
 	pub github_api: Server,
 	pub github_api_url: String,
-	pub owner: github::User,
+	pub owner: GithubUser,
 	pub repo_name: &'static str,
 	pub repo_dir: PathBuf,
 	pub repo_full_name: String,
@@ -63,9 +64,9 @@ pub fn common_setup() -> CommonSetupOutput {
 		.unwrap();
 
 	// "owner" is the placeholder user which will act as the requester for the bot's commands
-	let owner = github::User {
+	let owner = GithubUser {
 		login: "owner".to_string(),
-		type_field: Some(github::UserType::User),
+		type_field: Some(GithubUserType::User),
 	};
 	let private_key = "
 -----BEGIN PRIVATE KEY-----
@@ -124,11 +125,11 @@ GcZ0izY/30012ajdHY+/QK5lsMoxTnn0skdS+spLxaS5ZEO4qvPVb8RAoCkWMMal
 			"/app/installations",
 		))
 		.times(0..)
-		.respond_with(json_encoded(vec![github::Installation {
+		.respond_with(json_encoded(vec![GithubInstallation {
 			id: I64_PLACEHOLDER_WHICH_DOES_NOT_MATTER,
-			account: github::User {
+			account: GithubUser {
 				login: owner.login.clone(),
-				type_field: Some(github::UserType::Bot),
+				type_field: Some(GithubUserType::Bot),
 			},
 		}])),
 	);
@@ -141,7 +142,7 @@ GcZ0izY/30012ajdHY+/QK5lsMoxTnn0skdS+spLxaS5ZEO4qvPVb8RAoCkWMMal
 			),
 		))
 		.times(0..)
-		.respond_with(json_encoded(github::InstallationToken {
+		.respond_with(json_encoded(GithubInstallationToken {
 			token: "does not matter".to_string(),
 			expires_at: None,
 		})),
@@ -194,11 +195,11 @@ pub fn setup_commit(setup: &CommonSetupOutput, sha: &str) {
 			format!("/repos/{}/{}/statuses/{}", &owner.login, repo_name, sha),
 		))
 		.times(0..)
-		.respond_with(json_encoded(vec![github::Status {
+		.respond_with(json_encoded(vec![GithubCommitStatus {
 			id: 1,
 			context: "does not matter".to_string(),
 			description: Some("does not matter".to_string()),
-			state: github::StatusState::Success,
+			state: GithubCommitStatusState::Success,
 			target_url: None,
 		}])),
 	);
@@ -212,12 +213,12 @@ pub fn setup_commit(setup: &CommonSetupOutput, sha: &str) {
 			),
 		))
 		.times(0..)
-		.respond_with(json_encoded(github::CheckRuns {
-			check_runs: vec![github::CheckRun {
+		.respond_with(json_encoded(GithubCheckRuns {
+			check_runs: vec![GithubCheckRun {
 				id: 1,
 				name: "does not matter".to_string(),
-				status: github::CheckRunStatus::Completed,
-				conclusion: Some(github::CheckRunConclusion::Success),
+				status: GithubCheckRunStatus::Completed,
+				conclusion: Some(GithubCheckRunConclusion::Success),
 				head_sha: sha.to_string(),
 			}],
 		})),
@@ -231,7 +232,7 @@ pub struct SetupPullRequestOutput {
 }
 pub fn setup_pull_request(
 	setup: &CommonSetupOutput,
-	repo: &github::Repository,
+	repo: &GithubRepository,
 	head_sha: &str,
 	pr_branch: &str,
 	number: i64,
@@ -337,24 +338,24 @@ pub fn setup_pull_request(
 			pr_api_path.to_string(),
 		))
 		.times(0..)
-		.respond_with(json_encoded(github::PullRequest {
+		.respond_with(json_encoded(GithubPullRequest {
 			body: None,
 			number,
 			mergeable: Some(true),
 			html_url: html_url.clone(),
 			url: url.clone(),
 			user: Some(owner.clone()),
-			base: github::Base {
+			base: GithubPullRequestBase {
 				ref_field: base_branch.to_string(),
-				repo: github::BaseRepo {
+				repo: GithubPullRequestBaseRepository {
 					name: repo.name.clone(),
 					owner: owner.clone(),
 				},
 			},
-			head: github::Head {
+			head: GithubPullRequestHead {
 				ref_field: pr_branch.to_string(),
 				sha: head_sha.to_string(),
-				repo: github::HeadRepo {
+				repo: GithubPullRequestHeadRepository {
 					name: repo.name.clone(),
 					owner: owner.clone(),
 				},

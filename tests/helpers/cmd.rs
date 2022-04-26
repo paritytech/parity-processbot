@@ -1,9 +1,9 @@
-use std::ffi::OsStr;
-use std::fmt::Debug;
-use std::fmt::Display;
-use std::path::Path;
-use std::process::Command;
-use std::process::Stdio;
+use std::{
+	ffi::OsStr,
+	fmt::{Debug, Display},
+	path::Path,
+	process::{Command, Stdio},
+};
 
 pub enum CmdConfiguration<'a> {
 	IgnoreStderrStartingWith(&'a [&'a str]),

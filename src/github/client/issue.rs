@@ -1,8 +1,7 @@
-use crate::Result;
+use super::GithubClient;
+use crate::types::Result;
 
-use super::GithubBot;
-
-impl GithubBot {
+impl GithubClient {
 	pub async fn create_issue_comment(
 		&self,
 		owner: &str,
@@ -14,8 +13,7 @@ impl GithubBot {
 			"{}/repos/{}/{}/issues/{}/comments",
 			self.github_api_url, owner, repo, number
 		);
-		self.client
-			.post_response(&url, &serde_json::json!({ "body": comment }))
+		self.post_response(&url, &serde_json::json!({ "body": comment }))
 			.await
 			.map(|_| ())
 	}
