@@ -95,28 +95,29 @@ impl MainConfig {
 		let dependency_update_configuration = {
 			let mut dependency_update_configuration = HashMap::new();
 
-			let configuration_raw =
-				dotenv::var("DEPENDENCY_UPDATE_CONFIGURATION").unwrap();
+			if let Some(raw_configuration) =
+				dotenv::var("DEPENDENCY_UPDATE_CONFIGURATION").ok()
+			{
+				for token in raw_configuration.split(':') {
+					let token_parsing_err_msg = format!(
+						"$DEPENDENCY_UPDATE_CONFIGURATION segment \"{}\" should be of the form REPOSITORY=DEPENDENCY,DEPENDENCY,...",
+						token
+					);
 
-			for token in configuration_raw.split(':') {
-				let token_parsing_err_msg = format!(
-					"$DEPENDENCY_UPDATE_CONFIGURATION segment \"{}\" should be of the form REPOSITORY=DEPENDENCY,DEPENDENCY,...",
-					token
-				);
+					let mut token_parts = token.split('=');
+					let repository =
+						token_parts.next().expect(&token_parsing_err_msg);
+					let dependencies =
+						token_parts.next().expect(&token_parsing_err_msg);
+					if token_parts.next().is_some() {
+						panic!("{}", token_parsing_err_msg)
+					}
 
-				let mut token_parts = token.split('=');
-				let repository =
-					token_parts.next().expect(&token_parsing_err_msg);
-				let dependencies =
-					token_parts.next().expect(&token_parsing_err_msg);
-				if token_parts.next().is_some() {
-					panic!("{}", token_parsing_err_msg)
+					dependency_update_configuration.insert(
+						repository.into(),
+						dependencies.split(',').map(|dep| dep.into()).collect(),
+					);
 				}
-
-				dependency_update_configuration.insert(
-					repository.into(),
-					dependencies.split(',').map(|dep| dep.into()).collect(),
-				);
 			}
 
 			dependency_update_configuration
