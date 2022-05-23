@@ -95,8 +95,8 @@ impl MainConfig {
 		let dependency_update_configuration = {
 			let mut dependency_update_configuration = HashMap::new();
 
-			if let Some(raw_configuration) =
-				dotenv::var("DEPENDENCY_UPDATE_CONFIGURATION").ok()
+			if let Ok(raw_configuration) =
+				dotenv::var("DEPENDENCY_UPDATE_CONFIGURATION")
 			{
 				for token in raw_configuration.split(':') {
 					let token_parsing_err_msg = format!(
