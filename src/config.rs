@@ -115,7 +115,7 @@ impl MainConfig {
 
 					dependency_update_configuration.insert(
 						repository.into(),
-						dependencies.split(',').map(|dep| dep.into()).collect(),
+						dependencies.split('+').map(|dep| dep.into()).collect(),
 					);
 				}
 			}
