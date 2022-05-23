@@ -109,6 +109,7 @@ dockerize-processbot:
       --set "app.WEBHOOK_SECRET=${WEBHOOK_SECRET}"
       --set "app.GITLAB_URL=${GITLAB_URL}"
       --set "app.GITLAB_ACCESS_TOKEN=${GITLAB_ACCESS_TOKEN}"
+      --set "app.DEPENDENCY_UPDATE_CONFIGURATION=${DEPENDENCY_UPDATE_CONFIGURATION}"
 
 deploy-staging:
   stage:                           deploy

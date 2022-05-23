@@ -1,4 +1,4 @@
-use std::fs;
+use std::{collections::HashMap, fs};
 
 use insta::assert_snapshot;
 use parity_processbot::{
@@ -91,6 +91,7 @@ async fn simple_merge_succeeds() {
 		github_source_suffix: "".into(),
 		gitlab_url: "".into(),
 		gitlab_access_token: "".into(),
+		dependency_update_configuration: HashMap::new(),
 	};
 	let gh_client = GithubClient::new(&config);
 	let db = DB::open_default(&config.db_path).unwrap();

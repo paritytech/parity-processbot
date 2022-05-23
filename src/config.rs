@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{collections::HashMap, path::PathBuf};
 
 #[derive(Debug, Clone)]
 pub struct MainConfig {
@@ -18,6 +18,7 @@ pub struct MainConfig {
 	pub github_source_suffix: String,
 	pub gitlab_url: String,
 	pub gitlab_access_token: String,
+	pub dependency_update_configuration: HashMap<String, Vec<String>>,
 }
 
 impl MainConfig {
@@ -91,6 +92,40 @@ impl MainConfig {
 		let gitlab_url = dotenv::var("GITLAB_URL").unwrap();
 		let gitlab_access_token = dotenv::var("GITLAB_ACCESS_TOKEN").unwrap();
 
+		let dependency_update_configuration = {
+			let mut dependency_update_configuration = HashMap::new();
+
+			let configuration_raw =
+				dotenv::var("DEPENDENCY_UPDATE_CONFIGURATION").unwrap();
+
+			for token in configuration_raw.split(':') {
+				let token_parsing_err_msg = format!(
+					"$DEPENDENCY_UPDATE_CONFIGURATION segment \"{}\" should be of the form REPOSITORY=DEPENDENCY,DEPENDENCY,...",
+					token
+				);
+
+				let mut token_parts = token.split('=');
+				let repository =
+					token_parts.next().expect(&token_parsing_err_msg);
+				let dependencies =
+					token_parts.next().expect(&token_parsing_err_msg);
+				if token_parts.next().is_some() {
+					panic!("{}", token_parsing_err_msg)
+				}
+
+				dependency_update_configuration.insert(
+					repository.into(),
+					dependencies.split(',').map(|dep| dep.into()).collect(),
+				);
+			}
+
+			dependency_update_configuration
+		};
+		log::info!(
+			"dependency_update_configuration: {:?}",
+			dependency_update_configuration
+		);
+
 		Self {
 			installation_login,
 			webhook_secret,
@@ -108,6 +143,7 @@ impl MainConfig {
 			github_source_suffix,
 			gitlab_url,
 			gitlab_access_token,
+			dependency_update_configuration,
 		}
 	}
 }
