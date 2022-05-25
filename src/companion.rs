@@ -39,7 +39,7 @@ async fn update_pr_branch(
 	contributor: &str,
 	contributor_repo: &str,
 	contributor_branch: &str,
-	dependencies_to_update: &HashSet<&String>,
+	inferred_dependencies_to_update: &HashSet<&String>,
 	number: i64,
 ) -> Result<String> {
 	let AppState {
@@ -257,6 +257,19 @@ async fn update_pr_branch(
 		return Err(e);
 	}
 
+	let dependencies_to_update = {
+		let mut dependencies_to_update =
+			inferred_dependencies_to_update.clone();
+		if let Some(dependencies_to_update_from_config) =
+			config.dependency_update_configuration.get(owner_repo)
+		{
+			for dep in dependencies_to_update_from_config.iter() {
+				dependencies_to_update.insert(dep);
+			}
+		};
+		dependencies_to_update
+	};
+
 	log::info!(
 		"Dependencies to update for {}/{}/pull/{}: {:?}",
 		owner,
@@ -264,7 +277,7 @@ async fn update_pr_branch(
 		number,
 		dependencies_to_update
 	);
-	for dependency_to_update in dependencies_to_update {
+	for dependency_to_update in dependencies_to_update.iter() {
 		let source_to_update = format!(
 			"{}/{}/{}{}",
 			config.github_source_prefix,

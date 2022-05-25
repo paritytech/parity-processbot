@@ -85,6 +85,8 @@ spec:
               value: {{ quote .Values.app.START_FROM_CWD }}
             - name: GITHUB_APP_ID
               value: {{ quote .Values.app.GITHUB_APP_ID }}
+            - name: DEPENDENCY_UPDATE_CONFIGURATION
+              value: {{ quote .Values.app.DEPENDENCY_UPDATE_CONFIGURATION }}
             - name: DB_PATH
               value: {{ .Values.config.storagePath }}/db
             - name: REPOSITORIES_PATH
