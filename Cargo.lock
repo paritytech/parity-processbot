@@ -857,9 +857,9 @@ dependencies = [
 
 [[package]]
 name = "hyper"
-version = "0.13.6"
+version = "0.13.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a6e7655b9594024ad0ee439f3b5a7299369dc2a3f459b47c696f9ff676f9aa1f"
+checksum = "8a6f157065790a3ed2f88679250419b5cdd96e714a0d65f7797fd337186e96bb"
 dependencies = [
  "bytes 0.5.5",
  "futures-channel",
@@ -869,13 +869,13 @@ dependencies = [
  "http",
  "http-body 0.3.1",
  "httparse",
+ "httpdate",
  "itoa",
- "log",
- "pin-project 0.4.22",
+ "pin-project",
  "socket2",
- "time",
  "tokio 0.2.21",
  "tower-service",
+ "tracing",
  "want",
 ]
 
@@ -895,7 +895,7 @@ dependencies = [
  "httparse",
  "httpdate",
  "itoa",
- "pin-project 1.0.8",
+ "pin-project",
  "socket2",
  "tokio 1.12.0",
  "tower-service",
@@ -910,7 +910,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3adcd308402b9553630734e9c36b77a7e48b3821251ca2493e8cd596763aafaa"
 dependencies = [
  "bytes 0.5.5",
- "hyper 0.13.6",
+ "hyper 0.13.10",
  "native-tls",
  "tokio 0.2.21",
  "tokio-tls",
@@ -1408,7 +1408,7 @@ dependencies = [
  "futures-util",
  "html-escape",
  "httptest",
- "hyper 0.13.6",
+ "hyper 0.14.4",
  "hyperx",
  "insta",
  "itertools",
@@ -1487,31 +1487,11 @@ checksum = "d4fd5641d01c8f18a23da7b6fe29298ff4b55afcccdf78973b24cf3175fee32e"
 
 [[package]]
 name = "pin-project"
-version = "0.4.22"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "12e3a6cdbfe94a5e4572812a0201f8c0ed98c1c452c7b8563ce2276988ef9c17"
-dependencies = [
- "pin-project-internal 0.4.22",
-]
-
-[[package]]
-name = "pin-project"
 version = "1.0.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "576bc800220cc65dac09e99e97b08b358cfab6e17078de8dc5fee223bd2d0c08"
 dependencies = [
- "pin-project-internal 1.0.8",
-]
-
-[[package]]
-name = "pin-project-internal"
-version = "0.4.22"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6a0ffd45cf79d88737d7cc85bfd5d2894bee1139b356e616fe85dc389c61aaf7"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
+ "pin-project-internal",
 ]
 
 [[package]]
@@ -1684,7 +1664,7 @@ dependencies = [
  "futures-util",
  "http",
  "http-body 0.3.1",
- "hyper 0.13.6",
+ "hyper 0.13.10",
  "hyper-tls",
  "js-sys",
  "lazy_static",
@@ -2225,6 +2205,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "375a639232caf30edfc78e8d89b2d4c375515393e7af7e16f01cd96917fb2105"
 dependencies = [
  "cfg-if 1.0.0",
+ "log",
  "pin-project-lite 0.2.7",
  "tracing-core",
 ]
