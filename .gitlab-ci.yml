@@ -30,7 +30,7 @@ stages:
 check:
   stage:                           check
   script:
-    - cargo fmt --all -- --check
+    - cargo +nightly fmt --all -- --check
     - cargo check --all-targets --workspace
     - cargo clippy --all-targets --workspace -- -Dwarnings
 
