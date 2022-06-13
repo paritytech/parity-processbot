@@ -1,8 +1,5 @@
 use std::{net::SocketAddr, sync::Arc};
 
-
-
-
 use hyper::{
 	service::{make_service_fn, service_fn},
 	Body, Request, Server,
