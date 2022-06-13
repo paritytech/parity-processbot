@@ -151,8 +151,8 @@ fn handle_cmd_result<Secret: AsRef<str>>(
 						let mut err_output = err_output.to_string();
 						if let Some(secrets) = secrets_to_hide.as_ref() {
 							for secret in secrets.iter() {
-								err_output =
-									err_output.replace(secret.as_ref(), "${SECRET}");
+								err_output = err_output
+									.replace(secret.as_ref(), "${SECRET}");
 							}
 						}
 						log::error!(
