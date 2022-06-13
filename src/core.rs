@@ -10,7 +10,7 @@ use crate::{
 	companion::update_companion_then_merge,
 	config::MainConfig,
 	error::{self, handle_error, Error, PullRequestDetails},
-	git_ops::rebase,
+	git_ops::{rebase, RebaseOutcome},
 	github::*,
 	gitlab::*,
 	merge_request::{
@@ -1022,12 +1022,27 @@ pub async fn handle_command(
 			Ok(())
 		}
 		CommentCommand::Rebase => {
+			let outcome = rebase(
+				state,
+				&pr.base.repo.owner.login,
+				&pr.base.repo.name,
+				&pr.head.repo.owner.login,
+				&pr.head.repo.name,
+				&pr.head.ref_field,
+			)
+			.await?;
+
 			if let Err(err) = gh_client
 				.create_issue_comment(
 					&pr.base.repo.owner.login,
 					&pr.base.repo.name,
 					pr.number,
-					"Rebasing",
+					match outcome {
+						RebaseOutcome::UpToDate => {
+							"Branch is already up-to-date"
+						}
+						RebaseOutcome::Pushed => "Rebased",
+					},
 				)
 				.await
 			{
@@ -1038,15 +1053,7 @@ pub async fn handle_command(
 				);
 			}
 
-			rebase(
-				gh_client,
-				&pr.base.repo.owner.login,
-				&pr.base.repo.name,
-				&pr.head.repo.owner.login,
-				&pr.head.repo.name,
-				&pr.head.ref_field,
-			)
-			.await
+			Ok(())
 		}
 	}
 }

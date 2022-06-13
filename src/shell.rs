@@ -11,21 +11,21 @@ use tokio::process::Command;
 use crate::{error::*, types::Result};
 
 #[derive(PartialEq)]
-pub struct CommandMessageConfiguration<'a> {
-	pub secrets_to_hide: Option<&'a [&'a str]>,
+pub struct CommandMessageConfiguration<'a, Secret: AsRef<str>> {
+	pub secrets_to_hide: Option<&'a [Secret]>,
 	pub are_errors_silenced: bool,
 }
 
 #[derive(PartialEq)]
-pub enum CommandMessage<'a> {
-	Configured(CommandMessageConfiguration<'a>),
+pub enum CommandMessage<'a, Secret: AsRef<str>> {
+	Configured(CommandMessageConfiguration<'a, Secret>),
 }
 
-pub async fn run_cmd<Cmd, Dir>(
+pub async fn run_cmd<Cmd, Dir, Secret: AsRef<str>>(
 	cmd: Cmd,
 	args: &[&str],
 	dir: Dir,
-	logging: CommandMessage<'_>,
+	logging: CommandMessage<'_, Secret>,
 ) -> Result<Output>
 where
 	Cmd: AsRef<OsStr> + Display,
@@ -41,15 +41,15 @@ where
 	handle_cmd_result(cmd, result, &logging)
 }
 
-pub async fn run_cmd_in_cwd<Cmd>(
+pub async fn run_cmd_in_cwd<Cmd, Secret: AsRef<str>>(
 	cmd: Cmd,
 	args: &[&str],
-	logging: CommandMessage<'_>,
+	logging: CommandMessage<'_, Secret>,
 ) -> Result<Output>
 where
 	Cmd: AsRef<OsStr> + Display,
 {
-	before_cmd::<&Cmd, String>(&cmd, args, None, &logging);
+	before_cmd::<&Cmd, String, Secret>(&cmd, args, None, &logging);
 
 	#[allow(unused_mut)]
 	let mut init_cmd = Command::new(cmd);
@@ -59,11 +59,11 @@ where
 	handle_cmd_result(cmd, result, &logging)
 }
 
-pub async fn run_cmd_with_output<Cmd, Dir>(
+pub async fn run_cmd_with_output<Cmd, Dir, Secret: AsRef<str>>(
 	cmd: Cmd,
 	args: &[&str],
 	dir: Dir,
-	logging: CommandMessage<'_>,
+	logging: CommandMessage<'_, Secret>,
 ) -> Result<Output>
 where
 	Cmd: AsRef<OsStr> + Display,
@@ -83,11 +83,11 @@ where
 	handle_cmd_result(cmd, result, &logging)
 }
 
-fn before_cmd<'a, Cmd, Dir>(
+fn before_cmd<Cmd, Dir, Secret: AsRef<str>>(
 	cmd: Cmd,
 	args: &[&str],
 	dir: Option<Dir>,
-	logging: &CommandMessage<'a>,
+	logging: &CommandMessage<Secret>,
 ) where
 	Cmd: AsRef<OsStr> + Display,
 	Dir: AsRef<Path> + Debug,
@@ -101,8 +101,10 @@ fn before_cmd<'a, Cmd, Dir>(
 			let mut args_display = format!("{:?}", args);
 			if let Some(secrets) = secrets_to_hide.as_ref() {
 				for secret in secrets.iter() {
-					cmd_display = cmd_display.replace(secret, "${SECRET}");
-					args_display = args_display.replace(secret, "${SECRET}");
+					cmd_display =
+						cmd_display.replace(secret.as_ref(), "${SECRET}");
+					args_display =
+						args_display.replace(secret.as_ref(), "${SECRET}");
 				}
 			}
 
@@ -119,10 +121,10 @@ fn before_cmd<'a, Cmd, Dir>(
 	};
 }
 
-fn handle_cmd_result<'a>(
+fn handle_cmd_result<Secret: AsRef<str>>(
 	cmd: &mut Command,
 	result: Output,
-	logging: &CommandMessage<'a>,
+	logging: &CommandMessage<Secret>,
 ) -> Result<Output> {
 	if result.status.success() {
 		Ok(result)
@@ -135,7 +137,8 @@ fn handle_cmd_result<'a>(
 				let mut cmd_display = format!("{:?}", cmd);
 				if let Some(secrets) = secrets_to_hide.as_ref() {
 					for secret in secrets.iter() {
-						cmd_display = cmd_display.replace(secret, "${SECRET}");
+						cmd_display =
+							cmd_display.replace(secret.as_ref(), "${SECRET}");
 					}
 				}
 				let err_msg = if *are_errors_silenced {
@@ -149,7 +152,7 @@ fn handle_cmd_result<'a>(
 						if let Some(secrets) = secrets_to_hide.as_ref() {
 							for secret in secrets.iter() {
 								err_output =
-									err_output.replace(secret, "${SECRET}");
+									err_output.replace(secret.as_ref(), "${SECRET}");
 							}
 						}
 						log::error!(

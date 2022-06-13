@@ -234,6 +234,7 @@ pub fn setup_pull_request(
 	setup: &CommonSetupOutput,
 	repo: &GithubRepository,
 	head_sha: &str,
+	comment: &GithubIssueComment,
 	pr_branch: &str,
 	number: i64,
 ) -> SetupPullRequestOutput {
@@ -246,9 +247,9 @@ pub fn setup_pull_request(
 		..
 	} = setup;
 
-	let pr_api_path = &format!("/repos/{}/pulls/{}", &repo.full_name, number);
-	let issue_api_path =
-		&format!("/repos/{}/issues/{}", &repo.full_name, number);
+	let repo_api_path = &format!("/repos/{}", &repo.full_name);
+	let pr_api_path = &format!("{}/pulls/{}", repo_api_path, number);
+	let issue_api_path = &format!("{}/issues/{}", repo_api_path, number);
 	let url = format!("{}{}", github_api_url, pr_api_path);
 	let html_url = format!("{}/pull/{}", &repo.html_url, number);
 
@@ -369,6 +370,22 @@ pub fn setup_pull_request(
 		Expectation::matching(request::method_path(
 			"POST",
 			format!("{}/comments", issue_api_path,),
+		))
+		.times(0..)
+		.respond_with(
+			status_code(201)
+				.append_header("Content-Type", "application/json")
+				.body(serde_json::to_string(&json!({})).unwrap()),
+		),
+	);
+
+	github_api.expect(
+		Expectation::matching(request::method_path(
+			"POST",
+			format!(
+				"{}/issues/comments/{}/reactions",
+				repo_api_path, comment.id,
+			),
 		))
 		.times(0..)
 		.respond_with(

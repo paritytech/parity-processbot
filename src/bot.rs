@@ -169,8 +169,7 @@ pub async fn handle_github_payload(
 			} else {
 				let (sha, result) = handle_pull_request_comment(
 					state,
-					&comment.body,
-					&comment.user.login,
+					&comment,
 					issue.number,
 					&issue.html_url,
 					repository,
@@ -343,12 +342,14 @@ pub async fn handle_github_payload(
 /// The second member of the returned tuple is the result of handling the parsed command.
 async fn handle_pull_request_comment(
 	state: &AppState,
-	body: &str,
-	requested_by: &str,
+	comment: &GithubIssueComment,
 	number: i64,
 	html_url: &str,
 	repo: GithubIssueRepository,
 ) -> (Option<String>, Result<()>) {
+	let body = &comment.body;
+	let requested_by = &comment.user.login;
+
 	let cmd = match parse_bot_comment_from_text(body) {
 		Some(cmd) => cmd,
 		None => return (None, Ok(())),
@@ -392,6 +393,21 @@ async fn handle_pull_request_comment(
 		Ok(pr) => pr,
 		Err(err) => return (None, Err(err)),
 	};
+
+	if let Err(err) = gh_client
+		.acknowledge_issue_comment(
+			&pr.base.repo.owner.login,
+			&pr.base.repo.name,
+			comment.id,
+		)
+		.await
+	{
+		log::error!(
+			"Failed to acknowledge comment on {} due to {}",
+			pr.html_url,
+			err
+		);
+	}
 
 	let result = handle_command(state, &cmd, &pr, requested_by)
 		.await

@@ -13,6 +13,7 @@ use tokio::time::delay_for;
 use crate::{
 	core::{get_commit_statuses, process_dependents_after_merge, AppState},
 	error::*,
+	git_ops::{setup_contributor_branch, SetupContributorBranchData},
 	github::*,
 	merge_request::{
 		check_merge_is_allowed, cleanup_merge_request,
@@ -42,220 +43,23 @@ async fn update_pr_branch(
 	inferred_dependencies_to_update: &HashSet<&String>,
 	number: i64,
 ) -> Result<String> {
-	let AppState {
-		gh_client, config, ..
-	} = state;
-	// Constantly refresh the token in-between operations, preferably right before
-	// using it, for avoiding expiration issues. Some operations such as cloning
-	// repositories might take a long time, thus causing the token to be
-	// invalidated after it finishes. In any case, the token generation API should
-	// backed by a cache, thus there's no problem with spamming the refresh calls.
+	let AppState { config, .. } = state;
 
-	let repo_dir = config.repos_path.join(owner_repo);
-	let repo_dir_str = if let Some(repo_dir_str) = repo_dir.as_os_str().to_str()
-	{
-		repo_dir_str
-	} else {
-		return Err(Error::Message {
-			msg: format!(
-				"Path {:?} could not be converted to string",
-				repo_dir
-			),
-		});
-	};
-
-	if repo_dir.exists() {
-		log::info!("{} is already cloned; skipping", owner_repo);
-	} else {
-		let token = gh_client.auth_token().await?;
-		let secrets_to_hide = [token.as_str()];
-		let secrets_to_hide = Some(&secrets_to_hide[..]);
-		let owner_repository_domain =
-			format!("github.com/{}/{}.git", owner, owner_repo);
-		let owner_remote_address = format!(
-			"https://x-access-token:{}@{}",
-			token, owner_repository_domain
-		);
-		run_cmd_in_cwd(
-			"git",
-			&["clone", "-v", &owner_remote_address, repo_dir_str],
-			CommandMessage::Configured(CommandMessageConfiguration {
-				secrets_to_hide,
-				are_errors_silenced: false,
-			}),
-		)
-		.await?;
-	}
-
-	// The contributor's remote entry might exist from a previous run (not expected for a fresh
-	// clone). If that is the case, delete it so that it can be recreated.
-	if run_cmd(
-		"git",
-		&["remote", "get-url", contributor],
-		&repo_dir,
-		CommandMessage::Configured(CommandMessageConfiguration {
-			secrets_to_hide: None,
-			are_errors_silenced: true,
-		}),
-	)
-	.await
-	.is_ok()
-	{
-		run_cmd(
-			"git",
-			&["remote", "remove", contributor],
-			&repo_dir,
-			CommandMessage::Configured(CommandMessageConfiguration {
-				secrets_to_hide: None,
-				are_errors_silenced: false,
-			}),
-		)
-		.await?;
-	}
-
-	let contributor_remote_branch =
-		format!("{}/{}", contributor, contributor_branch);
-	let token = gh_client.auth_token().await?;
-	let secrets_to_hide = [token.as_str()];
-	let secrets_to_hide = Some(&secrets_to_hide[..]);
-	let contributor_repository_domain =
-		format!("github.com/{}/{}.git", contributor, contributor_repo);
-	let contributor_remote_address = format!(
-		"https://x-access-token:{}@{}",
-		token, contributor_repository_domain
-	);
-
-	run_cmd(
-		"git",
-		&["remote", "add", contributor, &contributor_remote_address],
-		&repo_dir,
-		CommandMessage::Configured(CommandMessageConfiguration {
-			secrets_to_hide,
-			are_errors_silenced: false,
-		}),
+	let SetupContributorBranchData {
+		repo_dir,
+		secrets_to_hide,
+		contributor_remote_branch,
+		..
+	} = &setup_contributor_branch(
+		state,
+		owner,
+		owner_repo,
+		contributor,
+		contributor_repo,
+		contributor_branch,
 	)
 	.await?;
-	run_cmd(
-		"git",
-		&["fetch", contributor, contributor_branch],
-		&repo_dir,
-		CommandMessage::Configured(CommandMessageConfiguration {
-			secrets_to_hide,
-			are_errors_silenced: false,
-		}),
-	)
-	.await?;
-
-	// The contributor's branch might exist from a previous run (not expected for a fresh clone).
-	// If so, delete it so that it can be recreated.
-	// Before deleting the branch, it's first required to checkout to a detached SHA so that any
-	// branch can be deleted without problems (e.g. the branch we're trying to deleted might be the
-	// one that is currently active, and so deleting it would fail).
-	let head_sha_output = run_cmd_with_output(
-		"git",
-		&["rev-parse", "HEAD"],
-		&repo_dir,
-		CommandMessage::Configured(CommandMessageConfiguration {
-			secrets_to_hide,
-			are_errors_silenced: false,
-		}),
-	)
-	.await?;
-	run_cmd(
-		"git",
-		&[
-			"checkout",
-			String::from_utf8(head_sha_output.stdout)
-				.context(Utf8)?
-				.trim(),
-		],
-		&repo_dir,
-		CommandMessage::Configured(CommandMessageConfiguration {
-			secrets_to_hide,
-			are_errors_silenced: true,
-		}),
-	)
-	.await?;
-	let _ = run_cmd(
-		"git",
-		&["branch", "-D", contributor_branch],
-		&repo_dir,
-		CommandMessage::Configured(CommandMessageConfiguration {
-			secrets_to_hide,
-			are_errors_silenced: true,
-		}),
-	)
-	.await;
-	run_cmd(
-		"git",
-		&["checkout", "--track", &contributor_remote_branch],
-		&repo_dir,
-		CommandMessage::Configured(CommandMessageConfiguration {
-			secrets_to_hide,
-			are_errors_silenced: false,
-		}),
-	)
-	.await?;
-
-	let owner_remote = "origin";
-	let owner_branch = "master";
-	let owner_remote_branch = format!("{}/{}", owner_remote, owner_branch);
-
-	let token = gh_client.auth_token().await?;
-	let secrets_to_hide = [token.as_str()];
-	let secrets_to_hide = Some(&secrets_to_hide[..]);
-	let owner_repository_domain =
-		format!("github.com/{}/{}.git", owner, owner_repo);
-	let owner_remote_address = format!(
-		"https://x-access-token:{}@{}",
-		token, owner_repository_domain
-	);
-	run_cmd(
-		"git",
-		&["remote", "set-url", owner_remote, &owner_remote_address],
-		&repo_dir,
-		CommandMessage::Configured(CommandMessageConfiguration {
-			secrets_to_hide,
-			are_errors_silenced: false,
-		}),
-	)
-	.await?;
-	run_cmd(
-		"git",
-		&["fetch", owner_remote, owner_branch],
-		&repo_dir,
-		CommandMessage::Configured(CommandMessageConfiguration {
-			secrets_to_hide,
-			are_errors_silenced: false,
-		}),
-	)
-	.await?;
-
-	// Create master merge commit before updating packages
-	let master_merge_result = run_cmd(
-		"git",
-		&["merge", &owner_remote_branch, "--no-ff", "--no-edit"],
-		&repo_dir,
-		CommandMessage::Configured(CommandMessageConfiguration {
-			secrets_to_hide,
-			are_errors_silenced: false,
-		}),
-	)
-	.await;
-	if let Err(e) = master_merge_result {
-		log::info!("Aborting companion update due to master merge failure");
-		run_cmd(
-			"git",
-			&["merge", "--abort"],
-			&repo_dir,
-			CommandMessage::Configured(CommandMessageConfiguration {
-				secrets_to_hide,
-				are_errors_silenced: false,
-			}),
-		)
-		.await?;
-		return Err(e);
-	}
+	let secrets_to_hide = secrets_to_hide.as_ref().map(|vec| &vec[..]);
 
 	let dependencies_to_update = {
 		let mut dependencies_to_update =

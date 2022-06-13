@@ -64,12 +64,19 @@ async fn simple_merge_succeeds() {
 		),
 	};
 
+	let comment = GithubIssueComment {
+		id: I64_PLACEHOLDER_WHICH_DOES_NOT_MATTER,
+		body: "bot merge".to_string(),
+		user: owner.clone(),
+	};
+
 	let mut next_pr_number: i64 = 0;
 	next_pr_number += 1;
 	let pr = &setup_pull_request(
 		&common_setup,
 		&repo,
 		&pr_head_sha,
+		&comment,
 		pr_branch,
 		next_pr_number,
 	);
@@ -104,10 +111,7 @@ async fn simple_merge_succeeds() {
 	let _ = handle_github_payload(
 		GithubWebhookPayload::IssueComment {
 			action: GithubIssueCommentAction::Created,
-			comment: GithubIssueComment {
-				body: "bot merge".to_string(),
-				user: owner.clone(),
-			},
+			comment,
 			issue: GithubIssue {
 				number: pr.number,
 				html_url: pr.html_url.clone(),
