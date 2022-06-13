@@ -83,8 +83,7 @@ fn main() -> anyhow::Result<()> {
 	{
 		const DELAY: Duration = Duration::from_secs(30 * 60);
 		let state = app_state.clone();
-		let mut rt = tokio::runtime::Builder::new()
-			.threaded_scheduler()
+		let rt = tokio::runtime::Builder::new_multi_thread()
 			.enable_all()
 			.build()?;
 		thread::spawn(move || loop {
@@ -177,8 +176,7 @@ fn main() -> anyhow::Result<()> {
 		});
 	}
 
-	let mut rt = tokio::runtime::Builder::new()
-		.threaded_scheduler()
+	let rt = tokio::runtime::Builder::new_multi_thread()
 		.enable_all()
 		.build()?;
 

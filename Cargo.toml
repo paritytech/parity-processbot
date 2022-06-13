@@ -1,7 +1,7 @@
 [package]
 name = "parity-processbot"
 version = "0.1.0"
-authors = ["Joseph Mark <sjeohp@gmail.com>"]
+authors = ["Parity Technologies <admin@parity.io>"]
 edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -15,38 +15,38 @@ futures = { version = "0.3", features = ["async-await"] }
 futures-util = { version = "0.3", features = ["async-await"] }
 hyperx = "1"
 log = "^0.4"
-reqwest = { version = "^0.10", features = ["json"] }
+reqwest = { version = "0.11.10", features = ["json"] }
 rocksdb = "0.14"
 serde = { version = "^1.0", features = ["derive"] }
 serde_json = "1.0.44"
 snafu = { version = "0.6.0" }
-tokio = { version = "0.2", features = ["full"] }
+tokio = { version = "1.19.2", features = ["full"] }
 curl = "0.4"
 curl-sys = "0.4"
 regex = "1.3"
 toml = "0.5"
 base64 = "0.11"
-chrono = { version = "0.4.10", features = ["serde"] }
+chrono = { version = "0.4.19", features = ["serde"] }
 itertools = "0.8"
 parking_lot = "0.10"
-jsonwebtoken = "7.1.0"
+jsonwebtoken = "8.1.0"
 lazy_static = "1.4.0"
 bincode = "1.2"
 ring = "0.16"
 base16 = { version = "0.2", features = ["alloc"] }
 anyhow = "1.0"
 async-std = { version = "1.0.1", features = ["unstable"] }
-hyper = { version = "0.13.1", default-features = false, features = ["stream"] }
+hyper = { version = "0.14.19", default-features = false, features = ["stream"] }
 serde_yaml = "0.8"
 thiserror = "1"
 url = "2.1.1"
 html-escape = "0.2.9"
 cargo-lock = "^7.0.1"
-eventsource = "0.5.0"
+eventsource = { git = "https://github.com/paritytech/eventsource", branch = "master" }
 urlencoding = "2.1.0"
 
 [dev-dependencies]
 httptest = "0.15.1"
 tempfile = "3"
 insta = "1.7.1"
-flexi_logger = "0.17.1"
+flexi_logger = "0.22.5"
