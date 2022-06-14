@@ -185,6 +185,7 @@ impl HasPullRequestDetails for GithubIssue {
 
 #[derive(PartialEq, Deserialize)]
 pub struct GithubIssueComment {
+	pub id: i64,
 	pub body: String,
 	pub user: GithubUser,
 }
