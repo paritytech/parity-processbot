@@ -56,7 +56,7 @@ comment should only have the command**.
 - `bot merge cancel`: cancel a pending `bot merge`; does not affect anything
   outside of processbot, only stops the bot from following through with the
   merge
-- `bot rebase`: create a merge commit from origin/master into the PR
+- `bot rebase`: create a merge commit from the target branch into the PR
 
 Note: The commands will only work if you are a member of the organization where
 the GitHub App is installed. Organization membership is fetched from the GitHub
