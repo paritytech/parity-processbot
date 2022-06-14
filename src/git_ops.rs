@@ -20,6 +20,7 @@ pub async fn setup_contributor_branch(
 	state: &AppState,
 	owner: &str,
 	owner_repo: &str,
+	owner_branch: &str,
 	contributor: &str,
 	contributor_repo: &str,
 	contributor_branch: &str,
@@ -206,7 +207,6 @@ pub async fn setup_contributor_branch(
 	.await?;
 
 	let owner_remote = "origin";
-	let owner_branch = "master";
 	let owner_remote_branch = format!("{}/{}", owner_remote, owner_branch);
 
 	let token = gh_client.auth_token().await?;
@@ -269,6 +269,7 @@ pub async fn rebase(
 	state: &AppState,
 	owner: &str,
 	owner_repo: &str,
+	owner_branch: &str,
 	contributor: &str,
 	contributor_repo: &str,
 	contributor_branch: &str,
@@ -282,6 +283,7 @@ pub async fn rebase(
 		state,
 		owner,
 		owner_repo,
+		owner_branch,
 		contributor,
 		contributor_repo,
 		contributor_branch,

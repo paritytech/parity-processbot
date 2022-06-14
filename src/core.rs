@@ -1026,6 +1026,7 @@ pub async fn handle_command(
 				state,
 				&pr.base.repo.owner.login,
 				&pr.base.repo.name,
+				&pr.base.ref_field,
 				&pr.head.repo.owner.login,
 				&pr.head.repo.name,
 				&pr.head.ref_field,
