@@ -8,7 +8,7 @@ use std::{
 use async_recursion::async_recursion;
 use regex::RegexBuilder;
 use snafu::ResultExt;
-use tokio::time::delay_for;
+use tokio::time::sleep;
 
 use crate::{
 	core::{get_commit_statuses, process_dependents_after_merge, AppState},
@@ -484,10 +484,8 @@ pub async fn update_companion_then_merge(
 			.await?;
 
 			// Wait a bit for the statuses to settle after we've updated the companion
-			delay_for(Duration::from_millis(
-				config.companion_status_settle_delay,
-			))
-			.await;
+			sleep(Duration::from_millis(config.companion_status_settle_delay))
+				.await;
 
 			// Fetch it again since we've pushed some commits and therefore some status or check might have
 			// failed already

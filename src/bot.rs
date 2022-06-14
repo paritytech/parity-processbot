@@ -4,7 +4,7 @@ use futures::StreamExt;
 use hyper::{Body, Request, Response, StatusCode};
 use ring::hmac;
 use snafu::{OptionExt, ResultExt};
-use tokio::{sync::Mutex, time::delay_for};
+use tokio::{sync::Mutex, time::sleep};
 
 use crate::{
 	core::{
@@ -383,7 +383,7 @@ async fn handle_pull_request_comment(
 		// merges succeed. A proper workaround would also entail retrying every X
 		// seconds for recoverable errors such as "required statuses are missing or
 		// pending".
-		delay_for(Duration::from_millis(config.merge_command_delay)).await;
+		sleep(Duration::from_millis(config.merge_command_delay)).await;
 	};
 
 	let pr = match gh_client

@@ -5,6 +5,7 @@ use std::{
 	process::{self, Command, Stdio},
 };
 
+use flexi_logger::FileSpec;
 use httptest::{matchers::*, responders::*, Expectation, Server};
 use parity_processbot::{self, github::*};
 use serde_json::json;
@@ -32,9 +33,15 @@ pub fn common_setup() -> CommonSetupOutput {
 		env::var("GIT_DAEMON_BASE_PATH_TRACKER").unwrap();
 
 	let log_dir = tempfile::tempdir().unwrap();
-	flexi_logger::Logger::with_env_or_str("info")
-		.log_to_file()
-		.directory((&log_dir).path().to_path_buf())
+	flexi_logger::Logger::try_with_env_or_str("info")
+		.unwrap()
+		.log_to_file(
+			FileSpec::default()
+				.directory((&log_dir).path().to_path_buf())
+				.basename("test")
+				.suppress_timestamp()
+				.suffix("log"),
+		)
 		.duplicate_to_stdout(flexi_logger::Duplicate::All)
 		.start()
 		.unwrap();
