@@ -81,7 +81,6 @@ fn main() -> anyhow::Result<()> {
 
 	// Poll for pending merge requests
 	{
-		const DELAY: Duration = Duration::from_secs(30 * 60);
 		let state = app_state.clone();
 		let rt = tokio::runtime::Builder::new_multi_thread()
 			.enable_all()
@@ -172,7 +171,7 @@ fn main() -> anyhow::Result<()> {
 			});
 
 			log::info!("Releasing poll lock");
-			thread::sleep(DELAY);
+			thread::sleep(Duration::from_secs(10 * 60));
 		});
 	}
 
