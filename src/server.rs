@@ -24,6 +24,7 @@ pub async fn init(
 
 	let server = Server::bind(&addr).http1_half_close(true).serve(service);
 
+	log::info!("Listening on {}", addr);
 	if let Err(e) = server.await {
 		eprintln!("server error: {}", e);
 	}

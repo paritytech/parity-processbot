@@ -183,6 +183,7 @@ fn main() -> anyhow::Result<()> {
 		use eventsource::reqwest::Client;
 		use reqwest::Url;
 
+		log::info!("Connecting to webhook proxy at {}", webhook_proxy_url);
 		let client = Client::new(Url::parse(&webhook_proxy_url).unwrap());
 
 		#[derive(serde::Deserialize)]
