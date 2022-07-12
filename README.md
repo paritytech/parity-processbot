@@ -128,6 +128,8 @@ After creating the app, you should [configure](#github-app-configuration) and
   - Enables fetching the CI statuses before merge
 - Checks: Read-only
   - Enables fetching the checks' statuses before merge
+- Workflows: Read & write
+  - Allows the bot to push commits to workflow files (see https://github.com/paritytech/cumulus/pull/1436#issuecomment-1181637222)
 
 ### Organization permissions
 
