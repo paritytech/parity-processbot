@@ -1,7 +1,7 @@
 variables:
   KUBE_NAMESPACE:                  "processbot"
   CI_REGISTRY:                     "paritytech"
-  CI_IMAGE:                        "paritytech/ci-linux:production"
+  CI_IMAGE:                        "paritytech/ci-linux@sha:1bfa70a6ef4e36afb7cb8395b7ddfdc5ce62c3f039f219212be0c253c1a7b173"
   BUILDAH_IMAGE:                   "quay.io/buildah/stable:v1.27"
   GIT_STRATEGY:                    fetch
   GIT_DEPTH:                       3
@@ -31,8 +31,6 @@ stages:
 check:
   stage:                           check
   script:
-    - rustup install 1.61.0
-    - rustc -V
     - cargo fmt --all -- --check
     - cargo check --all-targets --workspace
     - cargo clippy --all-targets --workspace -- -Dwarnings
