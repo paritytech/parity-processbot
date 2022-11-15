@@ -1,7 +1,7 @@
 variables:
   KUBE_NAMESPACE:                  "processbot"
   CI_REGISTRY:                     "paritytech"
-  CI_IMAGE:                        "paritytech/ci-linux@sha:1bfa70a6ef4e36afb7cb8395b7ddfdc5ce62c3f039f219212be0c253c1a7b173"
+  CI_IMAGE:                        "paritytech/ci-linux@sha256:c75cee0971ca54e57a875fac8714eea2db754e621841cde702478783fc28ab90"
   BUILDAH_IMAGE:                   "quay.io/buildah/stable:v1.27"
   GIT_STRATEGY:                    fetch
   GIT_DEPTH:                       3
