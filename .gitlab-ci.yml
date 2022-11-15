@@ -32,6 +32,7 @@ check:
   stage:                           check
   script:
     - rustup install 1.61.0
+    - rustc -V
     - cargo fmt --all -- --check
     - cargo check --all-targets --workspace
     - cargo clippy --all-targets --workspace -- -Dwarnings
