@@ -10,7 +10,7 @@ variables:
   GITLAB_URL:                      https://gitlab.parity.io
 
 default:
-  image: $CI_IMAGE
+  image:                           $CI_IMAGE
   interruptible:                   true
   retry:
     max: 2
