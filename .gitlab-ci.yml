@@ -28,15 +28,15 @@ stages:
   - dockerize
   - deploy
 
-.pr-only:
+.test-refs:
   rules:
     - if: $CI_COMMIT_REF_NAME =~ /^[0-9]+$/                         # PRs
 
 #### stage:                        check
 
 check:
-  extends: .pr-only
   stage:                           check
+  extends:                         .test-refs
   script:
     - cargo +nightly fmt --all -- --check
     - cargo check --all-targets --workspace
@@ -45,14 +45,14 @@ check:
 #### stage:                        test
 
 integration-tests:
-  extends: .pr-only
   stage:                           test
+  extends:                         .test-refs
   script:
     - ./scripts/run_integration_tests.sh
 
 tests:
-  extends: .pr-only
   stage:                           test
+  extends:                         .test-refs
   script:
     - cargo test --lib
 
