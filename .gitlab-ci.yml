@@ -28,9 +28,14 @@ stages:
   - dockerize
   - deploy
 
+.pr-only:
+  rules:
+    - if: $CI_COMMIT_REF_NAME =~ /^[0-9]+$/                         # PRs
+
 #### stage:                        check
 
 check:
+  extends: .pr-only
   stage:                           check
   script:
     - cargo +nightly fmt --all -- --check
@@ -40,11 +45,13 @@ check:
 #### stage:                        test
 
 integration-tests:
+  extends: .pr-only
   stage:                           test
   script:
     - ./scripts/run_integration_tests.sh
 
 tests:
+  extends: .pr-only
   stage:                           test
   script:
     - cargo test --lib
