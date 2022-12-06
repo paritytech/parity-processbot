@@ -14,11 +14,13 @@ spec:
   - host: {{ .Values.ingress.domain }}
     http:
       paths:
-      - path: /
+      - backend:
+          service:
+            name: parity-processbot
+            port:
+              number: {{ .Values.app.WEBHOOK_PORT }}
+        path: /
         pathType: ImplementationSpecific
-        backend:
-          serviceName: parity-processbot
-          servicePort: {{ .Values.app.WEBHOOK_PORT }}
   tls:
   - hosts:
     - {{ .Values.ingress.domain }}
