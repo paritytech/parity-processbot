@@ -285,13 +285,13 @@ impl GithubClient {
 		I: Into<Cow<'b, str>> + Clone,
 		T: serde::de::DeserializeOwned + core::fmt::Debug,
 	{
-		let res = self
+		
+		self
 			.get_response(url, serde_json::json!({}))
 			.await?
 			.json::<T>()
 			.await
-			.context(error::Http);
-		res
+			.context(error::Http)
 	}
 
 	pub async fn get_status<'b, I>(&self, url: I) -> Result<u16>

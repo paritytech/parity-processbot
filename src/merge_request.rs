@@ -93,7 +93,7 @@ pub async fn cleanup_merge_request(
 							&& dependency.repo == repo && dependency.number
 							== number
 						{
-							related_dependents.insert((&mr.sha).clone(), mr);
+							related_dependents.insert(mr.sha.clone(), mr);
 							continue 'to_next_db_item;
 						}
 					}
@@ -473,11 +473,11 @@ pub async fn check_merge_is_allowed(
 		log::info!("{} is mergeable", pr.html_url);
 	}
 
-	return check_all_companions_are_mergeable(
+	check_all_companions_are_mergeable(
 		state,
 		pr,
 		requested_by,
 		companion_reference_trail,
 	)
-	.await;
+	.await
 }

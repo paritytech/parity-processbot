@@ -15,7 +15,7 @@ pub trait HasPullRequestDetails {
 	fn get_pull_request_details(&self) -> Option<PullRequestDetails>;
 }
 
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GithubPullRequest {
 	pub url: String,
 	pub html_url: String,
@@ -47,19 +47,19 @@ impl GithubPullRequest {
 	}
 }
 
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GithubFileContents {
 	pub content: String,
 }
 
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GithubPullRequestBase {
 	#[serde(rename = "ref")]
 	pub ref_field: String,
 	pub repo: GithubPullRequestBaseRepository,
 }
 
-#[derive(PartialEq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
 pub enum GithubUserType {
 	User,
 	Bot,
@@ -67,14 +67,14 @@ pub enum GithubUserType {
 	Unknown,
 }
 
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct GithubUser {
 	pub login: String,
 	#[serde(rename = "type")]
 	pub type_field: GithubUserType,
 }
 
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GithubRepository {
 	pub name: String,
 	pub full_name: String,
@@ -82,7 +82,7 @@ pub struct GithubRepository {
 	pub html_url: String,
 }
 
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GithubCommitStatus {
 	pub id: i64,
 	pub context: String,
@@ -91,7 +91,7 @@ pub struct GithubCommitStatus {
 	pub target_url: Option<String>,
 }
 
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GithubCommitStatusState {
 	Success,
@@ -101,19 +101,19 @@ pub enum GithubCommitStatusState {
 	Unknown,
 }
 
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GithubInstallation {
 	pub id: i64,
 	pub account: GithubUser,
 }
 
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GithubInstallationToken {
 	pub token: String,
 	pub expires_at: Option<String>,
 }
 
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GithubIssueCommentAction {
 	Created,
@@ -121,18 +121,18 @@ pub enum GithubIssueCommentAction {
 	Unknown,
 }
 
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GithubCheckRuns {
 	pub check_runs: Vec<GithubCheckRun>,
 }
 
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GithubPullRequestHeadRepository {
 	pub name: String,
 	pub owner: GithubUser,
 }
 
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GithubPullRequestHead {
 	pub sha: String,
 	pub repo: GithubPullRequestHeadRepository,
@@ -140,13 +140,13 @@ pub struct GithubPullRequestHead {
 	pub ref_field: String,
 }
 
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GithubPullRequestBaseRepository {
 	pub name: String,
 	pub owner: GithubUser,
 }
 
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GithubCheckRunConclusion {
 	Success,
@@ -154,7 +154,7 @@ pub enum GithubCheckRunConclusion {
 	Unknown,
 }
 
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GithubCheckRunStatus {
 	Completed,
@@ -162,7 +162,7 @@ pub enum GithubCheckRunStatus {
 	Unknown,
 }
 
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GithubCheckRun {
 	pub id: i64,
 	pub name: String,
@@ -171,7 +171,7 @@ pub struct GithubCheckRun {
 	pub head_sha: String,
 }
 
-#[derive(Debug, PartialEq, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Deserialize)]
 pub struct GithubIssue {
 	pub number: i64,
 	pub html_url: String,
@@ -183,33 +183,33 @@ impl HasPullRequestDetails for GithubIssue {
 	}
 }
 
-#[derive(PartialEq, Deserialize)]
+#[derive(PartialEq, Eq, Deserialize)]
 pub struct GithubIssueComment {
 	pub id: i64,
 	pub body: String,
 	pub user: GithubUser,
 }
 
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GithubWorkflowJobConclusion {
 	#[serde(other)]
 	Unknown,
 }
 
-#[derive(PartialEq, Deserialize)]
+#[derive(PartialEq, Eq, Deserialize)]
 pub struct GithubWorkflowJob {
 	pub head_sha: String,
 	pub conclusion: Option<GithubWorkflowJobConclusion>,
 }
 
-#[derive(Deserialize, PartialEq)]
+#[derive(Deserialize, PartialEq, Eq)]
 pub struct GithubIssueRepository {
 	pub owner: GithubUser,
 	pub name: String,
 }
 
-#[derive(PartialEq, Deserialize)]
+#[derive(PartialEq, Eq, Deserialize)]
 #[serde(untagged)]
 pub enum GithubWebhookPayload {
 	IssueComment {
@@ -362,8 +362,7 @@ fn parse_pull_request_details_from_url(
 /// full_name is org/repo
 fn parse_repository_full_name(full_name: &str) -> Option<(String, String)> {
 	let parts: Vec<&str> = full_name.split('/').collect();
-	parts
-		.get(0)
+	parts.first()
 		.and_then(|owner| {
 			parts.get(1).map(|repo_name| {
 				Some((owner.to_string(), repo_name.to_string()))

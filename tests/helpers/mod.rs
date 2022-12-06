@@ -12,13 +12,7 @@ pub mod setup;
 use cmd::exec;
 
 pub fn get_available_port() -> Option<u16> {
-	for port in 1025..65535 {
-		if TcpListener::bind(("127.0.0.1", port)).is_ok() {
-			return Some(port);
-		}
-	}
-
-	None
+	(1025..65535).find(|&port| TcpListener::bind(("127.0.0.1", port)).is_ok())
 }
 
 pub fn read_snapshot(log_dir: PathBuf, texts_to_hide: &[&str]) -> String {

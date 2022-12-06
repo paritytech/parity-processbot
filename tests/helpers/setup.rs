@@ -37,7 +37,7 @@ pub fn common_setup() -> CommonSetupOutput {
 		.unwrap()
 		.log_to_file(
 			FileSpec::default()
-				.directory((&log_dir).path().to_path_buf())
+				.directory(log_dir.path().to_path_buf())
 				.basename("test")
 				.suppress_timestamp()
 				.suffix("log"),
@@ -66,7 +66,7 @@ pub fn common_setup() -> CommonSetupOutput {
 		.arg("--export-all")
 		.arg("--enable=receive-pack")
 		.stdout(Stdio::null())
-		.current_dir((&git_daemon_dir).path())
+		.current_dir(git_daemon_dir.path())
 		.spawn()
 		.unwrap();
 

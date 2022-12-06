@@ -9,7 +9,7 @@ pub struct PullRequestDetails {
 	pub number: i64,
 }
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub struct PullRequestDetailsWithHtmlUrl {
 	pub html_url: String,
 	pub owner: String,

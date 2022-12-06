@@ -19,7 +19,7 @@ impl MainConfig {
 	}
 }
 
-#[derive(Deserialize, PartialEq, Debug)]
+#[derive(Deserialize, PartialEq, Eq, Debug)]
 #[serde(rename_all = "snake_case")]
 pub enum GitlabPipelineStatus {
 	Created,
