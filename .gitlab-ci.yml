@@ -107,9 +107,7 @@ dockerize-processbot:
   interruptible:                   true
   # PROCESSBOT_KEY should be base64 encoded
   script:
-    - cat helm/templates/processbot-ingress.yaml
     - helm upgrade processbot ./helm
-      --debug
       --install
       --namespace "${KUBE_NAMESPACE}"
       --values "helm/values-${CI_ENVIRONMENT_NAME}.yaml"
