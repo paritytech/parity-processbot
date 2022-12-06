@@ -1,6 +1,8 @@
 variables:
   KUBE_NAMESPACE:                  "processbot"
   CI_REGISTRY:                     "paritytech"
+  BUILDAH_IMAGE:                   "quay.io/buildah/stable:v1.27"
+  CI_IMAGE:                        "paritytech/ci-linux:production"
   GIT_STRATEGY:                    fetch
   GIT_DEPTH:                       3
   CARGO_TARGET_DIR:                "/ci-cache/${CI_PROJECT_NAME}/targets/${CI_COMMIT_REF_NAME}/${CI_JOB_NAME}"
@@ -8,7 +10,8 @@ variables:
   GITLAB_URL:                      https://gitlab.parity.io
 
 default:
-  image: paritytech/ci-linux:production
+  image: $CI_IMAGE
+  interruptible:                   true
   retry:
     max: 2
     when:
@@ -65,7 +68,7 @@ build:
 #### stage:                        dockerize
 
 .build_and_push:                   &build_and_push
-  image:                           quay.io/buildah/stable
+  image:                           $BUILDAH_IMAGE
   variables:
     GIT_STRATEGY:                  none
     DOCKER_IMAGE:                  "${CI_REGISTRY}/${KUBE_NAMESPACE}"
