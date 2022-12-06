@@ -10,13 +10,13 @@ use tokio::process::Command;
 
 use crate::{error::*, types::Result};
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Eq)]
 pub struct CommandMessageConfiguration<'a, Secret: AsRef<str>> {
 	pub secrets_to_hide: Option<&'a [Secret]>,
 	pub are_errors_silenced: bool,
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Eq)]
 pub enum CommandMessage<'a, Secret: AsRef<str>> {
 	Configured(CommandMessageConfiguration<'a, Secret>),
 }
