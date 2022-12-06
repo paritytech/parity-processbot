@@ -362,7 +362,8 @@ fn parse_pull_request_details_from_url(
 /// full_name is org/repo
 fn parse_repository_full_name(full_name: &str) -> Option<(String, String)> {
 	let parts: Vec<&str> = full_name.split('/').collect();
-	parts.first()
+	parts
+		.first()
 		.and_then(|owner| {
 			parts.get(1).map(|repo_name| {
 				Some((owner.to_string(), repo_name.to_string()))

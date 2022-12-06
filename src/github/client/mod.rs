@@ -285,9 +285,7 @@ impl GithubClient {
 		I: Into<Cow<'b, str>> + Clone,
 		T: serde::de::DeserializeOwned + core::fmt::Debug,
 	{
-		
-		self
-			.get_response(url, serde_json::json!({}))
+		self.get_response(url, serde_json::json!({}))
 			.await?
 			.json::<T>()
 			.await
