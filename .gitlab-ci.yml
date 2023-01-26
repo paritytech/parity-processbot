@@ -125,9 +125,9 @@ deploy-staging:
   stage:                           deploy
   <<:                              *deploy-k8s
   environment:
-    name: staging
+    name:                          staging
   tags:
-    - kubernetes-parity-build
+    - parity-processbot-stg
   only:
     - /^pre-v[0-9]+\.[0-9]+.*$/
 
@@ -135,8 +135,8 @@ deploy-production:
   stage:                           deploy
   <<:                              *deploy-k8s
   environment:
-    name: parity-prod
+    name:                          parity-prod
   tags:
-    - kubernetes-parity-build
+    - parity-processbot-prod
   only:
     - /^v[0-9]+\.[0-9]+.*$/
