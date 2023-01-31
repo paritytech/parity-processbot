@@ -21,4 +21,4 @@
 
 # CI
 /.gitlab-ci.yml @paritytech/ci @paritytech/opstooling
-/helm @paritytech/devops @paritytech/opstooling
+/helm @paritytech/ci @paritytech/opstooling

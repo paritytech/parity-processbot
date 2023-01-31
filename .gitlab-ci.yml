@@ -2,7 +2,7 @@ variables:
   KUBE_NAMESPACE:                  "processbot"
   CI_REGISTRY:                     "paritytech"
   BUILDAH_IMAGE:                   "quay.io/buildah/stable:v1.27"
-  CI_IMAGE:                        "paritytech/ci-linux:production"
+  CI_IMAGE:                        "paritytech/ci-linux@sha256:05ece6bd39131e35868babf911d19b7b570134d47b0455076ab162b233ed4157"
   GIT_STRATEGY:                    fetch
   GIT_DEPTH:                       3
   CARGO_TARGET_DIR:                "/ci-cache/${CI_PROJECT_NAME}/targets/${CI_COMMIT_REF_NAME}/${CI_JOB_NAME}"
@@ -19,7 +19,7 @@ default:
       - unknown_failure
       - api_failure
   tags:
-    - linux-docker
+    - linux-docker-vm-c2
 
 stages:
   - check
@@ -125,9 +125,9 @@ deploy-staging:
   stage:                           deploy
   <<:                              *deploy-k8s
   environment:
-    name: staging
+    name:                          staging
   tags:
-    - kubernetes-parity-build
+    - parity-processbot-stg
   only:
     - /^pre-v[0-9]+\.[0-9]+.*$/
 
@@ -135,8 +135,8 @@ deploy-production:
   stage:                           deploy
   <<:                              *deploy-k8s
   environment:
-    name: parity-prod
+    name:                          parity-prod
   tags:
-    - kubernetes-parity-build
+    - parity-processbot-prod
   only:
     - /^v[0-9]+\.[0-9]+.*$/
