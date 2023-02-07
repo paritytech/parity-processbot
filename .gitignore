@@ -5,3 +5,4 @@
 *.pem
 db/
 repositories/
+.idea
