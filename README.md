@@ -1,5 +1,7 @@
 # Introduction
 
+[![GitHub Issue Sync](https://github.com/paritytech/parity-processbot/actions/workflows/github-issue-sync.yml/badge.svg)](https://github.com/paritytech/parity-processbot/actions/workflows/github-issue-sync.yml)
+
 parity-processbot is a
 [GitHub App](https://docs.github.com/en/developers/apps/getting-started-with-apps/about-apps)
 which drives the
