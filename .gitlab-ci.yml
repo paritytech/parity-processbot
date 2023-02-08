@@ -171,7 +171,7 @@ deploy-staging:
 deploy-production:
   stage:                           deploy
   <<:                              *deploy-k8s
-  <<:                              *publish-refs
+  <<:                              *production-refs
   environment:
     name:                          parity-prod
   tags:
