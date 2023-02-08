@@ -8,7 +8,7 @@ dev_branch=$(git rev-parse --abbrev-ref HEAD)
 # replace possible "/" with "-"
 dev_branch_sanitized=${dev_branch/\//-}
 
-stg_branch="pre-v0.0.${timestamp}-${dev_branch_sanitized}"
+stg_branch="stg-v0.0.${timestamp}-${dev_branch_sanitized}"
 
 git checkout -b "$stg_branch"
 git push origin "$stg_branch"
