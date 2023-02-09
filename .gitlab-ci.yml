@@ -106,8 +106,6 @@ docker-build:
     - buildah bud
       --format=docker
       --tag "$DOCKER_IMAGE:$CI_COMMIT_REF_NAME" .
-    - echo "$Docker_Hub_Pass_Parity" |
-        buildah login --username "$Docker_Hub_User_Parity" --password-stdin docker.io
   needs:
     - job:                         build
       artifacts:                   true
