@@ -19,6 +19,3 @@ git push origin HEAD:"$stg_branch"
 sleep 10
 
 git push origin --delete "$stg_branch"
-
-# get back to initial branch
-git checkout "$dev_branch"
