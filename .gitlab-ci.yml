@@ -6,7 +6,6 @@ variables:
   GIT_STRATEGY:                    fetch
   GIT_DEPTH:                       3
   CARGO_TARGET_DIR:                "/ci-cache/${CI_PROJECT_NAME}/targets/${CI_COMMIT_REF_NAME}/${CI_JOB_NAME}"
-  GITHUB_ORGANIZATION:             "paritytech"
   GITLAB_URL:                      https://gitlab.parity.io
 
 default:
@@ -21,6 +20,27 @@ default:
   tags:
     - linux-docker-vm-c2
 
+.test-refs:                        &test-refs
+  rules:
+    - if: $CI_COMMIT_REF_NAME =~ /^[0-9]+$/                        # PRs
+
+.publish-refs:                     &publish-refs
+  rules:
+    - if: $CI_COMMIT_REF_NAME =~ /^v[0-9]+\.[0-9]+.*$/             # i.e. v1.0, v2.1rc1
+    - if: $CI_COMMIT_REF_NAME =~ /^stg-v[0-9]+\.[0-9]+.*$/         # i.e. stg-v1.0, stg-v2.1rc1
+    - if: $CI_COMMIT_REF_NAME == "master"
+
+.common-refs:                      &common-refs
+  rules:
+    - !reference [.test-refs, rules]
+    - !reference [.publish-refs, rules]
+
+.production-refs:                  &production-refs
+  rules:
+    - if: $CI_COMMIT_REF_NAME =~ /^v[0-9]+\.[0-9]+.*$/             # i.e. v1.0, v2.1rc1
+    - if: $CI_COMMIT_REF_NAME == "master"
+      when: manual
+
 stages:
   - check
   - test
@@ -28,15 +48,12 @@ stages:
   - dockerize
   - deploy
 
-.test-refs:
-  rules:
-    - if: $CI_COMMIT_REF_NAME =~ /^[0-9]+$/                         # PRs
 
 #### stage:                        check
 
 check:
   stage:                           check
-  extends:                         .test-refs
+  <<:                              *test-refs
   script:
     - cargo +nightly fmt --all -- --check
     - cargo check --all-targets --workspace
@@ -46,13 +63,13 @@ check:
 
 integration-tests:
   stage:                           test
-  extends:                         .test-refs
+  <<:                              *test-refs
   script:
     - ./scripts/run_integration_tests.sh
 
 tests:
   stage:                           test
-  extends:                         .test-refs
+  <<:                              *test-refs
   script:
     - cargo test --lib
 
@@ -60,6 +77,7 @@ tests:
 
 build:
   stage:                           build
+  <<:                              *common-refs
   script:
     - cargo build --release
     - mkdir -p ./artifacts/
@@ -74,8 +92,30 @@ build:
 
 #### stage:                        dockerize
 
-.build_and_push:                   &build_and_push
+# build only
+docker-build:
+  stage:                           dockerize
   image:                           $BUILDAH_IMAGE
+  <<:                              *test-refs
+  variables:
+    GIT_STRATEGY:                  none
+    DOCKER_IMAGE:                  "${CI_REGISTRY}/${KUBE_NAMESPACE}"
+  interruptible:                   true
+  script:
+    - cd ./artifacts
+    - buildah bud
+      --format=docker
+      --tag "$DOCKER_IMAGE:$CI_COMMIT_REF_NAME" .
+  needs:
+    - job:                         build
+      artifacts:                   true
+  tags:
+    - kubernetes-parity-build
+
+docker-build-push:
+  stage:                           dockerize
+  image:                           $BUILDAH_IMAGE
+  <<:                              *publish-refs
   variables:
     GIT_STRATEGY:                  none
     DOCKER_IMAGE:                  "${CI_REGISTRY}/${KUBE_NAMESPACE}"
@@ -88,17 +128,12 @@ build:
     - echo "$Docker_Hub_Pass_Parity" |
         buildah login --username "$Docker_Hub_User_Parity" --password-stdin docker.io
     - buildah push --format=v2s2 "$DOCKER_IMAGE:$CI_COMMIT_REF_NAME"
-  tags:
-    - kubernetes-parity-build
-
-dockerize-processbot:
-  stage:                           dockerize
-  <<:                              *build_and_push
   needs:
     - job:                         build
       artifacts:                   true
-  only:
-    - tags
+  tags:
+    - kubernetes-parity-build
+
 
 #### stage:                        deploy
 
@@ -111,7 +146,7 @@ dockerize-processbot:
       --install
       --namespace "${KUBE_NAMESPACE}"
       --values "helm/values-${CI_ENVIRONMENT_NAME}.yaml"
-      --set "app.INSTALLATION_LOGIN=${GITHUB_ORGANIZATION}"
+      --set "app.INSTALLATION_LOGIN=${INSTALLATION_LOGIN}"
       --set "app.KUBE_NAMESPACE=${KUBE_NAMESPACE}"
       --set "app.DOCKER_TAG=${CI_COMMIT_REF_NAME}"
       --set "app.PROCESSBOT_KEY=${PROCESSBOT_KEY}"
@@ -124,19 +159,19 @@ dockerize-processbot:
 deploy-staging:
   stage:                           deploy
   <<:                              *deploy-k8s
+  <<:                              *publish-refs
   environment:
     name:                          staging
   tags:
     - parity-processbot-stg
-  only:
-    - /^pre-v[0-9]+\.[0-9]+.*$/
+
 
 deploy-production:
   stage:                           deploy
   <<:                              *deploy-k8s
+  <<:                              *production-refs
   environment:
     name:                          parity-prod
   tags:
     - parity-processbot-prod
-  only:
-    - /^v[0-9]+\.[0-9]+.*$/
+
