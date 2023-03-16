@@ -1,4 +1,4 @@
-use std::{collections::HashMap, mem::drop};
+use std::collections::HashMap;
 
 use hyper::StatusCode as HttpStatusCode;
 use regex::RegexBuilder;
@@ -182,7 +182,7 @@ pub async fn cleanup_merge_request(
 		MergeRequestCleanupReason::Error
 		| MergeRequestCleanupReason::Cancelled => {
 			for dependent in related_dependents.values() {
-				let result = cleanup_merge_request(
+				let _result = cleanup_merge_request(
 					state,
 					&dependent.sha,
 					&dependent.owner,
@@ -190,7 +190,6 @@ pub async fn cleanup_merge_request(
 					dependent.number,
 					reason,
 				);
-				drop(result)
 			}
 		}
 		MergeRequestCleanupReason::AfterSHAUpdate(updated_sha) => {
