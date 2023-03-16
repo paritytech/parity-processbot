@@ -69,7 +69,7 @@ pub fn initialize_repository(repo_dir: &Path, initial_branch: &str) {
 		Some(repo_dir),
 		None,
 	);
-	fs::write(&repo_dir.join("README"), "").unwrap();
+	fs::write(repo_dir.join("README"), "").unwrap();
 	exec("git", &["add", "."], Some(&repo_dir), None);
 	exec(
 		"git",
