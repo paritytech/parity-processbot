@@ -182,7 +182,8 @@ pub async fn cleanup_merge_request(
 		MergeRequestCleanupReason::Error
 		| MergeRequestCleanupReason::Cancelled => {
 			for dependent in related_dependents.values() {
-				let _ = cleanup_merge_request(
+				// TODO: these cleanup_merge_request() might not be actually executed rn, poll them?
+				let _result = cleanup_merge_request(
 					state,
 					&dependent.sha,
 					&dependent.owner,
