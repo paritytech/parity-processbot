@@ -1,5 +1,4 @@
-use std::collections::HashMap;
-use std::mem::drop;
+use std::{collections::HashMap, mem::drop};
 
 use hyper::StatusCode as HttpStatusCode;
 use regex::RegexBuilder;
