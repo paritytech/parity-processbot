@@ -191,7 +191,7 @@ pub async fn cleanup_merge_request(
 					dependent.number,
 					reason,
 				);
-                drop(result)
+				drop(result)
 			}
 		}
 		MergeRequestCleanupReason::AfterSHAUpdate(updated_sha) => {
