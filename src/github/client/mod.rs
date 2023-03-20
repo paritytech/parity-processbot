@@ -183,7 +183,7 @@ impl GithubClient {
 
 	async fn execute(&self, builder: RequestBuilder) -> Result<Response> {
 		let request = builder
-			.bearer_auth(&self.auth_token().await?)
+			.bearer_auth(self.auth_token().await?)
 			.header(
 				header::ACCEPT,
 				"application/vnd.github.starfox-preview+json",
