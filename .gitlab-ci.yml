@@ -3,7 +3,7 @@ variables:
   CI_REGISTRY:                     "paritytech"
   BUILDAH_IMAGE:                   "quay.io/buildah/stable:v1.29"
   BUILDAH_COMMAND:                 "buildah --storage-driver overlay2"
-  CI_IMAGE:                        "paritytech/ci-linux@sha256:f6cdc1e289e40f3eb1f93efb11f961d4f0e51f4c2adf80b31300ab5b35ef1386" # staging 2023-05-02
+  CI_IMAGE:                        "paritytech/ci-linux@sha256:0fe9d110a29ec77ac6fa6507e4af968ea6aced6f6b7ce4deb231696ffc19b715" # 1.70.0-bullseye 2023-06-20
   GIT_STRATEGY:                    fetch
   GIT_DEPTH:                       3
   CARGO_TARGET_DIR:                "/ci-cache/${CI_PROJECT_NAME}/targets/${CI_COMMIT_REF_NAME}/${CI_JOB_NAME}"
