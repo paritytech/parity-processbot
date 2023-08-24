@@ -1,6 +1,8 @@
 FROM docker.io/paritytech/ci-linux:production
 
-COPY parity-processbot /usr/local/bin/parity-processbot
+ARG CARGO_TARGET_DIR
+
+COPY target/release/parity-processbot /usr/local/bin/parity-processbot
 
 RUN set -ev; \
     apt-get update; \
