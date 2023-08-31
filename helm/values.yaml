@@ -1,11 +1,8 @@
 app:
-  WEBHOOK_PORT: 8080
-  INSTALLATION_LOGIN: from-gitlab-vars
   DOCKER_TAG: from-gitlab-vars
-  PROCESSBOT_KEY: from-gitlab-vars
-  WEBHOOK_SECRET: from-gitlab-vars
   KUBE_NAMESPACE: from-gitlab-vars
   START_FROM_CWD: true
+  WEBHOOK_PORT: 8080
 
 config:
   storagePath: /storage

@@ -1,4 +1,12 @@
 environment: production
+
+app:
+  GITHUB_APP_ID: ref+vault://kv/gitlab/parity/mirrors/parity-processbot/cicd-parity-prod#GITHUB_APP_ID
+  GITLAB_ACCESS_TOKEN: ref+vault://kv/gitlab/parity/mirrors/parity-processbot/cicd-parity-prod#GITLAB_ACCESS_TOKEN
+  INSTALLATION_LOGIN: ref+vault://kv/gitlab/parity/mirrors/parity-processbot/cicd-parity-prod#INSTALLATION_LOGIN
+  PROCESSBOT_KEY: ref+vault://kv/gitlab/parity/mirrors/parity-processbot/cicd-parity-prod#PROCESSBOT_KEY
+  WEBHOOK_SECRET: ref+vault://kv/gitlab/parity/mirrors/parity-processbot/cicd-parity-prod#WEBHOOK_SECRET
+
 ingress:
   domain: processbot.parity.io
   annotations:
