@@ -1,4 +1,12 @@
 environment: staging
+
+app:
+  GITHUB_APP_ID: ref+vault://kv/gitlab/parity/mirrors/parity-processbot/cicd-parity-stg#GITHUB_APP_ID
+  GITLAB_ACCESS_TOKEN: ref+vault://kv/gitlab/parity/mirrors/parity-processbot/cicd-parity-stg#GITLAB_ACCESS_TOKEN
+  INSTALLATION_LOGIN: ref+vault://kv/gitlab/parity/mirrors/parity-processbot/cicd-parity-stg#INSTALLATION_LOGIN
+  PROCESSBOT_KEY: ref+vault://kv/gitlab/parity/mirrors/parity-processbot/cicd-parity-stg#PROCESSBOT_KEY
+  WEBHOOK_SECRET: ref+vault://kv/gitlab/parity/mirrors/parity-processbot/cicd-parity-stg#WEBHOOK_SECRET
+
 ingress:
   domain: processbot.parity-stg.parity.io
   annotations:

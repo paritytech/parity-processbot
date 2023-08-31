@@ -8,6 +8,12 @@ variables:
   GIT_DEPTH:                       3
   CARGO_TARGET_DIR:                "/ci-cache/${CI_PROJECT_NAME}/targets/${CI_COMMIT_REF_NAME}/${CI_JOB_NAME}"
   GITLAB_URL:                      https://gitlab.parity.io
+  # Vault Section
+  VAULT_SERVER_URL:                "https://vault.parity-mgmt-vault.parity.io"
+  VAULT_ADDR:                      "${VAULT_SERVER_URL}"
+  VAULT_AUTH_PATH:                 "gitlab-parity-io-jwt"
+  VAULT_AUTH_ROLE:                 "gitlab_${CI_PROJECT_NAME}"
+  HELM_SECRETS_DRIVER:             vals
 
 default:
   image:                           $CI_IMAGE
@@ -156,23 +162,19 @@ publish-docker-image-description:
 #### stage:                        deploy
 
 .deploy-k8s:                       &deploy-k8s
-  image:                           paritytech/kubetools:3.5.3
+  image:                           paritytech/kubetools:helm3
   interruptible:                   true
   # PROCESSBOT_KEY should be base64 encoded
   script:
-    - helm upgrade processbot ./helm
+    - export VAULT_TOKEN="$(vault write -field=token auth/$VAULT_AUTH_PATH/login role=$VAULT_AUTH_ROLE jwt=$CI_JOB_JWT)"
+    - helm secrets --evaluate-templates upgrade processbot ./helm
       --install
       --namespace "${KUBE_NAMESPACE}"
       --values "helm/values-${CI_ENVIRONMENT_NAME}.yaml"
-      --set "app.INSTALLATION_LOGIN=${INSTALLATION_LOGIN}"
-      --set "app.KUBE_NAMESPACE=${KUBE_NAMESPACE}"
-      --set "app.DOCKER_TAG=${CI_COMMIT_REF_NAME}"
-      --set "app.PROCESSBOT_KEY=${PROCESSBOT_KEY}"
-      --set "app.GITHUB_APP_ID=${GITHUB_APP_ID}"
-      --set "app.WEBHOOK_SECRET=${WEBHOOK_SECRET}"
-      --set "app.GITLAB_URL=${GITLAB_URL}"
-      --set "app.GITLAB_ACCESS_TOKEN=${GITLAB_ACCESS_TOKEN}"
       --set "app.DEPENDENCY_UPDATE_CONFIGURATION=${DEPENDENCY_UPDATE_CONFIGURATION}"
+      --set "app.DOCKER_TAG=${CI_COMMIT_REF_NAME}"
+      --set "app.GITLAB_URL=${GITLAB_URL}"
+      --set "app.KUBE_NAMESPACE=${KUBE_NAMESPACE}"
 
 deploy-staging:
   stage:                           deploy
